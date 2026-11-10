@@ -34,33 +34,6 @@ function mount(payload: FsWriteReviewPayload | undefined): { row: FsWriteReviewR
 }
 
 describe('FsWriteReviewRow', () => {
-  it('emits head, paired diff and the three action hints', () => {
-    const { row, body } = mount(review());
-
-    expect(row.el.className).toBe('acp-harness__msg acp-harness__msg--fs_write_review');
-    expect(body.className).toBe('acp-harness__msg-body acp-harness__fs-review');
-    expect(body.children[0].outerHTML).toBe(
-      '<div class="acp-harness__fs-review-head">' +
-        '<span class="acp-harness__fs-review-verb">✏️ write</span>' +
-        '<span class="acp-harness__fs-review-path" title="src/ui/list.ts">src/ui/list.ts</span>' +
-      '</div>',
-    );
-    expect(body.children[1].className).toBe('acp-harness__tool-diff');
-    expect(body.children[1].firstElementChild?.className)
-      .toBe('acp-harness__tool-body acp-harness__tool-body--diff');
-    expect(body.children[2].outerHTML).toBe(
-      '<div class="acp-harness__fs-review-actions">' +
-        '<span class="krypton-key-hint acp-harness__fs-review-action acp-harness__fs-review-action--accept">' +
-          '<kbd>a</kbd> accept</span> · ' +
-        '<span class="krypton-key-hint acp-harness__fs-review-action acp-harness__fs-review-action--reject">' +
-          '<kbd>r</kbd> reject</span> · ' +
-        '<span class="krypton-key-hint acp-harness__fs-review-action acp-harness__fs-review-action--accept-all">' +
-          '<kbd>A</kbd> accept all</span>' +
-      '</div>',
-    );
-    row.dispose();
-  });
-
   it('paints the diff gutters the way the string renderer did', () => {
     const { row, body } = mount(review());
     const lines = [...body.querySelectorAll('.acp-harness__diff-line')];

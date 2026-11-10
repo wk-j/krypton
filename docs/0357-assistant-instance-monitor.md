@@ -123,6 +123,8 @@ Updates invalidate only `rightRail` or call the owning component's `update()`. T
 
 The panel uses the console faceplate of `DESIGN.md`, like the Ticket and Rails docks: engraved labels, the counts in readout windows, the list and the details in recessed wells split by etched grooves, lamps for state (DESIGN.md "Lamps": an LED before the state word — a lamp window behind glass for work in progress, a human wait or a fault, a dark LED and ink for a settled or ended state), ink tiers for values, and a full-row selection tint (ADR-0027); its rows inherit the dock body size, while state chips use the standard chrome font size like Rails check outcomes. Glyphs are `<symbol>` defs in `harness-icons.ts` (`assistants`, `process`, `embedded`, `unknown`, `clock`) and backend logos tinted by `--krypton-backend-*`; a state chip carries no glyph, its LED says the tone. State chips reuse `Chip`. The selected-instance details are their own sub-component with a value dependency tuple, so an age tick that changes nothing they show leaves their DOM — and any text the user selected in it — untouched.
 
+The key-hint footer uses `--krypton-chrome-font-size` (11px fallback), matching the Rails dock rather than inheriting the list's body size. Its keycaps keep the shared `0.92em` scale; changing the body font size does not enlarge the footer independently of the chrome font.
+
 ## Affected Files
 
 | File(s) | Change |

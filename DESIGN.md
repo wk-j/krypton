@@ -1,6 +1,6 @@
 ---
 name: Krypton Console
-version: 2.3.7
+version: 2.3.9
 description: Skeuomorphic instrument faceplate — brushed graphite (aluminium in the light scheme) with engraved labels, recessed display wells, raised keys and lit lamps, over a transparent desktop
 appliesTo: "Every surface in the Tauri webview and the live-assist webview. Materials: src/styles/materials.css (--mat-*)."
 colors:
@@ -58,7 +58,7 @@ forbidden:
   - "infinite or decorative animation: pulses, sweeps, shimmers, orbits, scanlines, vignettes"
   - "glow on anything but a lamp, an LED lens or the terminal progress ring's arc: legends, labels and titles never glow (the one exception is the composer bloom's one-shot afterimage flash)"
   - "coloured outlines or frame glows on status labels, tags and badges; state colour belongs to their ink, tint and LED, never their border"
-  - "box-shadow, text-shadow or gradient on a repeated row (transcript row, diff line, list row)"
+  - "box-shadow, text-shadow or gradient on a repeated row (transcript row, diff line, list row), except the small tool-name readout defined in spec 383"
   - "a button taller than one line: a key's state badge sits beside its label or is dropped"
   - "left-edge accent rails for selection (ADR-0027)"
   - "L-shaped corner brackets or screw-head ornaments"
@@ -147,13 +147,16 @@ comment.
   after the label behind an etched divider; it is cut first, and a key under 128px drops it.
 - **Key cap.** A keyboard shortcut drawn in text is a `<kbd>` built by `src/ui/kbd.ts`, styled by the
   one rule in `src/styles/kbd.css`: inline, `padding: 0 4px`, `border: 1px solid var(--mat-key-edge)`,
-  `border-radius: 4px`, `background: var(--mat-key)`, `box-shadow: var(--mat-key-raise)`, legend
+  `border-radius: 4px`, `background: var(--mat-key-down)`, `box-shadow: var(--mat-key-sunk)`, legend
   `--mat-lit` with `text-shadow: var(--mat-print)` at 0.92em, `line-height: 1.1` so a cap never grows
   its row. The action follows as printed legend in the host's ink (`a accept` reads as a cap, then
   `accept`); a cap and its legend never wrap apart. Legends print what is pressed: letters as typed
   (`a`, `A`), named keys as words (`Esc`, `Enter`, `Tab`), modifiers as macOS symbols inside the cap
   (`⌘Enter`, `⌃C`). A cap is never recoloured: a state colour goes on the legend. Text that cannot
   hold markup (tooltips, `aria-label`, input placeholders) keeps the same spelling as plain text.
+  Shortcut caps stay recessed at rest, including hint labels, question hotkeys and Live Assist
+  header shortcuts (spec 382). This is appearance only: no pressed semantics or 1px translation.
+  Action-button faces retain their normal raised/held states.
 - **Selector keys.** Tabs: a recessed channel (a well with 3px padding) of 6px keys, each with a 6px
   LED before its legend. The shown tab is latched down with its LED lit; a count is a small readout
   window on the key.
@@ -185,16 +188,22 @@ comment.
   legend in the state ink, with no coloured outline or frame glow. Unlit, it is a
   `--mat-well-fill` capsule in ink.
 - **Chips.** Verdicts and kinds outside the transcript are embossed labels on a key face, tinted by
-  their colour, with the status LED first on the key face, 5px before the legend. Every label in the
-  transcript (tool kind, permission and question decision, execution state, provider-error meta,
-  notice action) is flat ink: no key face, capsule, border, or shadow; its LED, when it has one, sits
-  before the legend. Rails run-history verdicts are also flat ink: their existing glyph and state
-  colour remain, with no background, border, padding or shadow.
+  their colour, with the status LED first on the key face, 5px before the legend. Transcript labels
+  (permission and question decision, execution state, provider-error meta, notice action) stay flat ink:
+  no key face, capsule, border, or shadow; an existing LED sits before the legend. Tool-name readouts
+  are the narrow exception below. Rails run-history verdicts remain flat ink with their existing glyph
+  and state colour: no background, border, padding or shadow.
 - **Readouts.** A small well holding a tabular-nums figure, with its label engraved beside or under it.
   The workspace footer's Git branch is a neutral-ink well readout, not a green success label:
   `--mat-well` + `--mat-well-shadow`, 8px radius, 2px × 6px padding, chrome-size type with the
   ref's original case. Its dirty dot stays warning amber. In detail density, an 8px gap replaces the
   separator before this well so no groove is painted inside it; the footer remains 28px tall.
+  Tool names (spec 383) use the composer's BYPASS readout recipe: `--mat-well` +
+  `--mat-well-shadow`, 8px radius, 1px × 7px padding, 6px LED gap, body-size × 0.72,
+  uppercase at 0.08em tracking, and no border or text-shadow. This includes generic tool kinds,
+  filesystem verbs, permission tool tags and embedded Agent tool names. Existing identity ink
+  and LED meanings stay; the material belongs only to the small name label, never its row,
+  subject or output. A permission decision keeps its own LED rather than duplicating it.
 - **Scrim.** Behind a modal plate: `background: var(--mat-scrim)`. Never blur.
 
 ## Surfaces
@@ -238,8 +247,8 @@ comment.
   lane's head strip and the composer plate are one plate around the lane's screen, with no seam where
   plate meets plate (the screen draws its own edges); the composer is a flush plate with
   the draft line in a well; transcript rows are flat text on the screen under engraved labels; tool
-  rows are a flat kind label with the status LED before it and an output well aligned with the label (a
-  plain output well has no label; only a label that says something, like `stderr`, is engraved);
+  rows have a recessed tool-name readout with the status LED inside and a flat subject; their output
+  well stays aligned with the label (plain output has no label; meaningful labels such as `stderr` are engraved);
   consecutive TOOL, GUARD, AGENT, plain USER, or successful FS rows show their source label once,
   then a continuous etched groove (1px dark cut + 1px light lip from `--mat-groove-lo/hi`, at 65% opacity), starting below the first label and spanning each later row's label gutter;
   a different source or an action row starts a new label, and every action remains visible;
@@ -433,6 +442,12 @@ selector, and nothing in it bleeds out of that selector.
 
 ## Changelog
 
+- **2.3.9** — Tool names use the BYPASS readout well, with compact type and existing identity/status
+  ink. The named exception applies only to operation/name labels; rows, subjects, outputs, source
+  gutters and decision labels stay flat.
+- **2.3.8** — Shortcut caps use the pressed material at rest: recessed face and inset shadow,
+  including custom hint labels, question hotkeys, Live Assist shortcuts and Harness gallery previews.
+  Geometry, ink, bindings and action-button states are unchanged.
 - **2.3.7** — Which-key keys become flat keyboard labels printed on the plate instead of raised
   key caps: the popup is a legend chart and nothing in it is pressable. Without a cap they take the
   row label's size and keep the brighter ink. Hint labels stay key caps.

@@ -86,7 +86,11 @@ class PermissionHead extends Component<PermissionPayload> {
     // For execute permissions the toolName IS the subject, so printing both
     // would print the command twice.
     if (next.toolName && next.toolName !== next.subject) {
-      nodes.push(el('span', { class: 'acp-harness__perm-tool', text: next.toolName }));
+      nodes.push(el(
+        'span',
+        { class: 'acp-harness__perm-tool', attrs: { title: next.toolName } },
+        el('span', { class: 'acp-harness__perm-tool-text', text: next.toolName }),
+      ));
     }
     this.subject.textContent = next.subject;
     this.subject.title = next.subject;

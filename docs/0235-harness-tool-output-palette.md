@@ -6,6 +6,7 @@
 > Related: `docs/0072-acp-harness-view.md`, `docs/0231-lane-peek-action-hud.md`
 > Prototype: `docs/prototypes/235-harness-tool-output.html`
 > Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): label and line glows dropped; tool output sits in a well.
+> Tool-name labels follow [spec 383](./0383-tool-name-readouts.md): a small BYPASS-style readout well with the existing kind ink and status LED. Subjects and output remain flat.
 
 ## Problem
 
@@ -15,10 +16,10 @@ Harness tool cards paint stdout/output/content as one cyan wash (`--agent-user` 
 
 Keep chrome cyan. Stop using cyan as the dump body color.
 
-1. **Kind chip** reuses the spec 231 HUD accent (chip text + 1px border only, not a filled pill).
+1. **Tool-name readout** keeps the spec 231 kind ink, inside the BYPASS material from spec 383: `--mat-well` + `--mat-well-shadow`, 8px radius, `1px 7px` padding, 6px LED gap, root body-size × 0.72, uppercase at 0.08em tracking. No border or text-shadow; this is not a raised key or a full-row skin.
 2. **Section body** is foreground phosphor. Labels keep semantic color (error red, summary green, diff gold). `output` / `stdout` / `content` / `text` drop the cyan mapping.
 3. **Recognized dumps** get the same cheap structure git already has: path, line number, separator, text. Grep/rg (and execute wrapping them) split `path:line:text` and `line:text`. Execute dumps that start with `exit: N` (Grok Bash `output_for_prompt`) peel that line before rendering. Exit status belongs only in the head: success uses the status LED, and non-zero codes keep the compact `exit N` result. No exit label is repeated above the output or beside a section label. Unknown output stays a plain `<pre>`.
-4. **Drop the 2px left rail.** No inner card, no background glow. The status LED sits inside the kind chip (DESIGN.md 2.0.1), so the head starts with the chip and the output well needs no indent to line up with it.
+4. **Drop the 2px left rail.** No inner card or background glow on the row. The status LED sits inside the small tool-name readout (spec 383), so the head starts with that readout and the output well needs no extra indent.
 
 Generic dump rendering uses no highlight.js or language grammar: line-oriented regex only, with the same budget as `parseGitDiffStat`. [Spec 315](./0315-harness-execution-inspector.md) adds a separate, read-only source pane for validated OMP code cells; only that explicit source pane uses language highlighting. Its output remains foreground text or validated backend table/JSON data.
 
@@ -64,7 +65,7 @@ Generic dump rendering uses no highlight.js or language grammar: line-oriented r
 
 ### Kind chip
 
-`renderToolBody` sets `kind.dataset.kind` from the same map spec 231 uses (`search`/`execute`/`edit`/`read`/`fetch`/`delete`/`move`/`other`). CSS colors text + border from the HUD accent. Background stays transparent. Gray outline remains the fallback for unknown kinds.
+`ToolRow` sets `kind.dataset.kind` from `toolChipKind` (`search`/`execute`/`edit`/`read`/`fetch`/`delete`/`move`/`other`). CSS preserves the existing HUD-derived text ink; unknown kinds use neutral ink. The name alone gets the borderless BYPASS readout material and compact typography from spec 383, with its existing status LED inside. Subjects, output and source labels do not inherit that skin.
 
 ### Section tones
 
@@ -147,7 +148,7 @@ Exit status is shown only in the tool head. Zero adds no result text; the succes
 }
 ```
 
-Dump body (plain `<pre>`, grep rows, git-rich) inherits that size. Kind chips, section labels and timers stay chrome-scale (`0.7em` / `0.78em`). The execution card (spec 315) is the exception: its head, timer included, is one size. The tool-card `0.88em` shrink does not apply to the payload.
+Dump body (plain `<pre>`, grep rows, git-rich) inherits that size. Tool-name readouts use root body-size × 0.72 (spec 383); section labels and timers keep their existing chrome scale (`0.7em` / `0.78em`). The execution card (spec 315) is the exception: its head, timer included, is one size. The tool-card `0.88em` shrink does not apply to the payload.
 
 ## Edge Cases
 

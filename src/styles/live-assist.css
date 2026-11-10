@@ -184,8 +184,8 @@ textarea {
   padding: 1px 6px;
   border: 1px solid var(--mat-key-edge);
   border-radius: 6px;
-  background: var(--mat-key);
-  box-shadow: var(--mat-key-raise);
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
   color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font-size: var(--krypton-chrome-font-size, 11px);
   letter-spacing: 0.09em;

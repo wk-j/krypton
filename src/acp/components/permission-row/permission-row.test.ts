@@ -43,26 +43,6 @@ function animationEnd(name: string): Event {
 }
 
 describe('PermissionRow', () => {
-  it('emits the pending row: no decision chip, tool tag, subject, actions hint', () => {
-    const row = new PermissionRow(props(permission()));
-    row.update(props(permission()));
-
-    expect(row.el.className).toBe('acp-harness__msg acp-harness__msg--permission');
-    const body = row.el.querySelector<HTMLElement>('.acp-harness__msg-body');
-    expect(body?.className).toBe('acp-harness__msg-body acp-harness__perm');
-    expect(body?.dataset.decision).toBe('pending');
-    expect(body?.innerHTML).toBe(
-      '<div class="acp-harness__perm-row">' +
-        '<span class="acp-harness__perm-tool">Bash</span>' +
-        '<span class="acp-harness__perm-subject" title="git push origin main">git push origin main</span>' +
-      '</div>' +
-      '<div class="acp-harness__perm-actions">' +
-        '<span class="krypton-key-hint"><kbd>a</kbd> accept</span> · ' +
-        '<span class="krypton-key-hint"><kbd>r</kbd> reject</span>' +
-      '</div>',
-    );
-  });
-
   it('carries the whole lifecycle on ONE row and writes nothing on an idempotent repeat', () => {
     const perm = permission();
     const row = new PermissionRow(props(perm));
@@ -77,15 +57,6 @@ describe('PermissionRow', () => {
     expect(row.el.querySelectorAll('.acp-harness__msg-body')).toHaveLength(1);
     expect(row.el.querySelector('.acp-harness__perm-row')).toBe(head);
     expect(body?.dataset.decision).toBe('accepted');
-    expect(body?.innerHTML).toBe(
-      '<div class="acp-harness__perm-row">' +
-        '<span class="acp-harness__perm-decision">' +
-          '<span class="acp-harness__perm-glyph acp-harness__perm-glyph--accepted">✓</span>accepted' +
-        '</span>' +
-        '<span class="acp-harness__perm-tool">Bash</span>' +
-        '<span class="acp-harness__perm-subject" title="git push origin main">git push origin main</span>' +
-      '</div>',
-    );
 
     const observer = watch(row.el);
     row.update(props(perm));

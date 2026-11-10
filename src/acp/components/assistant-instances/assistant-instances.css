@@ -510,6 +510,7 @@
     border-top: 1px solid var(--mat-groove-lo);
     box-shadow: inset 0 1px 0 var(--mat-groove-hi);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    font-size: var(--krypton-chrome-font-size, 11px);
     text-shadow: var(--mat-engrave);
     white-space: nowrap;
     overflow: hidden;

@@ -206,8 +206,8 @@
   padding: 2px 4px;
   border: 1px solid var(--mat-key-edge);
   border-radius: 4px;
-  background: var(--mat-key);
-  box-shadow: var(--mat-key-raise);
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
   color: var(--mat-lit);
   text-shadow: var(--mat-print);
   white-space: nowrap;

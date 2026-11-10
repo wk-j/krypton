@@ -154,9 +154,9 @@ same element. The light set is the dock's aluminium set with the plate stops at 
 - **Harness.** Lane body = screen well (the window's screen fill shows through; a lane adds the
   well's inset shadow, not a second fill); lane head = plate strip with the name engraved and status as
   a lamp; zen rail = plate column of selector keys with LEDs; composer = plate with the draft line in
-  a well; transcript rows are flat text in the lane well with engraved labels; status legends
-  (tool kind, permission and question decision, execution state) are flat ink with their status LED
-  before the legend. Adjacent passive rows of the same source show one source label and a neutral etched
+  a well; transcript rows are flat text in the lane well with engraved source labels. Tool names use
+  a small BYPASS-style readout well (spec 383), with their existing identity ink and status LED inside;
+  permission/question decisions and execution states stay flat ink. Adjacent passive rows of the same source show one source label and a neutral etched
   connector (1px `--mat-groove-lo` cut + 1px `--mat-groove-hi` lip, at 65% opacity), from beneath that label through later gutters (spec 379); tool rows add an output well; permission and question
   options are keys; floating lane cards
   (peek, queue, plan, thought, grammar, heat) are small plates. The right dock column and the shown
@@ -206,6 +206,8 @@ same element. The light set is the dock's aluminium set with the plate stops at 
   repeated row.
 - A repeated row (transcript row, diff line, tool output line, file row, palette result) gets no
   box-shadow, text-shadow or gradient: at most one `border-bottom` groove and the selection tint.
+  The named spec-383 exception is the small tool-name readout (`--mat-well` +
+  `--mat-well-shadow`), never the whole row, subject or output line.
 - One `--mat-cast` per floating plate; no outer glows.
 - Budget (CLAUDE.md constraint 8) checked in the running app with the profiler HUD (spec 47):
   keypress-to-render < 16ms with 6 terminal windows and a harness with a 200-row transcript; window

@@ -600,10 +600,11 @@ tool  ⠙  execute  npm run check                                    1.4s
 tool  ✓  edit     src/acp/list.ts                     +42 −8    0.3s
 ```
 
-**Emits** `.acp-harness__tool-head > -glyph(Spinner) + -kind[data-kind] + -subject + -result + -timer`,
+**Emits** `.acp-harness__tool-head > -kind[data-kind] (containing -glyph/Spinner) + -subject + -result + -timer`,
 then `.acp-harness__tool-output > -section > -label + <pre> -text`,
 `.acp-harness__tool-diffs` (`DiffBlock`), `.acp-harness__tool-rich--diffstat|--unidiff|--gitstatus`.
 Exit status appears only in the head: success uses the status LED with no `exit 0` text, and non-zero codes keep the compact `exit N` result. No exit readout is repeated in the output body.
+The tool kind is a small BYPASS-style readout (spec 383): `--mat-well` + `--mat-well-shadow`, `1px 7px` padding, 8px radius, body-size × 0.72 and existing kind ink, with the existing status LED inside. The head/subject/output remain flat.
 
 **Live contract** — generic `appendChunk()` updates only `.acp-harness__tool-output`; recognized executions update their owning `ExecutionCard`. Render precedence is artifact redaction → subagent card → execution → job list (spec 370) → generic. Diffs and the base row's image strip remain available. A subagent card whose agents still run in the background (spec 370) stays live after the row seals and is sealed by the row once it settles or turns `last reported`.
 **Replaces** `harness-tool-render.ts:551-673,776-860,862-1060` and `patchStreamingToolBody` `:635-664`
@@ -739,6 +740,7 @@ perm ✓ accepted · auto (harness bus)
 
 **Emits** `.acp-harness__perm`; one row carries the whole pending→accepted/rejected/auto_allowed/failed
 lifecycle (spec 107), never a second row.
+Existing tool-name tags use the spec-383 readout, with full text retained in DOM/title and an inner ellipsizing span for narrow columns. A pending request has one LED: inside a visible tool tag, or at the head start when the duplicate tag is suppressed. Resolved decision LEDs remain with their flat decision labels.
 **Replaces** `harness-transcript-render.ts:952-1018`.
 
 ## 3.7 `QuestionRow`
@@ -773,6 +775,7 @@ agent  ⚠ rate_limited · 429 — retry in 32s
 
 **Emits** `.acp-harness__fs-activity(--err)`, `.acp-harness__fs-review(--resolved)` (uses `DiffBlock`),
 `.acp-harness__provider-error`.
+Filesystem operation verbs use the same compact readout (spec 383) instead of separate emoji icons. Activity LEDs derive from `ok`; write-review LEDs derive from `resolved` (pending/accepted/rejected), through a label-local `data-state`. Resolution updates preserve the paired diff nodes.
 **Replaces** `harness-transcript-render.ts:827-852,854-907,909-950`.
 
 ## 3.11 `InterLaneRow`

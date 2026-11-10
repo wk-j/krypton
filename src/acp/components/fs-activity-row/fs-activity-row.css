@@ -10,8 +10,8 @@
        src/styles/acp-harness.css:5874-5915   (the identical second copy)
 
    theme-scheme.css declares nothing for this block, so there is no
-   `krypton.scheme` section. Spec 366: a flat one-line row on the screen; only
-   a failed read/write takes colour, the theme's error ink. */
+   `krypton.scheme` section. Spec 383: the operation is a small readout with
+   a status LED; the rest of the row stays flat and only failures take error ink. */
 
 @layer krypton.component {
   /* Spec 88 — fs activity chip */
@@ -28,15 +28,37 @@
     color: var(--agent-error, #ff6b8b);
   }
 
-  .acp-harness__fs-activity-icon {
-    flex: 0 0 auto;
+  .acp-harness__fs-activity-verb {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    padding: 1px 7px;
+    border: 0;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    font-size: calc(var(--krypton-font-size, 13px) * 0.72);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-shadow: none;
+    white-space: nowrap;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   }
 
-  .acp-harness__fs-activity-verb {
-    flex: 0 0 auto;
-    width: 6ch;
-    display: inline-block;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+  .acp-harness__fs-activity-verb::before {
+    content: '';
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--krypton-success-rgb, 57, 255, 127)) 45%, rgba(var(--krypton-success-rgb, 57, 255, 127), 0.55) 100%);
+    box-shadow: none;
+  }
+
+  .acp-harness__fs-activity--err .acp-harness__fs-activity-verb::before {
+    background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--krypton-danger-rgb, 255, 58, 92)) 45%, rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.55) 100%);
+    box-shadow: 0 0 4px rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.9), 0 0 10px rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.4);
   }
 
   .acp-harness__fs-activity--err .acp-harness__fs-activity-verb {

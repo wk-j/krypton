@@ -8,7 +8,7 @@
      the armed auto-approval badge is a lit status capsule (steady);
    - message labels: amber label type (no text-shadow: transcript rows are
      repeated rows, DESIGN.md "Performance");
-   - tool rows: a status LED, the tool name in label type, output in a well;
+   - tool rows: a tool-name readout with a status LED, output in a well;
    - autocomplete and @-mention lists: a floating plate holding one well;
    - Context view: a plate with an engraved header of readouts, the message
      list as one well with grooves, the detail pane as a well.
@@ -710,7 +710,7 @@
   color: var(--krypton-cursor, var(--av-ink-1));
 }
 
-/* ═══ Tool rows — status LED, label-type name, output well ═════ */
+/* ═══ Tool rows — tool-name readout with status LED, output well ═════ */
 
 .agent-view__tool-row {
   display: flex;
@@ -729,23 +729,22 @@
 
 /* Status LED: lit amber while the tool runs (steady), unlit when done,
    lit fault on error. */
-.agent-view__tool-header::before {
+.agent-view__tool-name::before {
   content: '';
   flex: 0 0 auto;
   width: 6px;
   height: 6px;
-  margin-right: 2px;
   border-radius: 50%;
   background: var(--mat-lens-on);
   box-shadow: var(--mat-lens-glow);
 }
 
-.agent-view__tool-row--done .agent-view__tool-header::before {
+.agent-view__tool-row--done .agent-view__tool-name::before {
   background: var(--mat-lens-off);
   box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-.agent-view__tool-row--error .agent-view__tool-header::before {
+.agent-view__tool-row--error .agent-view__tool-name::before {
   --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
   background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
   box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4);
@@ -765,12 +764,17 @@
   color: var(--av-ink-4);
 }
 
-/* Spinner / ✓ / ✗ glyph beside the LED — state in words as well as light. */
+/* Keep spinner / ✓ / ✗ text available without a second visible status cell. */
 .agent-view__tool-icon {
-  color: var(--av-ink-3);
-  width: 1.2ch;
-  flex-shrink: 0;
-  font-size: var(--krypton-chrome-font-size, 11px);
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .agent-view__tool-row--error .agent-view__tool-icon,
@@ -779,11 +783,22 @@
 }
 
 .agent-view__tool-name {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 7px;
+  border: 0;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   color: var(--mat-silk);
-  font-size: var(--krypton-chrome-font-size, 11px);
+  font-size: calc(var(--krypton-font-size, 13px) * 0.72);
   font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.13em;
+  text-shadow: none;
+  white-space: nowrap;
 }
 
 .agent-view__tool-args {

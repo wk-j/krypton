@@ -10,8 +10,8 @@
 // their identity.
 //
 // Ported from `harness-transcript-render.ts:854-907` (`renderFsWriteReviewBody`)
-// plus its dispatcher branch at `:362-365`. Markup is unchanged — `DiffBlock`
-// in `paired` mode emits exactly what `renderDiffPreview()` wrote as a string.
+// plus its dispatcher branch at `:362-365`. Spec 383 gives the write label a
+// status readout; the paired `DiffBlock` preview remains unchanged.
 
 import { el, type ElChild } from '../../../ui/dom';
 import { keyHint, type KeyHint } from '../../../ui/kbd';
@@ -42,7 +42,7 @@ function actionNodes(): ElChild[] {
 
 export class FsWriteReviewRow extends TranscriptRow {
   private readonly head = el('div', { class: 'acp-harness__fs-review-head' });
-  private readonly verb = el('span', { class: 'acp-harness__fs-review-verb', text: '✏️ write' });
+  private readonly verb = el('span', { class: 'acp-harness__fs-review-verb', text: 'write' });
   private readonly path = el('span', { class: 'acp-harness__fs-review-path' });
   private readonly diff = new DiffBlock('paired');
   private rows: readonly DiffRow[] = [];
@@ -72,6 +72,7 @@ export class FsWriteReviewRow extends TranscriptRow {
       body.textContent = next.item.text;
       return;
     }
+    this.verb.dataset.state = payload.resolved ?? 'pending';
     // An empty path still needs a cell, as in the fs-activity row.
     this.path.textContent = payload.path || '«empty»';
     this.path.title = payload.path;

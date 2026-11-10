@@ -5,8 +5,8 @@
 
    Spec 366 (DESIGN.md "Parts"): a resolved row leads with a flat decision
    label whose status LED sits before it, like a tool row. A pending row is the one
-   thing in the transcript the human must act on (ADR-0017), so it lights an
-   amber lamp before its head; the key hint under it is printed legend.
+   thing in the transcript the human must act on (ADR-0017), so its amber lamp
+   sits inside the tool readout when present, or before the head otherwise.
 
    `.acp-harness__msg--permission .acp-harness__msg-body` (:3534-3536) stays
    behind: its subject is the `acp-harness__msg` block, which `TranscriptRow`
@@ -28,6 +28,7 @@
      chip (with its LED) + inline-subject layout in the body column. */
   .acp-harness__perm-row {
     display: flex;
+    min-width: 0;
     flex-wrap: wrap;
     align-items: center;
     gap: 8px;
@@ -35,9 +36,10 @@
     font-size: var(--krypton-font-size, 13px);
   }
 
-  /* Pending: a lit amber lamp before the subject. There is no chip yet, so the
-     lamp stands on its own at the head's start, where the resolved chip goes. */
-  .acp-harness__msg-body.acp-harness__perm[data-decision='pending'] .acp-harness__perm-row::before {
+  /* Pending: keep one amber lamp, inside a real tool tag or at the head's
+     start when the duplicate-name tag is suppressed. */
+  .acp-harness__msg-body.acp-harness__perm[data-decision='pending'] .acp-harness__perm-row:not(:has(> .acp-harness__perm-tool))::before,
+  .acp-harness__msg-body.acp-harness__perm[data-decision='pending'] .acp-harness__perm-tool::before {
     content: '';
     flex: 0 0 auto;
     width: 6px;
@@ -92,8 +94,8 @@
     box-shadow: none;
   }
 
-  /* Mirrors .acp-harness__tool-kind — a flat ink legend, with the decision
-     LED before it. No key face on a repeated transcript row. */
+  /* The decision remains a flat ink legend with its LED before it; only the
+     separate tool-name tag gets the spec 383 readout. */
   .acp-harness__perm-decision {
     display: inline-flex;
     flex: none;
@@ -107,8 +109,28 @@
   }
 
   .acp-harness__perm-tool {
+    display: inline-flex;
     flex: none;
+    max-width: 100%;
+    align-items: center;
+    gap: 6px;
+    padding: 1px 7px;
+    border: 0;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    font-size: calc(var(--krypton-font-size, 13px) * 0.72);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-shadow: none;
+    white-space: nowrap;
     color: var(--agent-gold, #ffd166);
+  }
+
+  .acp-harness__perm-tool-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   /* Mirrors .acp-harness__tool-subject: flex so the command sits inline with a

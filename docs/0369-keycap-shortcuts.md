@@ -121,8 +121,8 @@ kbd {
   padding: 0 4px;
   border: 1px solid var(--mat-key-edge);
   border-radius: 4px;
-  background: var(--mat-key);
-  box-shadow: var(--mat-key-raise);
+  background: var(--mat-key-down);
+  box-shadow: var(--mat-key-sunk);
   color: var(--mat-lit);
   font: inherit;
   font-size: 0.92em;
@@ -135,6 +135,8 @@ kbd {
 
 A component may restyle a cap only for size in dense rows; it never recolours a cap (DESIGN.md:
 key caps take no theme colours). The eight per-surface `kbd` rules are deleted.
+
+Since [spec 382](./0382-recessed-shortcut-keycaps.md), shortcut caps have a permanent recessed appearance. This does not mean a key is held or selected: no translation, input-state change or accessibility-state change is added. The Harness gallery's scoped cap recipe matches the shared rule. Existing custom hint labels, question hotkeys and Live Assist header shortcuts use the same pressed material without a markup migration; ordinary action buttons keep their raised idle face.
 
 ### `KeyHintBar`
 
@@ -180,9 +182,8 @@ than `⇧A` for Shift+a; non-pressable key faces become cap + legend instead of 
 
 ## Out of Scope
 
-- The loopback app (`src/loopback/`): already draws `<kbd>` with its own design system.
-- Spans that already look like caps (which-key, hint-mode labels, question hotkeys, ticket and
-  dictation keys, Live Assist header caps): no span → `<kbd>` churn.
+- The generic loopback app (`src/loopback/`): already draws `<kbd>` with its own design system. The Harness gallery's production preview is the scoped exception (spec 381/382).
+- Converting existing cap-like spans to `<kbd>` (which-key, hint-mode labels, question hotkeys, ticket and dictation keys, Live Assist header caps): no markup churn. Spec 382 changes only the raised shortcut-cap recipes; flat labels and action controls stay as they are.
 - Text printed into a terminal (`backend-updates.ts` `printf`), the keyboard overlay, prompts sent to
   agents, hash-command usage text (`#queue [clear | edit N]`), music repeat/shuffle state `[R]`/`[S]`.
 - Changing any key binding.

@@ -4,7 +4,8 @@
 // payload is written once when the agent's filesystem call settles.
 //
 // Ported from `harness-transcript-render.ts:827-852` (`renderFsActivityBody`)
-// plus its dispatcher branch at `:358-361`. Markup is unchanged.
+// plus its dispatcher branch at `:358-361`. Spec 383 replaces the emoji with
+// a status LED inside the operation readout.
 //
 // Owns the block `acp-harness__fs-activity`, whose rules sat inside the
 // byte-identical span `acp-harness.css` declares TWICE — see the header of
@@ -16,7 +17,6 @@ import type { ComponentDef } from '../types';
 import './fs-activity-row.css';
 
 export class FsActivityRow extends TranscriptRow {
-  private readonly icon = el('span', { class: 'acp-harness__fs-activity-icon' });
   private readonly verb = el('span', { class: 'acp-harness__fs-activity-verb' });
   private readonly path = el('span', { class: 'acp-harness__fs-activity-path' });
   private error: HTMLElement | null = null;
@@ -44,14 +44,13 @@ export class FsActivityRow extends TranscriptRow {
       body.textContent = next.item.text;
       return;
     }
-    this.icon.textContent = payload.ok ? (payload.method === 'read' ? '📖' : '✏️') : '✗';
     this.verb.textContent = payload.ok
       ? (payload.method === 'read' ? 'read' : 'wrote')
       : `${payload.method} failed`;
-    // An empty path still needs a cell, or the row collapses to two glyphs.
+    // An empty path still needs a cell beside the operation readout.
     this.path.textContent = payload.path || '«empty»';
     this.path.title = payload.path;
-    const nodes: Node[] = [this.icon, this.verb, this.path];
+    const nodes: Node[] = [this.verb, this.path];
     if (payload.error) {
       if (!this.error) this.error = el('span', { class: 'acp-harness__fs-activity-error' });
       this.error.textContent = payload.error;

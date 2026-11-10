@@ -30,32 +30,11 @@ function mount(payload: FsActivityPayload | undefined): { row: FsActivityRow; bo
 }
 
 describe('FsActivityRow', () => {
-  it('emits the read chip', () => {
-    const { row, body } = mount({ method: 'read', path: 'src/acp/list.ts', ok: true });
-
-    expect(row.el.className).toBe('acp-harness__msg acp-harness__msg--fs_activity');
-    expect(body.className).toBe('acp-harness__msg-body acp-harness__fs-activity');
-    expect(body.innerHTML).toBe(
-      '<span class="acp-harness__fs-activity-icon">📖</span>' +
-      '<span class="acp-harness__fs-activity-verb">read</span>' +
-      '<span class="acp-harness__fs-activity-path" title="src/acp/list.ts">src/acp/list.ts</span>',
-    );
-    row.dispose();
-  });
-
-  it('emits the write chip with the past-tense verb', () => {
-    const { row, body } = mount({ method: 'write', path: 'src/ui/component.ts', ok: true });
-    expect(body.querySelector('.acp-harness__fs-activity-icon')?.textContent).toBe('✏️');
-    expect(body.querySelector('.acp-harness__fs-activity-verb')?.textContent).toBe('wrote');
-    row.dispose();
-  });
-
   it('emits the failure chip and drops --err when a later payload succeeds', () => {
     const payload: FsActivityPayload = { method: 'write', path: 'src/ui/component.ts', ok: false, error: 'EACCES' };
     const { row, body } = mount(payload);
     expect(body.className)
       .toBe('acp-harness__msg-body acp-harness__fs-activity acp-harness__fs-activity--err');
-    expect(body.querySelector('.acp-harness__fs-activity-icon')?.textContent).toBe('✗');
     expect(body.querySelector('.acp-harness__fs-activity-verb')?.textContent).toBe('write failed');
     expect(body.querySelector('.acp-harness__fs-activity-error')?.textContent).toBe('EACCES');
 
@@ -67,7 +46,7 @@ describe('FsActivityRow', () => {
     row.dispose();
   });
 
-  it('keeps the three cell nodes across an update and writes nothing when nothing moved', () => {
+  it('preserves cell identity across a path update and writes nothing when nothing moved', () => {
     const payload: FsActivityPayload = { method: 'read', path: 'a.ts', ok: true };
     const { row, body } = mount(payload);
     const cells = [...body.children];

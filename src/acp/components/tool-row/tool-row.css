@@ -29,8 +29,8 @@
    (`harness-tool-render.ts:1264-1303`, which the cutover keeps) paints
    `__grep-row*` + `__tok-*` inside this row's output.
 
-   Spec 366 (DESIGN.md "Parts", "Performance"): the head is a flat kind label
-   with the status LED before the legend, then the subject; every output
+   Spec 383: the tool name is a compact readout like BYPASS, with its status
+   LED inside; the subject stays flat. Spec 366 still applies to output: every
    section is one well with flat lines inside, aligned with the label. A plain
    output section (`content`, `output`,
    `stdout`, `text`) has no label; any other section label is silk label type. A tool
@@ -112,21 +112,26 @@
     box-shadow: var(--mat-lens-glow);
   }
 
-  /* The kind label: flat ink on the screen, tinted by its kind (spec 235
-     palette, now through tokens), with the status LED before the legend.
-     No key face — a transcript row repeats this hundreds of times. Unknown
-     kinds keep ink. */
+  /* Spec 383: the BYPASS readout material, with the existing kind ink and
+     status LED. Unknown kinds keep neutral ink. Only this small label gets
+     the recessed face; the row and subject stay flat. */
   .acp-harness__tool-kind {
     --tool-kind-ink: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66));
 
     display: inline-flex;
     flex: none;
     align-items: center;
-    gap: 5px;
+    gap: 6px;
+    padding: 1px 7px;
+    border: 0;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
     white-space: nowrap;
     text-transform: uppercase;
-    letter-spacing: 0.09em;
-    font-size: 0.78em;
+    letter-spacing: 0.08em;
+    font-size: calc(var(--krypton-font-size, 13px) * 0.72);
+    text-shadow: none;
     color: var(--tool-kind-ink);
   }
 

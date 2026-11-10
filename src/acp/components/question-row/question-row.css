@@ -5,7 +5,7 @@
    Spec 366 (DESIGN.md "Parts"): a pending question lights an amber lamp before
    its head (the human must act, ADR-0017); its options are one well split by
    grooves, the cursor row is the full-row selection tint (ADR-0027) and each
-   hotkey is a key cap that latches down when its option is picked. A resolved
+   hotkey is a recessed key cap whose ink lights when its option is picked. A resolved
    row is a decision chip with its status LED inside, like a tool row.
 
    `.acp-harness__permission-options` (:5046-5053) and the
@@ -161,8 +161,8 @@
     padding: 0 4px;
     border: 1px solid var(--mat-key-edge);
     border-radius: var(--krypton-border-radius, 8px);
-    background: var(--mat-key);
-    box-shadow: var(--mat-key-raise);
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.78));
     font-weight: 700;
     text-align: center;
@@ -170,8 +170,6 @@
   }
 
   .acp-harness__question-option--on .acp-harness__question-key {
-    background: var(--mat-key-down);
-    box-shadow: var(--mat-key-sunk);
     color: var(--mat-lit);
   }
 
