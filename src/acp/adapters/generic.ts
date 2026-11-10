@@ -1,9 +1,8 @@
 // Spec 380 — the generic adapter: the ACP spec plus the tolerant readers every
 // backend gets. Backend adapters (`claude.ts`, `codex.ts`, …) only refine it.
 
-import { classifyBashCommand } from '../../agent/tools';
+import { classifyBashCommand } from '../../agent/bash-risk';
 import type { AskUserOption, AskUserQuestion } from '../ask-user-question';
-import { truncateInline } from '../harness-format';
 import { cleanToolTitle } from '../harness-tool-render';
 import {
   TOOL_DIFF_DISPLAY_CHAR_LIMIT,
@@ -11,6 +10,7 @@ import {
   TOOL_DIFF_TEXT_CHAR_LIMIT,
   boundToolDiffText,
 } from '../harness-tool-retention';
+import { truncateInline } from '../text-truncate';
 import type {
   AcpAgentMode,
   AcpAvailableCommand,

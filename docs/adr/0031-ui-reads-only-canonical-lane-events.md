@@ -41,8 +41,10 @@ absent. `src/acp/adapters/wire-boundary.test.ts` enforces the boundary.
   captured; a deviation gets a backend adapter, never a branch in a row or the view.
 - `LaneEvent` carries no backend id. Components name the backend only for identity (logo, label, the
   session picker's target, the launch-trust chip); the guard test pins those uses by count.
-- The decoder and `harness-transcript-items.ts` import nothing from `@tauri-apps`, so the spec 381
-  gallery can run them in the browser.
+- The decoder and the shared row builders (`harness-transcript-items.ts`, `ask-user-question.ts`) reach
+  nothing from `@tauri-apps`, directly or through any import, so the spec 381 gallery can run them in
+  the browser. Pure helpers they share with Tauri code live in Tauri-free modules
+  (`text-truncate.ts`, `image-paths.ts`, `agent/bash-risk.ts`).
 - Spec 380 phases 1–4a moved every wire reader into `src/acp/adapters/`; captured-wire fixtures and the
   cross-backend contract test (phase 4b) still have to fill the matrix with `yes` / `no`.
 
@@ -56,5 +58,5 @@ Applies to: `src/**/*.ts`
 - No harness component under `src/acp/components/**`, and no lane-event path of `AcpHarnessView`
   (`onLaneEvent`, `renderTool`, `addPermission`, `addAskUser`, `collectToolImages`,
   `noteToolActivity`), decides what to show from the backend id.
-- Nothing under `src/acp/adapters/**` or in `src/acp/harness-transcript-items.ts` imports
-  `@tauri-apps`.
+- Nothing under `src/acp/adapters/**`, nor `src/acp/harness-transcript-items.ts` or
+  `src/acp/ask-user-question.ts`, reaches `@tauri-apps` through any chain of runtime imports.

@@ -6,8 +6,8 @@
 // The spec 96 identity rules and the args preview moved here from
 // `harness-permission-scan.ts` in phase 4; the tool-name sets stay there.
 
-import { truncate } from '../harness-format';
 import { HARNESS_AUTO_ALLOW_TOOL_NAMES } from '../harness-permission-scan';
+import { truncate } from '../text-truncate';
 import type { PermissionOption, ToolCall } from '../types';
 import { permissionCommandIsHighRisk } from './generic';
 import type { ToolCallDecoder } from './tool';

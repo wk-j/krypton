@@ -29,7 +29,7 @@ Add a loopback surface, **Harness components** (`/harness-gallery`), built on th
 - **Rows mount standalone.** `createTranscriptRow(props)` (`transcript/rows.ts:65`) takes `RowProps {item, isNew, streaming, lane, projectDir, resolveLocalImages}`, and `lane: null` is allowed. Rows must be direct siblings in `.acp-harness__lane-body` for the spec 379 connector to draw.
 - **Harness sheets are safe in the merged bundle.** They are BEM-scoped (`.acp-harness*`) inside `krypton.*` layers. `harness-shared.css` has 1,685 lines, and component sheets arrive with their component imports. Merged into the loopback `app.css`, they match nothing outside the stage. `materials.css` is already bundled through GenUI.
 - **Lane chrome needs a whole lane.** `LaneHead` and `LaneStats` take a `HarnessLane`, and lane builders exist only as private copies in five test files. `PlanPanel` takes only `{entries, collapsed}`.
-- **Item payloads must come from shared builders.** Today they are built inside `AcpHarnessView` (`renderTool`, `describePermission`). A gallery that built them itself would show its own idea of a row. Spec 380 now extracts the non-trivial ones as pure functions (`harness-transcript-items.ts`), and the gallery reuses them.
+- **Item payloads must come from shared builders.** Before spec 380 they were built inside `AcpHarnessView` (`renderTool`, `describePermission`). A gallery that built them itself would show its own idea of a row. Spec 380 moved the tool and permission builders into pure functions in `harness-transcript-items.ts` (`toolPayloadFromView`, `permissionPayloadFromRequest`). Question rows already came from the pure `createAskUserCardState` / `payloadFromCard` in `ask-user-question.ts`. The gallery reuses all of them.
 
 ## Prior Art
 
@@ -90,7 +90,7 @@ export interface GalleryEntry {
 }
 ```
 
-`item` inputs are used only for rows whose item is plain data: assistant, thought, user, fs activity, fs write review, provider error, usage and system notices. Tool, permission and question previews always come from `toolPayloadFromView`, `permissionItemFromEvent` and `questionItemFromEvent`, the functions `AcpHarnessView` calls.
+`item` inputs are used only for rows whose item is plain data: assistant, thought, user, fs activity, fs write review, provider error, usage and system notices. Tool, permission and question previews always come from the functions `AcpHarnessView` calls: `toolPayloadFromView` and `permissionPayloadFromRequest` (`harness-transcript-items.ts`), and `payloadFromCard(requestId, questions, createAskUserCardState(questions), wire)` (`ask-user-question.ts`).
 
 ### Entries
 
@@ -167,7 +167,7 @@ None.
 - **Images:** examples use `data:` URLs only, which the CSP's `img-src 'self' data:` allows.
 - **Running states:** the spinner is the shared frame counter. No new `infinite` animation is added (CLAUDE.md constraint 10).
 - **Fixture for an unknown backend:** decoded by the generic adapter and labelled with its directory name.
-- **Adapters in the browser:** `src/acp/adapters/**` and `harness-transcript-items.ts` import nothing from `@tauri-apps`, which the spec 380 guard test enforces, so the Backends view decodes in the page.
+- **Adapters in the browser:** `src/acp/adapters/**`, `harness-transcript-items.ts` and `ask-user-question.ts` reach nothing from `@tauri-apps`, directly or through any import. The spec 380 guard test enforces this, so the Backends view decodes in the page.
 - **Fixture size:** spec 380's contract test caps each fixture at 64 KB, so the gallery chunk stays small. The chunk loads only on this surface.
 - **A row reaching for lane data** (thumbnails, Git refs): with `lane: null` and `projectDir: null` it paints without them, as a cold row would. The `invoke` stub test catches any regression.
 

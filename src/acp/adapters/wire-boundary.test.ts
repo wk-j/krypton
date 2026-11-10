@@ -40,6 +40,9 @@ const COMPONENT_BACKEND_ID_ALLOWED: Readonly<Record<string, number>> = {
   'acp/components/session-picker/index.ts': 4,
 };
 
+/** The pure row-payload builders the view and the spec 381 gallery share. */
+const ITEM_BUILDERS: readonly string[] = ['acp/harness-transcript-items.ts', 'acp/ask-user-question.ts'];
+
 function posix(path: string): string {
   return path.split(sep).join('/');
 }
@@ -117,17 +120,31 @@ function identifiersNamed(source: ts.SourceFile, root: ts.Node, name: string): s
   return found;
 }
 
-function tauriImports(source: ts.SourceFile): string[] {
-  const found: string[] = [];
+interface ModuleRef {
+  readonly module: string;
+  readonly at: string;
+}
+
+/** Modules a file loads at runtime: static and dynamic imports and re-exports; type-only ones are erased. */
+function runtimeImports(source: ts.SourceFile): ModuleRef[] {
+  const found: ModuleRef[] = [];
   const visit = (node: ts.Node): void => {
     let module: string | null = null;
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      module = node.moduleSpecifier ? stringKey(node.moduleSpecifier) : null;
+    if (ts.isImportDeclaration(node)) {
+      const clause = node.importClause;
+      const bindings = clause?.namedBindings;
+      const typeOnly = !!clause && (clause.isTypeOnly || (
+        !clause.name && !!bindings && ts.isNamedImports(bindings)
+        && bindings.elements.length > 0 && bindings.elements.every((element) => element.isTypeOnly)
+      ));
+      if (!typeOnly) module = stringKey(node.moduleSpecifier);
+    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier && !node.isTypeOnly) {
+      module = stringKey(node.moduleSpecifier);
     } else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
       const [arg] = node.arguments;
       module = arg ? stringKey(arg) : null;
     }
-    if (module?.startsWith('@tauri-apps')) found.push(`${where(source, node)} ${module}`);
+    if (module) found.push({ module, at: where(source, node) });
     ts.forEachChild(node, visit);
   };
   visit(source);
@@ -138,6 +155,36 @@ const FILES = sourceFiles(SRC).map((path) => {
   const rel = posix(relative(SRC, path));
   return { rel, source: parse(path, readFileSync(path, 'utf8')) };
 });
+const BY_PATH = new Map(FILES.map((file) => [file.source.fileName, file]));
+
+function resolveLocal(source: ts.SourceFile, module: string): (typeof FILES)[number] | undefined {
+  if (!module.startsWith('.')) return undefined;
+  const base = resolve(dirname(source.fileName), module);
+  return BY_PATH.get(base.endsWith('.ts') ? base : `${base}.ts`) ?? BY_PATH.get(join(base, 'index.ts'));
+}
+
+/**
+ * Every `@tauri-apps` import reachable at runtime from `entries`, each with the
+ * import chain that reaches it.
+ */
+function reachableTauriImports(entries: readonly (typeof FILES)[number][]): string[] {
+  const found: string[] = [];
+  const via = new Map<string, string>(entries.map((file) => [file.rel, file.rel]));
+  const queue = [...entries];
+  for (let file = queue.shift(); file; file = queue.shift()) {
+    for (const ref of runtimeImports(file.source)) {
+      if (ref.module.startsWith('@tauri-apps')) {
+        found.push(`${ref.at} ${ref.module} (via ${via.get(file.rel)})`);
+        continue;
+      }
+      const next = resolveLocal(file.source, ref.module);
+      if (!next || via.has(next.rel)) continue;
+      via.set(next.rel, `${via.get(file.rel)} → ${next.rel}`);
+      queue.push(next);
+    }
+  }
+  return found;
+}
 
 function isBoundaryOwner(rel: string): boolean {
   return rel.startsWith('acp/adapters/') || rel === 'acp/client.ts';
@@ -185,11 +232,29 @@ describe('wire boundary (spec 380)', () => {
     expect(violations).toEqual([]);
   });
 
-  it('keeps the decoder and the item builders free of Tauri imports (spec 381 runs them in a browser)', () => {
-    const violations = FILES
-      .filter((file) => file.rel.startsWith('acp/adapters/') || file.rel === 'acp/harness-transcript-items.ts')
-      .flatMap((file) => tauriImports(file.source));
-    expect(violations).toEqual([]);
+  it('keeps the decoder and the item builders free of Tauri, directly or through any import (spec 381 runs them in a browser)', () => {
+    const entries = FILES.filter(
+      (file) => file.rel.startsWith('acp/adapters/') || ITEM_BUILDERS.includes(file.rel),
+    );
+    expect(entries.filter((file) => ITEM_BUILDERS.includes(file.rel))).toHaveLength(ITEM_BUILDERS.length);
+    expect(entries.length).toBeGreaterThan(10);
+    expect(reachableTauriImports(entries)).toEqual([]);
+  });
+
+  it('finds a Tauri import behind a chain of imports, but not behind a type-only one', () => {
+    const view = FILES.find((file) => file.rel === 'acp/acp-harness-view.ts');
+    expect(view).toBeDefined();
+    expect(reachableTauriImports([view!]).length).toBeGreaterThan(0);
+    const probe = parse(join(SRC, 'acp', 'adapters', 'probe.ts'), [
+      "import type { HarnessImage } from '../harness-view-types';",
+      "import { type LaneActivity } from '../harness-view-types';",
+      "export type { ImageFileResult } from '../harness-images';",
+    ].join('\n'));
+    expect(runtimeImports(probe)).toEqual([]);
+    const reaching = parse(join(SRC, 'acp', 'adapters', 'probe.ts'), "import { makeId } from '../harness-format';");
+    expect(reachableTauriImports([{ rel: 'acp/adapters/probe.ts', source: reaching }])).toEqual([
+      expect.stringMatching(/^acp\/harness-format\.ts:\d+ @tauri-apps\/api\/core \(via acp\/adapters\/probe\.ts → acp\/harness-format\.ts\)$/),
+    ]);
   });
 
   it('catches every wire read form and ignores look-alikes', () => {

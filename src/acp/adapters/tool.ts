@@ -7,7 +7,7 @@
 
 import { boundedOutputLines, cleanToolTitle, isGitDiffCommand } from '../harness-tool-render';
 import { truncateRetainedText } from '../harness-tool-retention';
-import { scanValueForImagePaths } from '../harness-images';
+import { scanValueForImagePaths } from '../image-paths';
 import type { ContentBlock, ToolCall, ToolCallContent, ToolCallUpdate } from '../types';
 import {
   contentOutputSections,

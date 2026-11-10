@@ -11,21 +11,14 @@ import type {
   ReviewFinding,
 } from './types';
 import type { LaneActivity } from './harness-view-types';
+import { truncate } from './text-truncate';
+
+export { truncate, truncateInline } from './text-truncate';
 
 export function basename(path: string): string {
   const trimmed = path.replace(/\/+$/, '');
   const idx = trimmed.lastIndexOf('/');
   return idx === -1 ? trimmed : trimmed.slice(idx + 1) || trimmed;
-}
-
-export function truncate(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
-}
-
-export function truncateInline(value: string, max: number): string {
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  if (normalized.length <= max) return normalized;
-  return `${normalized.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
 }
 
 /** Thought rows are clamped to ~4 lines. Codex `\n\n` section breaks (and

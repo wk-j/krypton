@@ -224,7 +224,7 @@ Each adapter exports `supplies`: for `exit`, `subagents`, `turnState`, `usageCos
 - **`wire-boundary.test.ts`.**
   - Scan `src/**/*.ts`, excluding tests, `src/acp/adapters/**` and `src/acp/client.ts`. Fail on property access to `rawInput`, `rawOutput`, `_meta` or `sessionUpdate` (matched as `.name` or `['name']`, so BEM `__meta` classes do not match), and on imports of the wire `ToolCall*` types.
   - Also fail on `backendId` inside `src/acp/components/**` and inside the bodies of `onLaneEvent`, `renderTool`, `addPermission`, `addAskUser`, `collectToolImages` and `noteToolActivity`. In components, the identity uses that existed before 4a (logo, label, session-picker target, launch-trust chip) are pinned by count instead; see the Phase 4a deviations.
-  - Fail on any `@tauri-apps` import under `src/acp/adapters/**` or in `harness-transcript-items.ts`. Both stay pure, so the spec 381 gallery can run them in the browser.
+  - Fail on any `@tauri-apps` import under `src/acp/adapters/**` or in `harness-transcript-items.ts`, direct or reached through other imports (see the Phase 4a deviations). Both stay pure, so the spec 381 gallery can run them in the browser.
 
 ### Phases
 
@@ -361,7 +361,7 @@ Plain harness tool names that carry their server only in `rawInput` now prompt. 
 - **Guard test (`adapters/wire-boundary.test.ts`):**
   - It reads the TypeScript syntax tree, so comments, strings and BEM classes never match.
   - It fails on `.key`, `['key']` and `{ key }` reads of `rawInput`, `rawOutput`, `_meta` and `sessionUpdate`, and on any import or re-export of `ToolCall`, `ToolCallUpdate` or `ToolCallContent` from `src/acp/types.ts`. It skips tests, `src/acp/adapters/**` and `src/acp/client.ts`.
-  - It fails on `backendId` in the six named view methods, and on any `@tauri-apps` import, static or dynamic, under `src/acp/adapters/**` and in `harness-transcript-items.ts`.
+  - It fails on `backendId` in the six named view methods, and on any `@tauri-apps` import, static or dynamic, that `src/acp/adapters/**`, `harness-transcript-items.ts` or `ask-user-question.ts` reach through any chain of runtime imports. Type-only imports don't count.
   - A probe case checks that the scanner catches each form and ignores the look-alikes.
 - **Supply matrix:**
   - `SupplyMatrix` / `Supply` in `adapters/types.ts`. `LaneAdapter.supplies` is required. `UNVERIFIED_SUPPLIES` is the starting value, and the generic adapter keeps it.
@@ -376,9 +376,14 @@ Plain harness tool names that carry their server only in `rawInput` now prompt. 
       - `session-picker`: which backend's sessions it lists.
     - The guard pins those uses by count (4, 8 and 4). Any other component, or a new use in these three, fails.
   - **Subagent shapes stay in one module** (`adapters/subagents.ts`). The plan gave each shape to its own adapter. The OMP→Claude→Codex order still runs on all three adapters, as before, so no lane changes behaviour.
-  - **The Tauri rule checks direct imports, as specified.** The decoder still reaches `@tauri-apps/api/core` through other modules: `harness-images.ts`, `harness-format.ts`, and `agent/tools.ts` → `profiler/ipc.ts`. Spec 381 has to cut or stub those before it runs the decoder in a browser.
+  - **The Tauri rule checks the whole import chain, not only direct imports** (added while preparing spec 381, 2026-11-11). The decoder used to reach `@tauri-apps/api/core` through `harness-images.ts`, `harness-format.ts` and `agent/tools.ts` → `profiler/ipc.ts`. The pure helpers it needs moved into Tauri-free modules, which the old modules re-export:
+    - `classifyBashCommand` → `src/agent/bash-risk.ts`
+    - `truncate` / `truncateInline` → `src/acp/text-truncate.ts`
+    - the image-path scanner → `src/acp/image-paths.ts`
+
+    The guard now follows every runtime import from the adapters and the shared item builders (`harness-transcript-items.ts`, `ask-user-question.ts`). It fails on any `@tauri-apps` import it reaches and names the chain.
   - **Some readers stay in place.** They read decoded text or a plain value, never a wire key:
-    - `harness-images.ts` `scanValueForImagePaths`.
+    - `scanValueForImagePaths` (now in `image-paths.ts`), which walks a plain value.
     - `cleanToolTitle`, `boundedOutputLines` and `normalizeToolDump` in `harness-tool-render.ts`, which rows also use.
 - **Verified:** `npm run check`, `npm run build`, the full `npx vitest run` (300 files, 3,616 tests; `src/acp/adapters` 68) and `git diff --check`. No Rust changed in 4a.
 
