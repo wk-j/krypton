@@ -3,22 +3,26 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-import type { ToolPayload } from './harness-view-types';
 import {
-  GROK_RAW_OUTPUT_TYPES,
-  boundedOutputLines,
-  mergeToolCall,
-  extractGrepQuery,
   extractToolExit,
   extractToolExitCode,
+  mergeToolCall,
+  peelExitPrefix,
+} from './adapters/generic';
+import {
+  GROK_RAW_OUTPUT_TYPES,
   formatGrokFileMatches,
-  grepHitNeedles,
   grokRawOutputSections,
+} from './adapters/grok';
+import type { ToolPayload } from './harness-view-types';
+import {
+  boundedOutputLines,
+  extractGrepQuery,
+  grepHitNeedles,
   isGrepLikeOutput,
   normalizeToolDump,
   parseGrepDump,
   parseGrepLine,
-  peelExitPrefix,
   renderGrepSection,
   shouldRenderExecuteExit,
   stripGrokReadLineAnchors,

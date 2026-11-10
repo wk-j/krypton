@@ -16,7 +16,7 @@ Add a **separate, dedicated AI agent window** that speaks the [Agent Client Prot
 
 - **Transport**: stdio + newline-delimited JSON-RPC 2.0, UTF-8, no embedded newlines, stderr is for logs only.
 - **Lifecycle**: `initialize` (negotiate `protocolVersion`, exchange `clientCapabilities` / `agentCapabilities`) → optional `authenticate` → `session/new` → `session/prompt` (request) with `session/update` notifications streaming back → response with `stopReason`. `session/cancel` interrupts.
-- **Capabilities Krypton must advertise**: `fs.readTextFile`, `fs.writeTextFile` (true — existing Tauri commands suffice). `terminal: false` for v1.
+- **Capabilities Krypton must advertise**: `fs.readTextFile`, `fs.writeTextFile` (true — existing Tauri commands suffice). `terminal: false` for v1. Since spec 380 phase 3, also `_meta.terminal_output: true` (the Zed terminal convention, no client terminals): claude-agent-acp and codex-acp then report command output in `_meta.terminal_output` and the exit code in `_meta.terminal_exit`, which the lane adapter reads.
 - **Agent capabilities to honor**: `promptCapabilities.image`, `promptCapabilities.embeddedContext` (gates `@`-mention resource blocks).
 - **`session/update` variants** forwarded to the frontend: `agent_message_chunk`, `agent_thought_chunk`, `tool_call`, `tool_call_update`, `plan`, `usage_update`, `available_commands_update`, `current_mode_update`. The view consumes the first six; the last two are forwarded for future use. `user_message_chunk` is intentionally skipped (the user message is rendered locally on send).
 - **Usage** is reported through two off-spec channels: claude-agent-acp emits `session/update { sessionUpdate: "usage_update" }` notifications mid-turn, and both claude-agent-acp and codex-acp attach a usage object to the `session/prompt` *response* (claude-agent at top-level, codex under `_meta.usage`). Krypton merges both into a single `UsageInfo` and renders it in the status line.
@@ -212,6 +212,30 @@ Since spec 380 this mapping lives in `src/acp/adapters/decoder.ts` and yields `L
 | `session/update { sessionUpdate: "plan", entries }` | `plan` |
 | `session/request_permission` (request) | `permission_request` |
 | `session/prompt` response `{ stopReason }` | `stop` |
+
+### Supply matrix (spec 380)
+
+Each lane adapter declares `supplies` (`src/acp/adapters/types.ts` `SupplyMatrix`): whether its backend fills a canonical field. A field the backend does not fill stays null or empty and paints nothing, the same way on every lane.
+
+- `yes`: the backend fills the field.
+- `no`: it never does. Every `no` below is a fact about Krypton's code: no adapter step can fill the field for that backend. `src/acp/adapters/supplies.test.ts` keeps each claim true.
+- `unverified`: nobody has checked it against captured wire yet.
+
+`yes` is set only from captured wire. The phase 4b fixtures and the contract test fill in the `unverified` cells.
+
+| Field (canonical) | claude | codex | grok | omp | all others (generic) |
+|-------------------|--------|-------|------|-----|----------------------|
+| `exit` (`ToolView.exit` on a command) | unverified | unverified | unverified | unverified | unverified |
+| `subagents` (`ToolView.subagents`, spec 282) | unverified | unverified | no | unverified | unverified |
+| `turnState` (`turn_state` events, spec 278) | no | unverified | no | no | unverified |
+| `usageCost` (`UsageInfo.cost`) | unverified | unverified | unverified | unverified | unverified |
+| `models` (`LaneSession.models`) | unverified | unverified | unverified | unverified | unverified |
+| `modes` (`LaneSession.modes` / `LaneInit.modes`) | unverified | unverified | unverified | unverified | unverified |
+| `images` (tool-row images, spec 281) | unverified | unverified | unverified | unverified | unverified |
+
+- Grok has no subagent card, and its lanes have no `turnState` hook.
+- Krypton reads thread state only from codex-acp's `_meta.codex.threadStatus`, so Claude, Grok and OMP lanes have no `turnState` hook either.
+- A backend without its own adapter (OpenCode, Cursor, Junie, pi-acp, Droid, MiMo, and any new id) stays all `unverified`, even where the generic adapter has no reader.
 
 ### Data Flow (one prompt turn)
 

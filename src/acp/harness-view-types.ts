@@ -33,7 +33,6 @@ import type {
   PermissionOption,
   PlanEntry,
   ProviderErrorPayload,
-  ToolCall,
   TranscriptAnnotation,
   UsageInfo,
 } from './types';

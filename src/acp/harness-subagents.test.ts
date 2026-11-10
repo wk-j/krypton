@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { claudeParentToolUseId } from './adapters/claude';
+import { parseOmpJobs, parseSubagentPayload } from './adapters/subagents';
 import {
   absorbChildToolCall,
   appendChildOutput,
   applyOmpJobs,
   jobsSummary,
   markLastReported,
-  parseOmpJobs,
-  parseSubagentPayload,
   subagentSummary,
   type OmpJob,
 } from './harness-subagents';

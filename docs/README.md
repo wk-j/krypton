@@ -385,7 +385,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 380 | [ACP Lane Adapters](./0380-acp-lane-adapters.md) |
 | 381 | [Harness Component Gallery](./0381-harness-component-gallery.md) |
 
-## ADRs (30)
+## ADRs (31)
 
 | # | Decision |
 |---|----------|
@@ -419,6 +419,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 28 | [The loopback app is written in React; the Tauri app frontend stays framework-free](./adr/0028-loopback-app-uses-react.md) |
 | 29 | [Rails scans every lockfile for known vulnerabilities as a manual check](./adr/0029-rails-scans-changed-lockfiles-for-known-vulnerabilities.md) |
 | 30 | [The console faceplate is Krypton's one in-app visual identity](./adr/0030-console-faceplate-is-the-base-identity.md) |
+| 31 | [The UI reads only canonical lane events; adapters own the ACP wire](./adr/0031-ui-reads-only-canonical-lane-events.md) |
 
 ## Also
 

@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import { launchCommand, parseBackgroundLaunch } from './adapters/claude';
 import {
   BACKGROUND_TASK_MAX,
   applyTaskStatus,
   formatBackgroundTaskLines,
-  launchCommand,
-  parseBackgroundLaunch,
   pruneBackgroundTasks,
   registerBackgroundTask,
   subtreeUsage,

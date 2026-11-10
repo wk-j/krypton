@@ -1,8 +1,9 @@
-// Codex Guardian review is a tool-call-shaped presentation event, not a
-// permission request. Decode it before generic tool output is line-limited.
+// Spec 378 — Codex Guardian review is a tool-call-shaped presentation event,
+// not a permission request. Decode it before generic tool output is
+// line-limited. Moved from `harness-guardian-review.ts` (spec 380 phase 4).
 
-import type { GuardianReviewPayload } from './harness-view-types';
-import type { ToolCall, ToolCallUpdate } from './types';
+import type { GuardianReviewPayload } from '../harness-view-types';
+import type { ToolCall, ToolCallUpdate } from '../types';
 
 const GUARDIAN_ID_PREFIX = 'guardian_assessment:';
 const ACTION_LIMIT = 240;

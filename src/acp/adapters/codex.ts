@@ -1,7 +1,8 @@
 // Spec 380 — Codex (`@agentclientprotocol/codex-acp`, backend id `codex`).
 
-import { isCodexGuardianReview, parseGuardianReview } from '../harness-guardian-review';
-import { codexSubagentName } from '../harness-subagents';
+import { isCodexGuardianReview, parseGuardianReview } from './codex-guardian';
+import { codexSubagentName } from './subagents';
+import { UNVERIFIED_SUPPLIES } from './generic';
 import { applySubagentCard, clearSections } from './tool';
 import type { LaneAdapter, ToolStep } from './types';
 
@@ -18,6 +19,7 @@ export function codexThreadState(meta: unknown): 'active' | 'idle' | null {
 
 export const codexAdapter: LaneAdapter = {
   id: 'codex',
+  supplies: UNVERIFIED_SUPPLIES,
   // spec 278: only codex-acp's thread status is consumed from `session_info_update`.
   turnState: (update) => codexThreadState(update._meta),
   tool(step: ToolStep): void {

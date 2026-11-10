@@ -2,18 +2,18 @@
 //
 // A Claude lane detaches shell work with `run_in_background`: the launch tool
 // call completes in well under a second, the turn ends, and the lane goes idle
-// while the job keeps running. ACP's terminal capability is off
-// (`src-tauri/src/acp.rs:2023`), so Krypton never owns that process — what it
-// does have is the adapter's own launch result, which names the task id and the
-// absolute output file, plus the lane process tree it already polls.
+// while the job keeps running. Krypton runs no client terminals
+// (`terminal: false`), so it never owns that process — what it does have is the
+// adapter's own launch result, which names the task id and the absolute output
+// file, plus the lane process tree it already polls.
 //
-// This module is the pure half: parse a launch, fold a file status in, find the
-// job in the tree, bound the list. The view owns the lane state and the IPC.
+// This module is the pure half: fold a file status in, find the job in the
+// tree, bound the list. The Claude lane adapter reads the launch from the wire
+// (`adapters/claude.ts`, spec 380); the view owns the lane state and the IPC.
 
 import { formatElapsed, truncateInline } from './harness-format';
 import type { AcpBackgroundTaskStatus, AcpLaneMetrics, AcpLaneProcMetric } from '../types';
 import type { BackgroundTask } from './harness-view-types';
-import type { ToolCall, ToolCallUpdate } from './types';
 
 /** Per-lane cap. Exited rows are dropped oldest-first; a running one never is. */
 export const BACKGROUND_TASK_MAX = 20;
@@ -21,41 +21,6 @@ export const BACKGROUND_TASK_MAX = 20;
 /** Polls with neither an exit marker nor a live process before a task is called
  *  orphaned. Two polls (~4 s) so one sampling miss cannot flip a live job. */
 const ORPHAN_MISS_LIMIT = 2;
-
-/** The adapter's launch result, verbatim:
- *  `Command running in background with ID: bxs80otkx. Output is being written to: /private/tmp/…` */
-const LAUNCH_RE =
-  /Command running in background with ID:\s*(\S+?)\.\s+Output is being written to:\s*(\S+)/;
-
-export interface BackgroundLaunch {
-  readonly id: string;
-  readonly outputPath: string;
-}
-
-/** The launch id + output path, or null when this tool call is not one. */
-export function parseBackgroundLaunch(call: ToolCall | ToolCallUpdate): BackgroundLaunch | null {
-  for (const item of call.content ?? []) {
-    if (item.type !== 'content') continue;
-    const block = item.content;
-    if (!block || block.type !== 'text') continue;
-    const match = LAUNCH_RE.exec(block.text);
-    if (!match) continue;
-    const outputPath = match[2].replace(/[.,]$/, '');
-    if (!outputPath.startsWith('/')) continue;
-    return { id: match[1], outputPath };
-  }
-  return null;
-}
-
-/** The launched command line, for the row label and the process match. */
-export function launchCommand(call: ToolCall | ToolCallUpdate): string {
-  const raw = call.rawInput;
-  if (raw && typeof raw === 'object' && 'command' in raw) {
-    const command = raw.command;
-    if (typeof command === 'string' && command.trim()) return command.trim();
-  }
-  return call.title?.trim() ?? '';
-}
 
 /**
  * Register a launch on a lane. Returns the task when it is new, null when this

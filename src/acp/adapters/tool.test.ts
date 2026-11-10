@@ -8,7 +8,7 @@ import {
 import type { ToolCall } from '../types';
 import { createLaneDecoder } from './decoder';
 import { permissionEvent, rawToolUpdate, type ToolEvent } from './test-utils';
-import { TOOL_STATE_TERMINAL_CAP } from './tool';
+import { TERMINAL_OUTPUT_CHAR_LIMIT, TOOL_STATE_TERMINAL_CAP } from './tool';
 import type { LaneDecoder, ToolView } from './types';
 
 function send(decoder: LaneDecoder, kind: 'tool_call' | 'tool_call_update', call: Partial<ToolCall>): ToolEvent | null {
@@ -340,5 +340,132 @@ describe('permission decoding (spec 380 phase 2b)', () => {
     const inferred = permissionEvent('codex', { toolCallId: 'e', title: 'Edit src/a.ts' });
     expect(inferred.view.kind).toBe('edit');
     expect(inferred.view.declaredKind).toBeNull();
+  });
+});
+
+// Spec 380 phase 3 — the wire shapes claude-agent-acp and codex-acp send a
+// client that declares `clientCapabilities._meta.terminal_output`.
+describe('tool decoding — terminal convention', () => {
+  const claudeCommand: Partial<ToolCall> = {
+    kind: 'execute',
+    title: 'printf hi',
+    status: 'pending',
+    rawInput: { command: 'printf hi', description: 'Print hi' },
+    content: [{ type: 'terminal', terminalId: 'c1' }],
+    _meta: { claudeCode: { toolName: 'Bash' }, terminal_info: { terminal_id: 'c1' } },
+  };
+  const claudeEnd = (exitCode: number | null, status: 'completed' | 'failed' = 'completed'): Partial<ToolCall> => ({
+    status,
+    content: [{ type: 'terminal', terminalId: 'c1' }],
+    _meta: { claudeCode: { toolName: 'Bash' }, terminal_exit: { terminal_id: 'c1', exit_code: exitCode, signal: null } },
+  });
+  const output = (data: string): Partial<ToolCall> => ({
+    _meta: { terminal_output: { terminal_id: 'c1', data } },
+  });
+
+  it('shows Claude terminal output and its exit code', () => {
+    const view = decode('claude', claudeCommand, output('hi\n'), claudeEnd(0));
+    expect(view.sections).toEqual([{ label: 'output', text: 'hi' }]);
+    expect(view.exit).toBe(0);
+    expect(toolPayloadFromView(view, {}, undefined).exitCode).toBe(0);
+  });
+
+  it('reports a failed command exit, not a guessed one', () => {
+    const failed = decode('claude', claudeCommand, output('boom\n'), claudeEnd(1, 'failed'));
+    expect(failed.exit).toBe(1);
+    expect(toolPayloadFromView(failed, {}, undefined).result).toBe('exit 1');
+    const unknown = decode('claude', claudeCommand, output('done\n'), claudeEnd(null));
+    expect(unknown.status).toBe('completed');
+    expect(unknown.exit).toBeNull();
+  });
+
+  it('appends Codex chunks and drops the content copy once output arrives', () => {
+    const decoder = createLaneDecoder('codex');
+    const started = send(decoder, 'tool_call', {
+      toolCallId: 'c1',
+      kind: 'execute',
+      title: 'printf a; false',
+      status: 'in_progress',
+      content: [
+        { type: 'terminal', terminalId: 'c1' },
+        { type: 'content', content: { type: 'text', text: 'Run printf a; false' } },
+      ],
+      _meta: { terminal_info: { cwd: '/repo', terminal_id: 'c1' } },
+    });
+    expect(started?.view.sections).toEqual([{ label: 'content', text: 'Run printf a; false' }]);
+    send(decoder, 'tool_call_update', { toolCallId: 'c1', ...output('a\n') });
+    const second = send(decoder, 'tool_call_update', { toolCallId: 'c1', ...output('b\n') });
+    expect(second?.view.sections).toEqual([{ label: 'output', text: 'a\nb' }]);
+    const ended = send(decoder, 'tool_call_update', {
+      toolCallId: 'c1',
+      status: 'failed',
+      _meta: { terminal_exit: { exit_code: 1, signal: null, terminal_id: 'c1' } },
+    });
+    expect(ended?.view.exit).toBe(1);
+    expect(ended?.view.sections).toEqual([{ label: 'output', text: 'a\nb' }]);
+  });
+
+  it('keeps the terminal exit over a rawOutput code, and rawOutput when no terminal exit came', () => {
+    const terminal = decode('codex', { kind: 'execute', title: 'x', status: 'in_progress' }, {
+      status: 'completed',
+      rawOutput: { exit_code: 0 },
+      _meta: { terminal_exit: { exit_code: 2, signal: null, terminal_id: 'c1' } },
+    });
+    expect(terminal.exit).toBe(2);
+    const raw = decode('codex', { kind: 'read', title: 'cat a', status: 'in_progress' }, {
+      status: 'completed',
+      rawOutput: { exit_code: 0 },
+      content: [{ type: 'content', content: { type: 'text', text: 'file text' } }],
+    });
+    expect(raw.exit).toBe(0);
+    expect(raw.sections).toEqual([{ label: 'content', text: 'file text' }]);
+  });
+
+  it('keeps content text, such as a denial, when no terminal output arrived', () => {
+    const view = decode('claude', claudeCommand, {
+      status: 'failed',
+      content: [{ type: 'content', content: { type: 'text', text: 'The user denied this command.' } }],
+    });
+    expect(view.sections).toEqual([{ label: 'content', text: 'The user denied this command.' }]);
+    expect(view.exit).toBeNull();
+  });
+
+  it('keeps the output arrays when an update moves nothing the well shows', () => {
+    const decoder = createLaneDecoder('claude');
+    send(decoder, 'tool_call', { toolCallId: 'c1', ...claudeCommand });
+    const shown = send(decoder, 'tool_call_update', { toolCallId: 'c1', ...output('hi\n') });
+    const status = send(decoder, 'tool_call_update', { toolCallId: 'c1', status: 'in_progress' });
+    expect(status?.view.sections).toBe(shown?.view.sections);
+    // A background task's late `terminal_exit` with no code changes nothing.
+    const lateExit = send(decoder, 'tool_call_update', {
+      toolCallId: 'c1',
+      _meta: { terminal_exit: { terminal_id: 'c1', exit_code: null, signal: null } },
+    });
+    expect(lateExit?.view.sections).toBe(shown?.view.sections);
+  });
+
+  it('bounds the collected output and stops repainting past the bound', () => {
+    const decoder = createLaneDecoder('codex');
+    send(decoder, 'tool_call', { toolCallId: 'c1', kind: 'execute', title: 'yes', status: 'in_progress' });
+    const full = send(decoder, 'tool_call_update', { toolCallId: 'c1', ...output('y\n'.repeat(TERMINAL_OUTPUT_CHAR_LIMIT)) });
+    const more = send(decoder, 'tool_call_update', { toolCallId: 'c1', ...output('tail\n') });
+    expect(more?.view.sections).toBe(full?.view.sections);
+    expect(more?.view.sections[0]?.text.split('\n')).toHaveLength(12);
+  });
+
+  it('reads a Claude background launch from terminal output', () => {
+    const view = decode('claude', {
+      ...claudeCommand,
+      title: 'npm run watch',
+      rawInput: { command: 'npm run watch', run_in_background: true },
+    }, output('Command running in background with ID: bx1. Output is being written to: /tmp/bx1.out'));
+    expect(view.background).toEqual({ id: 'bx1', outputPath: '/tmp/bx1.out', command: 'npm run watch' });
+  });
+
+  it('scans terminal output for image paths', () => {
+    const decoder = createLaneDecoder('claude');
+    send(decoder, 'tool_call', { toolCallId: 'c1', ...claudeCommand });
+    const shot = send(decoder, 'tool_call_update', { toolCallId: 'c1', ...output('saved /tmp/shot.png\n') });
+    expect(shot?.images.scanned).toEqual(['/tmp/shot.png']);
   });
 });

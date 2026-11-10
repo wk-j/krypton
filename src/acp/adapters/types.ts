@@ -267,8 +267,39 @@ export interface ToolStep {
   readonly agentNames: Map<string, string>;
   /** The call is the subject of a permission request, decoded without touching call state. */
   readonly permission: boolean;
+  /** Command output collected from `_meta.terminal_output` (head kept); null until any arrived. */
+  readonly terminalOutput: string | null;
   draft: ToolDraft;
   jobsReport?: OmpJob[];
+}
+
+/**
+ * Whether a backend fills one canonical field (spec 380 supply matrix):
+ * `yes` it does, `no` it never does (the field stays null or empty for every
+ * lane of it), `unverified` nobody has checked it against captured wire.
+ */
+export type Supply = 'yes' | 'no' | 'unverified';
+
+/**
+ * What one backend supplies, per canonical field. Published in
+ * `docs/0069-acp-agent-support.md`; the contract test holds each backend's
+ * captured wire to it, so missing data is documented, not silently absent.
+ */
+export interface SupplyMatrix {
+  /** `ToolView.exit` on a command. */
+  readonly exit: Supply;
+  /** `ToolView.subagents` on a call that spawns agents (spec 282). */
+  readonly subagents: Supply;
+  /** `turn_state` events (spec 278). */
+  readonly turnState: Supply;
+  /** `UsageInfo.cost`. */
+  readonly usageCost: Supply;
+  /** `LaneSession.models`. */
+  readonly models: Supply;
+  /** `LaneSession.modes` (or the off-spec `LaneInit.modes`). */
+  readonly modes: Supply;
+  /** Images on a tool row: image blocks or image paths (spec 281). */
+  readonly images: Supply;
 }
 
 /**
@@ -278,6 +309,7 @@ export interface ToolStep {
 export interface LaneAdapter {
   /** Backend id this adapter serves, or `generic`. */
   readonly id: string;
+  readonly supplies: SupplyMatrix;
   /** The parent tool call id a message/thought chunk belongs to (spec 282). */
   chunkParent?(meta: unknown): string | null;
   /** Thread state from a `session_info_update` (spec 278). */

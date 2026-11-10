@@ -1,8 +1,6 @@
 // Krypton — ACP harness shared memory.
 // Tab-local feed used by AcpHarnessView to pass compact context between lanes.
 
-import type { ToolCall, ToolCallUpdate } from './types';
-
 export type HarnessMemorySource = 'tool_observation' | 'agent_footer';
 
 export interface PendingExtraction {
@@ -188,48 +186,6 @@ export function dedupeFooterAgainstTools(
   return footer.concat(keptTools);
 }
 
-export function extractionFromTool(
-  laneLabel: string,
-  call: ToolCall | ToolCallUpdate,
-): PendingExtraction | null {
-  const status = call.status;
-  if (status !== 'completed' && status !== 'failed') return null;
-  const kind = call.kind ?? 'other';
-  const path = extractModifiedPath(call);
-  if (status === 'completed' && (kind === 'edit' || path)) {
-    return {
-      text: `${laneLabel} modified ${path ?? 'project files'}`,
-      filePath: path ?? undefined,
-      source: 'tool_observation',
-      fromToolCallId: call.toolCallId,
-    };
-  }
-  if (kind === 'execute') {
-    const command = extractCommandToken(call);
-    const result = extractExitStatus(call.rawOutput, status);
-    return {
-      text: `${laneLabel} ran ${command || 'command'} -> ${result}`,
-      source: 'tool_observation',
-      fromToolCallId: call.toolCallId,
-    };
-  }
-  return null;
-}
-
-export function extractModifiedPath(call: ToolCall | ToolCallUpdate): string | null {
-  for (const content of call.content ?? []) {
-    if (content.type === 'diff' && typeof content.path === 'string' && content.path) return content.path;
-  }
-  const location = call.locations?.find((loc) => loc.path);
-  if (location) return location.path;
-  const title = call.title ?? '';
-  if (/^(edit|write|create|modify|patch)\b/i.test(title)) {
-    const match = title.match(/((?:\.{0,2}\/)?[\w@./-]+\.[\w-]+)/);
-    if (match) return match[1];
-  }
-  return null;
-}
-
 function parseMemoryBullet(line: string): PendingExtraction | null {
   const trimmed = line.trim().replace(/^[-*•]\s+/, '').trim();
   if (trimmed.length < 8 || trimmed.length > 200) return null;
@@ -256,33 +212,6 @@ function enforceCap(memory: HarnessSharedMemory): void {
     if (!oldestUnpinned) break;
     memory.entries.splice(oldestUnpinned.index, 1);
   }
-}
-
-function extractCommandToken(call: ToolCall | ToolCallUpdate): string {
-  const raw = call.rawInput;
-  if (typeof raw === 'object' && raw) {
-    const record = raw as Record<string, unknown>;
-    for (const key of ['command', 'cmd']) {
-      if (typeof record[key] === 'string') return firstToken(record[key]);
-    }
-    if (Array.isArray(record.argv) && typeof record.argv[0] === 'string') return record.argv[0];
-  }
-  return firstToken(call.title ?? '');
-}
-
-function extractExitStatus(rawOutput: unknown, status: string): string {
-  if (typeof rawOutput === 'object' && rawOutput) {
-    const record = rawOutput as Record<string, unknown>;
-    for (const key of ['exitCode', 'exit_code', 'code']) {
-      if (typeof record[key] === 'number') return `exit ${record[key]}`;
-    }
-  }
-  return status;
-}
-
-function firstToken(value: unknown): string {
-  if (typeof value !== 'string') return '';
-  return value.trim().split(/\s+/)[0] ?? '';
 }
 
 function isDeniedExtraction(text: string, filePath?: string): boolean {

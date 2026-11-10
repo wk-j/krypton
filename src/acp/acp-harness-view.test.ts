@@ -5,6 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import { invoke } from '@tauri-apps/api/core';
 import type * as TauriCore from '@tauri-apps/api/core';
 
+import {
+  genericAdapter,
+  permissionCommandIsHighRisk,
+  rawOutputGenericSections,
+  stringifyToolValue,
+} from './adapters/generic';
+import { harnessAutoAllowToolName, permissionArgsPreview } from './adapters/permission';
+import { ToolCallDecoder } from './adapters/tool';
+import { viewTargetsArtifactScratch } from './harness-permission-scan';
 import { loadProjectMcpServers } from './mcp-bridge';
 import type * as McpBridge from './mcp-bridge';
 
@@ -29,12 +38,10 @@ import {
   deriveRailPeerHint,
   directiveRole,
   directiveTagLabel,
-  harnessAutoAllowToolName,
   artifactWritePathMatches,
   reviewWritePathMatches,
   isArtifactWriteGrantKind,
   isArtifactScratchPath,
-  callTargetsArtifactScratch,
   generateArtifactHintLabels,
   harnessBackends,
   normalizeArtifactPath,
@@ -46,15 +53,11 @@ import {
   laneAccentForLabel,
   pickLaneAccent,
   parseQueueIndex,
-  permissionArgsPreview,
-  rawOutputSections,
   boundedOutputLines,
-  stringifyToolValue,
   selectLanePeekCandidate,
   shouldPreemptPeekDismissal,
   trimBackendPrefix,
   tldrawDrawPrompt,
-  permissionCommandIsHighRisk,
   parseReviewCommandArgs,
   wikiIngestPrompt,
   wikiRecallPrompt,
@@ -3801,7 +3804,7 @@ describe('spec 125 lane rail disambiguation', () => {
         locations: [],
         content: [],
       } as unknown as ToolCall;
-      expect(callTargetsArtifactScratch(call)).toBe(true);
+      expect(viewTargetsArtifactScratch(new ToolCallDecoder(genericAdapter).view(call))).toBe(true);
     });
 
     it('does not over-redact a non-artifact write whose content mentions nothing scratchy', () => {
@@ -3812,7 +3815,7 @@ describe('spec 125 lane rail disambiguation', () => {
         locations: [{ path: '/Users/me/proj/src/main.ts' }],
         content: [],
       } as unknown as ToolCall;
-      expect(callTargetsArtifactScratch(call)).toBe(false);
+      expect(viewTargetsArtifactScratch(new ToolCallDecoder(genericAdapter).view(call))).toBe(false);
     });
 
     it('only grants auto-approval for file-write tool kinds, not read/exec', () => {
@@ -3882,13 +3885,13 @@ describe('byte-array tool output decoding (spec 135 — Grok lane)', () => {
   });
 
   it('decodes a byte array nested under an output key', () => {
-    expect(rawOutputSections({ output: onBranchMaster })).toEqual([
+    expect(rawOutputGenericSections({ output: onBranchMaster })).toEqual([
       { label: 'output', text: 'On branch master' },
     ]);
   });
 
   it('decodes a bare byte-array rawOutput', () => {
-    expect(rawOutputSections(onBranchMaster)).toEqual([
+    expect(rawOutputGenericSections(onBranchMaster)).toEqual([
       { label: 'output', text: 'On branch master' },
     ]);
   });

@@ -1538,6 +1538,24 @@ fn advertise_read_text_file(backend_id: &str) -> bool {
     !matches!(backend_id, "grok" | "omp")
 }
 
+/// `initialize.clientCapabilities`. Krypton runs no client terminals
+/// (`terminal: false`), but it declares the Zed terminal convention (spec 380
+/// phase 3): claude-agent-acp and codex-acp then report a command's output in
+/// `_meta.terminal_output` and its exit code in `_meta.terminal_exit`, and
+/// the TypeScript lane adapter reads both. Rust only forwards them.
+fn client_capabilities(backend_id: &str) -> Value {
+    json!({
+        "fs": {
+            "readTextFile": advertise_read_text_file(backend_id),
+            "writeTextFile": true,
+        },
+        "terminal": false,
+        // spec 279: every lane renders form elicitations as a question card.
+        "elicitation": { "form": {} },
+        "_meta": { "terminal_output": true },
+    })
+}
+
 /// Magic-byte image sniff — png/jpeg/gif/webp only, never the extension.
 /// Shared with `read_image_file` (spec 281), which must not trust names.
 pub(crate) fn sniff_image_magic(head: &[u8]) -> Option<&'static str> {
@@ -2624,15 +2642,7 @@ pub async fn acp_initialize(
 
     let init_params = json!({
         "protocolVersion": 1,
-        "clientCapabilities": {
-            "fs": {
-                "readTextFile": advertise_read_text_file(&client.backend_id),
-                "writeTextFile": true,
-            },
-            "terminal": false,
-            // spec 279: every lane renders form elicitations as a question card.
-            "elicitation": { "form": {} },
-        },
+        "clientCapabilities": client_capabilities(&client.backend_id),
         "clientInfo": { "name": "krypton", "version": env!("CARGO_PKG_VERSION") },
     });
 
@@ -4083,12 +4093,12 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        advertise_read_text_file, advertises_auth_method, binary_read_error, disconnect_detail,
-        effective_spawn_model, elicitation_reply, fs_path_in_scope, grok_ask_user_ext_response,
-        grok_ask_user_skip, grok_session_dir_for_cwd, is_auth_required, is_under_grok_session_dir,
-        parse_session_model_state, parse_task_tail, percent_encode_path, resolve_backend,
-        sniff_binary_kind, startup_hint, steering_supported, turn_marker_event, with_request_id,
-        FsAccess, ModelControl,
+        advertise_read_text_file, advertises_auth_method, binary_read_error, client_capabilities,
+        disconnect_detail, effective_spawn_model, elicitation_reply, fs_path_in_scope,
+        grok_ask_user_ext_response, grok_ask_user_skip, grok_session_dir_for_cwd, is_auth_required,
+        is_under_grok_session_dir, parse_session_model_state, parse_task_tail, percent_encode_path,
+        resolve_backend, sniff_binary_kind, startup_hint, steering_supported, turn_marker_event,
+        with_request_id, FsAccess, ModelControl,
     };
     use serde_json::{json, Value};
     use std::path::{Path, PathBuf};
@@ -4358,6 +4368,21 @@ mod tests {
         assert!(!advertise_read_text_file("omp"));
         for id in ["claude", "codex", "copilot", "droid", "opencode"] {
             assert!(advertise_read_text_file(id), "{id}");
+        }
+    }
+
+    #[test]
+    fn client_capabilities_declare_terminal_output_without_client_terminals() {
+        for id in ["claude", "codex", "grok", "omp"] {
+            let caps = client_capabilities(id);
+            assert_eq!(caps["_meta"]["terminal_output"], json!(true), "{id}");
+            assert_eq!(caps["terminal"], json!(false), "{id}");
+            assert_eq!(caps["elicitation"], json!({ "form": {} }), "{id}");
+            assert_eq!(
+                caps["fs"]["readTextFile"],
+                json!(advertise_read_text_file(id)),
+                "{id}"
+            );
         }
     }
 

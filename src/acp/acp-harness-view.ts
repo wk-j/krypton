@@ -493,12 +493,7 @@ import {
   clearToolTranscriptRetention,
   isOrphanToolCallUpdate,
 } from './harness-tool-retention';
-export {
-  boundedOutputLines,
-  permissionCommandIsHighRisk,
-  rawOutputSections,
-  stringifyToolValue,
-} from './harness-tool-render';
+export { boundedOutputLines } from './harness-tool-render';
 import {
   describePush,
   formatHandoffAge,
@@ -632,13 +627,10 @@ import { HarnessImageViewer } from './harness-image-viewer';
 export {
   artifactWritePathMatches,
   reviewWritePathMatches,
-  callTargetsArtifactScratch,
   generateArtifactHintLabels,
-  harnessAutoAllowToolName,
   isArtifactScratchPath,
   isArtifactWriteGrantKind,
   normalizeArtifactPath,
-  permissionArgsPreview,
 } from './harness-permission-scan';
 
 // Spec 204 split the lane/transcript state shapes out to harness-view-types.ts,

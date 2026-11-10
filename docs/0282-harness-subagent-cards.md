@@ -6,12 +6,12 @@
 
 ## Implementation Deviations
 
-- **Where the payload is attached.** Since spec 380, the OMP, Claude and Codex lane adapters call `parseSubagentPayload(merged, status, previous, agentNames)` while decoding the update (`adapters/tool.ts` `applySubagentCard`); the view's `renderTool` passes the card on. Originally this ran in `renderTool` right after `mergeToolPayloadForUpdate`. That call also carries the previous card forward. `mergeToolPayloadForUpdate` is unchanged. The view sets the kind chip to `agents` and the subject to the intent title.
+- **Where the payload is attached.** Since spec 380, the OMP, Claude and Codex lane adapters call `parseSubagentPayload(merged, status, previous, agentNames)` (`adapters/subagents.ts`) while decoding the update (`adapters/tool.ts` `applySubagentCard`); the view's `renderTool` passes the card on. Originally this ran in `renderTool` right after `mergeToolPayloadForUpdate`. That call also carries the previous card forward. `mergeToolPayloadForUpdate` is unchanged. The view sets the kind chip to `agents` and the subject to the intent title.
 - **Terminal settlement.** When a foreground (non-background) spawn ends, any agent still marked `running` takes the parent's terminal status (`completed` / `failed` / `cancelled`), not `cancelled` every time. An agent still `pending` never started, so a `failed` or cancelled parent settles it as `cancelled` (`–`), never `failed` (`✗`).
 - **Rejected spawns.** If the parent fails while every agent is still `pending` (the adapter rejected the call before anything started, e.g. invalid input), `parseSubagentPayload` returns `undefined`. The row falls back to a plain failed tool row that shows the adapter's error text. A card would hide that text and show every agent as failed.
 - **OMP status-only or results-only updates** build on the previous card instead of re-reading `rawInput.tasks`. Compaction can drop `rawInput`, and re-reading would reset every agent to pending.
 - **OMP background spawns** count as in flight until every agent settles (spec [370](./0370-harness-omp-background-jobs.md)): OMP keeps reporting on the spawn call after it returned, `wait` job snapshots fill in status, duration and OUTPUT, entries only move forward, and the card stays live after its row seals. A turn that ends with agents still running leaves the card `last reported`.
-- **Adapter payloads are checked with loose TypeBox schemas** (`@sinclair/typebox/value`) at the boundary in `harness-subagents.ts`.
+- **Adapter payloads are checked with loose TypeBox schemas** (`@sinclair/typebox/value`) at the boundary in `adapters/subagents.ts` (moved from `harness-subagents.ts` in spec 380 phase 4, which keeps the card state).
 - **No `theme-scheme.css` override is needed.** The card colours derive from `--krypton-fg-rgb`.
 
 ## Problem

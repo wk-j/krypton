@@ -1,6 +1,6 @@
 # ACP Lane Adapters — Implementation Spec
 
-> Status: Approved (2026-11-10) — phases 1, 2a and 2b implemented (2026-11-10); phases 3–4 open
+> Status: Approved (2026-11-10) — phases 1, 2a and 2b implemented (2026-11-10), phases 3 and 4a implemented (2026-11-11); phase 4b open
 > Date: 2026-11-10
 > Milestone: ACP Harness — one rendering for every lane
 > Builds on: 69 (ACP backends), 72 (harness view), 175 (control API), 282 (subagent cards), 288 (wire profiler), 301/302 (components), 319/370 (execution, jobs), 378 (Guardian row)
@@ -43,6 +43,7 @@ Add one adapter stage at the point every lane already passes through: `AcpClient
     - The control SSE `publishStream` forwards raw tool calls.
     - Telegram reads `title`, `kind` and `rawInput` from that stream (`telegram.rs:680`).
 - **Exit codes are available.** claude-agent-acp and codex-acp both implement `_meta.terminal_info` / `terminal_output` / `terminal_exit {exit_code, signal}` for clients that declare `clientCapabilities._meta.terminal_output: true`. Without that declaration, Claude sends a console code block plus a display copy of the Bash `description` in `content`, and Codex sends `rawOutput.exit_code`. Krypton declares only `"terminal": false` (`acp.rs:2629`).
+  - *Re-checked against the sources for phase 3 (2026-11-11):* a client that declares nothing gets its command output from published codex-acp 2.6.0 only as `_meta.terminal_output_delta` chunks, with no `content` text, and a command with a terminal reports its exit only in `terminal_exit`. `rawOutput.exit_code` is sent only for a command without a terminal (read, search, list). Before phase 3, Krypton read none of those keys, so a Codex shell row could have no output and no exit. This was read from the package source and was not seen on a live lane.
 - **Rejected: adapters in Rust before `emit_event`.** Every interpreter and its tests are TypeScript, the outbound control path would still need a second schema, and CLAUDE.md keeps Rust a forwarder. Telegram instead reads the canonical payload the harness publishes.
 - **Rejected: keep shape sniffing per function and tidy it.** That cannot guarantee sameness, because nothing stops the next surface from reading `rawOutput` again.
 
@@ -222,7 +223,7 @@ Each adapter exports `supplies`: for `exit`, `subagents`, `turnState`, `usageCos
 - **`adapters.contract.test.ts`.** Decode every fixture and reduce each `LaneEvent` to its visible projection (`kind`, `subject`, `status`, section text, `exit`, diff paths, subagent names). Every backend must match the scenario's single expected projection. The only exception is a field marked `'no'` for that backend, which must then be null or empty. A `'yes'` field must be present.
 - **`wire-boundary.test.ts`.**
   - Scan `src/**/*.ts`, excluding tests, `src/acp/adapters/**` and `src/acp/client.ts`. Fail on property access to `rawInput`, `rawOutput`, `_meta` or `sessionUpdate` (matched as `.name` or `['name']`, so BEM `__meta` classes do not match), and on imports of the wire `ToolCall*` types.
-  - Also fail on `backendId` inside `src/acp/components/**` and inside the bodies of `onLaneEvent`, `renderTool`, `addPermission`, `addAskUser`, `collectToolImages` and `noteToolActivity`.
+  - Also fail on `backendId` inside `src/acp/components/**` and inside the bodies of `onLaneEvent`, `renderTool`, `addPermission`, `addAskUser`, `collectToolImages` and `noteToolActivity`. In components, the identity uses that existed before 4a (logo, label, session-picker target, launch-trust chip) are pinned by count instead; see the Phase 4a deviations.
   - Fail on any `@tauri-apps` import under `src/acp/adapters/**` or in `harness-transcript-items.ts`. Both stay pure, so the spec 381 gallery can run them in the browser.
 
 ### Phases
@@ -231,7 +232,7 @@ Each phase lands separately and leaves the app working.
 1. Types, decoder, registry and the non-tool events (`LaneInit`, `LaneSession`, prompt result). `onEvent` emits `LaneEvent`. Until phase 2, `LaneEvent` keeps today's `tool_call` / `tool_call_update` / `permission_request` members, which carry the wire `ToolCall`. These are marked transitional. See "Phase 1 — Implementation Plan".
 2. `ToolView`: move the wire readers and per-call state into adapters. Switch `renderTool`, permissions, peek, images, inline AI, commit explainer, headless fence, control SSE and Telegram. Move the existing render, subagent, execution and Guardian tests with their inputs.
 3. Declare `_meta.terminal_output` and handle the terminal convention in the generic adapter.
-4. Fixtures, supply matrix, contract and guard tests, docs, ADR 0031.
+4. Fixtures, supply matrix, contract and guard tests, docs, ADR 0031. Lands in two steps: **4a** (no live lane needed) moves the remaining wire readers, adds the guard test, the supply matrix and ADR 0031; **4b** captures the fixtures and adds the contract test.
 
 ### UI Changes
 
@@ -258,7 +259,7 @@ Phase 2 lands in two steps, and the app works after each. **2a** covers tool row
 - **Deviations from the plan:**
   - Images are per update (`event.images`), not a `ToolView` field: the strip adds what each update brings.
   - `paths` became `locations` + `inputPaths`.
-  - The wire-reading helpers keep their modules (`harness-tool-render`, `-subagents`, `-execution`, `-guardian-review`, `-background-tasks`, `-images`). For tool events only the adapters call them; the permission path still does until 2b. Phase 4's guard test moves and locks them.
+  - The wire-reading helpers keep their modules (`harness-tool-render`, `-subagents`, `-execution`, `-guardian-review`, `-background-tasks`, `-images`). For tool events only the adapters call them; the permission path still does until 2b. Phase 4's guard test moves and locks them (done in 4a).
   - `headless-fence.ts` only answers permissions, so it moves in 2b.
 - **Visible:**
   1. Grok cleanup runs on Grok lanes only: an `exit: 3` first line stays text elsewhere.
@@ -305,6 +306,82 @@ Plain harness tool names that carry their server only in `rawInput` now prompt. 
 
 **Verification (each step):** `npm run check`, `npm run build`, the full `npx vitest run`, `cargo fmt -- --check`, `cargo clippy`, `cargo test`, `git diff --check`. Then, after the user installs and relaunches, a screen capture of a Grok and a Claude lane running the same command.
 
+### Phase 3 — Implemented (2026-11-11)
+
+- **Rust:** `client_capabilities(backend_id)` builds `initialize.clientCapabilities` and adds `_meta.terminal_output: true` for every backend. `terminal: false` stays: Krypton runs no client terminals. A unit test pins both.
+- **Generic adapter:** `terminalMetaOf(meta)` reads `terminal_output.data` and `terminal_exit.exit_code`. A non-number code reads as null. `terminal_info` is not read, because it only names the terminal, and both servers use the tool call id as the terminal id.
+- **Decoder (`adapters/tool.ts`):**
+  - Each call keeps a `TerminalState`, because `compactToolCallForRetention` drops `_meta` from the merged call.
+  - Output chunks are appended, as Zed does, and the head is kept to `TERMINAL_OUTPUT_CHAR_LIMIT` (16 KiB).
+  - Once any output arrived, it is one `output` section.
+  - `terminal_exit.exit_code` wins over `rawOutput.exit_code`.
+  - An update that changes neither output nor exit keeps the prior `sections` array. Past the 16 KiB bound, or for a late `terminal_exit` with no code, ToolRow does not repaint.
+  - The chunk text is scanned for image paths, like the console block it replaces.
+- **Claude adapter:** the spec 305 launch line is read from `content` as before, or from the call's terminal output (`parseBackgroundLaunchText`).
+- **Wire shapes, read from the adapter sources:**
+  - **claude-agent-acp** (`tool-calls/renderer.ts`, `reporters/bash.ts`):
+    - A command sends its whole output in one `terminal_output` update.
+    - A second update carries `terminal_exit`, the status and `content: [{type: "terminal"}]`, with no `rawOutput`.
+    - The exit is 0 on success, and the `Exit code N` code on failure.
+    - A background command has none: `terminal_exit` is dropped until the task ends, and then it carries `exit_code: null`.
+  - **codex-acp 2.6.0:**
+    - A command with a terminal streams `terminal_output` chunks and ends with `terminal_exit`.
+    - A read, search or list command has no terminal. Its output comes as `content` text, and its exit as `rawOutput.exit_code`.
+- **Deviations from the plan:**
+  - The Claude adapter's fallback that drops the Bash `description` copy when terminal meta is absent is not implemented. With the declaration, claude-agent-acp never sends that copy.
+  - Codex's `readableInput` display copy in `content` still fills the well until the first output chunk arrives. It also stays for a command that prints nothing, which is the same as before phase 3. On a live Codex lane, `false` (no output) showed an empty well, so this copy did not appear in that case.
+- **Verified:** `npm run check`, the full `npx vitest run` (298 files, 3,607 tests; `src/acp/adapters` 52), `cargo fmt -- --check`, `cargo clippy`, `cargo test` (674 + 3) and `git diff --check`.
+- **Seen in the running app (2026-11-11, Claude lane):**
+  - The installed bundle was built after phase 3 and declares `terminal_output`.
+  - Window captures of a Claude lane show `EXIT 0` with output for successful commands, `EXIT 1` for `false`, and `EXIT 3` with `boom` for `echo boom; exit 3`.
+  - A failing command's well starts with Claude's `Exit code N` line, so the code shows twice. Before stripping that line, check the wire profiler to see whether it arrives in `terminal_output` or in `content`.
+  - Codex lane, in a `tauri dev` build of the phase 3 + 4a working tree: `printf hi` shows `EXIT 0` with `hi` in the well. Before phase 3, codex-acp sent this output only as `terminal_output_delta`, which Krypton did not read. `false` shows `EXIT 1` with an empty well. No `Exit code N` line and no input copy appeared, unlike Claude.
+
+### Phase 4a — Implemented (2026-11-11)
+
+- **Wire readers moved into `src/acp/adapters/`.** The code moved without logic changes. Each source module keeps what reads decoded data only.
+
+  | From | To | What moved |
+  |------|----|------------|
+  | `harness-tool-render.ts` | `generic.ts` | `mergeToolCall`, `inferToolLabel`, `looksLikeShellCommand`, `extractRawToolName`, `extractCommandLine(Raw)`, `isExecuteLikeToolCall`, `permissionCommandIsHighRisk`, `extractToolExit(Code)`, `peelExitPrefix`, `peelSectionExit`, `rawOutputGenericSections`, `contentOutputSections`, `contentBlockText`, `decodeByteArray`, `stringifyToolValue`, `toolSubject`, `extractToolDiffs` |
+  | `harness-tool-render.ts` | `grok.ts` | `GROK_RAW_OUTPUT_TYPES`, `formatGrokFileMatches`, `grokRawOutputSections` |
+  | `acp-harness-memory.ts` | `generic.ts` | `extractModifiedPath` |
+  | `harness-tool-retention.ts` | `tool.ts` | `compactToolCallForRetention` and its limits (`TOOL_CALL_RETENTION_CHAR_LIMIT`). `truncateRetainedText` is now exported from the retention module and shared |
+  | `harness-subagents.ts` | `subagents.ts` | The boundary schemas, `parseSubagentPayload`, `codexSubagentName`, `isOmpBackgroundUpdate`, `parseOmpJobs`. The card state (`absorbChildToolCall`, `applyOmpJobs`, `jobsPayload`, summaries) stays, and exports `SUBAGENT_*_LIMIT`, `outputTail`, `forwardSubagentEntry` and `isLiveSubagent` to the decoder |
+  | `harness-execution.ts` | `omp-execution.ts` | The boundary schemas and `parseExecutionPayload`. `executionState`, `executionTiming` and `executionOutputParts` stay |
+  | `harness-guardian-review.ts` | `codex-guardian.ts` | The whole module and its test (`git mv`) |
+  | `harness-background-tasks.ts` | `claude.ts` | `parseBackgroundLaunch`, `parseBackgroundLaunchText`, `launchCommand` |
+  | `harness-permission-scan.ts` | `permission.ts` | The spec 96 identity rules (`harnessAutoAllowToolName` and its private helpers), `extractHarnessServerName`, `stringValueForKeys`, `permissionArgsPreview`, `extractToolArguments`, `boundedInlineValue`. The tool-name sets stay; `HARNESS_AUTO_ALLOW_TOOL_NAMES` is exported to the decoder |
+
+- **Removed (no runtime caller):**
+  - `extractionFromTool` and its three private helpers in `acp-harness-memory.ts` (no caller since `819d35e`).
+  - `callTargetsArtifactScratch` / `rawInputPathMentionsScratch`. Since 2a the view redacts with `viewTargetsArtifactScratch` over `view.inputPaths`. The two regression tests now run that live path through the decoder.
+  - `rawOutputSections`, which ran the Grok reader first, then the generic one. Its byte-array tests now call `rawOutputGenericSections`.
+  - The unused wire `ToolCall` import in `harness-view-types.ts`, and the view's re-exports of the moved functions. Tests import from the owning module.
+- **Guard test (`adapters/wire-boundary.test.ts`):**
+  - It reads the TypeScript syntax tree, so comments, strings and BEM classes never match.
+  - It fails on `.key`, `['key']` and `{ key }` reads of `rawInput`, `rawOutput`, `_meta` and `sessionUpdate`, and on any import or re-export of `ToolCall`, `ToolCallUpdate` or `ToolCallContent` from `src/acp/types.ts`. It skips tests, `src/acp/adapters/**` and `src/acp/client.ts`.
+  - It fails on `backendId` in the six named view methods, and on any `@tauri-apps` import, static or dynamic, under `src/acp/adapters/**` and in `harness-transcript-items.ts`.
+  - A probe case checks that the scanner catches each form and ignores the look-alikes.
+- **Supply matrix:**
+  - `SupplyMatrix` / `Supply` in `adapters/types.ts`. `LaneAdapter.supplies` is required. `UNVERIFIED_SUPPLIES` is the starting value, and the generic adapter keeps it.
+  - A `no` is set only where Krypton's own code cannot fill the field for that backend: subagents on Grok, and turn state on Claude, Grok and OMP. `adapters/supplies.test.ts` checks each `no` against the decoder.
+  - Every other cell stays `unverified` until 4b. The table is in `docs/0069-acp-agent-support.md`.
+- **Docs:** ADR 0031 (indexed in `docs/README.md`), plus `docs/0004`, `0005`, `0069`, `0072` and `0282`. The 0005 entries for OMP code cells, background OMP status and the background-launch flow still said `renderTool` does the decoding, which was stale since 2a; they now name the adapter.
+- **Deviations from the plan:**
+  - **`backendId` in components.**
+    - The planned rule, no `backendId` anywhere under `src/acp/components/**`, would fail on three existing components. None of them reads wire data; each names the backend for identity:
+      - `lane-head`: the logo, plus the Pi/Junie launch-trust chip.
+      - `rail-entry`: the logo, plus the backend name trimmed off a directive title.
+      - `session-picker`: which backend's sessions it lists.
+    - The guard pins those uses by count (4, 8 and 4). Any other component, or a new use in these three, fails.
+  - **Subagent shapes stay in one module** (`adapters/subagents.ts`). The plan gave each shape to its own adapter. The OMP→Claude→Codex order still runs on all three adapters, as before, so no lane changes behaviour.
+  - **The Tauri rule checks direct imports, as specified.** The decoder still reaches `@tauri-apps/api/core` through other modules: `harness-images.ts`, `harness-format.ts`, and `agent/tools.ts` → `profiler/ipc.ts`. Spec 381 has to cut or stub those before it runs the decoder in a browser.
+  - **Some readers stay in place.** They read decoded text or a plain value, never a wire key:
+    - `harness-images.ts` `scanValueForImagePaths`.
+    - `cleanToolTitle`, `boundedOutputLines` and `normalizeToolDump` in `harness-tool-render.ts`, which rows also use.
+- **Verified:** `npm run check`, `npm run build`, the full `npx vitest run` (300 files, 3,616 tests; `src/acp/adapters` 68) and `git diff --check`. No Rust changed in 4a.
+
 ### Configuration
 
 None.
@@ -313,7 +390,7 @@ None.
 
 - **Unknown or new backend:** the generic adapter applies; its supply matrix is all `'unverified'` until a fixture exists.
 - **Remote lanes and `session/load` replays:** both go through the same decoder. `reset()` runs on spawn epoch and on session switch, so replayed calls rebuild their state.
-- **Terminal meta and a `content` console block together:** the terminal meta wins, and the block is dropped so output never appears twice.
+- **Terminal meta and `content` text together:** once any `terminal_output` arrived for a call, it is the whole output well, and `content` / `rawOutput` text is not shown beside it, so output never appears twice. Until then the call keeps the generic sections, so a denial text that arrives instead of output still shows.
 - **A backend that ignores `_meta.terminal_output`:** behaviour is unchanged (Grok, OMP and the others keep their adapters).
 - **`completed` without exit data:** `exit` is null and no readout is painted, for any backend.
 - **Harness-tool auto-allow uses only `view.mcp`:** an exact server/tool identity from the adapter, never substrings of `rawInput`. The adapter derives it from the vendor's own form: Claude/Codex `mcp__s__t` (Claude cross-checked with `claudeCode.mcpServer`), fx `mcp_<s>_<t>`, the `Always allow ("…")` option label, the rendered `Tool: <s>/<t>` content line, or top-level server metadata. Execute-like calls never qualify. A tool name that merely looks like a harness tool but has no matching identity stays manual. Spec 133 artifact-write approval keeps keying on `view.modifiedPath` plus the registry.

@@ -1344,6 +1344,19 @@ PUBLISH
     type 'diff' (oldText + newText), the lane decoder (src/acp/adapters/tool.ts,
     spec 380) extracts it into ToolView.diffs, which the row payload passes on as
     ToolPayload.diffs; ToolRow paints the unified +/- diff with DiffBlock.
+    Command output and exit (spec 380 phase 3): initialize declares
+    `clientCapabilities._meta.terminal_output: true` (Krypton still runs no
+    client terminals: `terminal: false`). claude-agent-acp then sends a
+    command's output once in `_meta.terminal_output.data`, and codex-acp
+    streams it as chunks under the same key; the exit arrives in
+    `_meta.terminal_exit.exit_code`. The tool decoder appends every
+    `terminal_output` chunk to the call's state (head
+    kept to 16 KiB, because `_meta` is not retained in the merged call). Once
+    any output arrived it is the whole output well (one `output` section), and
+    `rawOutput` / `content` text is not shown beside it. `ToolView.exit` takes
+    `terminal_exit.exit_code` over `rawOutput.exit_code`; a null code paints no
+    readout. An update that moves neither output nor exit keeps the prior
+    `sections` array, so ToolRow does not repaint.
 20. Plan tracking pinned panel (Spec 90):
     a. session/update { sessionUpdate: 'plan' } already flows from Rust through
        the lane decoder as a LaneEvent { type: 'plan', entries }.
@@ -1406,9 +1419,10 @@ PUBLISH
        patchLaneTurnChrome; refreshMcpStats updates lane heads by updating their
        components, whose deps are the FORMATTED numbers — a poll whose displayed
        values did not move writes nothing.
-    h. For current OMP code cells, renderTool decodes the incoming rawInput /
+    h. For current OMP code cells, the OMP lane adapter
+       (adapters/omp-execution.ts) decodes the incoming rawInput /
        rawOutput.details.cells snapshot before compactToolCallForRetention,
-       keeping bounded typed data on the same transcript item. Omitted fields
+       and renderTool keeps the bounded typed data on the same transcript item. Omitted fields
        retain previous values; output snapshots replace, not append. Artifact
        redaction and subagent cards have precedence over this renderer.
     i. Transcript f-hints or an Inspector click open the view's one
@@ -1423,9 +1437,9 @@ PUBLISH
        backend-provided spans. No job polling or spilled-output fetch is
        introduced.
     j. OMP background subagents (spec 370): an async `task` keeps sending
-       tool_call_update on its own call after returning. renderTool keeps the
-       row's terminal status (details.async present), and parseSubagentPayload
-       merges forward only. A `wait` update's rawOutput.details.jobs[] becomes
+       tool_call_update on its own call after returning. The OMP lane adapter
+       keeps the row's terminal status (details.async present), and
+       parseSubagentPayload (adapters/subagents.ts) merges forward only. A `wait` update's rawOutput.details.jobs[] becomes
        the row's JobList, and its task jobs are folded into the newest spawn
        card that owns each agent id, which takes effect on the same transcript
        pass. The card stays live after its row seals until the agents settle.
@@ -1603,9 +1617,12 @@ Krypton therefore watches the output file the adapter named, not the process it
 cannot see (`clientCapabilities.terminal` is `false` — `src-tauri/src/acp.rs`).
 
 ```
-1. tool_call / tool_call_update → captureBackgroundLaunch(lane, call)
-   → parseBackgroundLaunch: `Command running in background with ID: <id>. Output is
-     being written to: <abs path>` → registerBackgroundTask (dedupes by id, cap 20)
+1. tool_call / tool_call_update → the Claude lane adapter (adapters/claude.ts)
+   parseBackgroundLaunch: `Command running in background with ID: <id>. Output is
+     being written to: <abs path>` → ToolView.background
+   (read from a `content` text block, or from the call's terminal output when it
+   arrived as `_meta.terminal_output`, spec 380 phase 3)
+   → captureBackgroundLaunch(lane, view) → registerBackgroundTask (dedupes by id, cap 20)
 2. Existing shared 2 s metrics feed → refreshBackgroundTasks
    → invoke('acp_background_task_status', { queries: [{id, path}, …] })  — one round trip
 3. Rust stats the file and reads at most 4 KiB from its END

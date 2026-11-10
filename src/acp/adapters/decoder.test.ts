@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createLaneDecoder } from './decoder';
+import { terminalMetaOf } from './generic';
 import type { RawAcpEvent } from './types';
 
 function update(kind: string, fields: Record<string, unknown>): RawAcpEvent {
@@ -223,5 +224,24 @@ describe('LaneDecoder — command results', () => {
     expect(decoder.promptResult({ stopReason: 'end_turn', _meta: { usage: { outputTokens: 7 } } }))
       .toEqual({ stopReason: 'end_turn', usage: { outputTokens: 7 } });
     expect(decoder.promptResult({ usage: {} })).toEqual({ stopReason: 'end_turn', usage: null });
+  });
+});
+
+describe('terminalMetaOf — the Zed terminal convention (spec 380 phase 3)', () => {
+  it('reads the output and the exit code', () => {
+    expect(terminalMetaOf({ terminal_output: { terminal_id: 't', data: 'a' } })).toEqual({ output: 'a', exit: null });
+    // Never declared (spec 380 Out of Scope).
+    expect(terminalMetaOf({ terminal_output_delta: { terminal_id: 't', data: 'b' } })).toBeNull();
+    expect(terminalMetaOf({ terminal_exit: { terminal_id: 't', exit_code: 3, signal: null } }))
+      .toEqual({ output: null, exit: { code: 3 } });
+  });
+
+  it('keeps an unknown exit unknown and ignores meta with no output or exit', () => {
+    expect(terminalMetaOf({ terminal_exit: { terminal_id: 't', exit_code: null, signal: 'SIGINT' } }))
+      .toEqual({ output: null, exit: { code: null } });
+    expect(terminalMetaOf({ terminal_exit: { exit_code: '1' } })).toEqual({ output: null, exit: { code: null } });
+    expect(terminalMetaOf({ terminal_info: { terminal_id: 't', cwd: '/repo' } })).toBeNull();
+    expect(terminalMetaOf({ terminal_output: { terminal_id: 't' } })).toBeNull();
+    expect(terminalMetaOf(undefined)).toBeNull();
   });
 });

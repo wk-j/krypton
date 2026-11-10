@@ -5,25 +5,24 @@
 // parts behind `LaneAdapter` hooks. The decoder owns the per-call merge state
 // that `lane.toolCalls` used to hold.
 
+import { boundedOutputLines, cleanToolTitle, isGitDiffCommand } from '../harness-tool-render';
+import { truncateRetainedText } from '../harness-tool-retention';
+import { scanValueForImagePaths } from '../harness-images';
+import type { ContentBlock, ToolCall, ToolCallContent, ToolCallUpdate } from '../types';
 import {
-  cleanToolTitle,
   contentOutputSections,
   extractCommandLineRaw,
+  extractModifiedPath,
   extractRawToolName,
   extractToolDiffs,
   extractToolExitCode,
-  boundedOutputLines,
-  isGitDiffCommand,
   mergeToolCall,
   peelSectionExit,
   rawOutputGenericSections,
+  terminalMetaOf,
   toolSubject,
-} from '../harness-tool-render';
-import { parseSubagentPayload } from '../harness-subagents';
-import { compactToolCallForRetention } from '../harness-tool-retention';
-import { extractModifiedPath } from '../acp-harness-memory';
-import { scanValueForImagePaths } from '../harness-images';
-import type { ContentBlock, ToolCall, ToolCallUpdate } from '../types';
+} from './generic';
+import { parseSubagentPayload } from './subagents';
 import type {
   LaneAdapter,
   McpIdentity,
@@ -42,9 +41,162 @@ export const TOOL_STATE_TERMINAL_CAP = 512;
 const NO_SECTIONS: ToolSection[] = [];
 Object.freeze(NO_SECTIONS);
 
+// ─── Retention ────────────────────────────────────────────────────────────
+//
+// Moved from `harness-tool-retention.ts` (spec 380 phase 4): the decoder keeps
+// each call's merged wire state, so it also bounds it.
+
+/** The whole compacted call; past this only its metadata is kept. */
+export const TOOL_CALL_RETENTION_CHAR_LIMIT = 64 * 1024;
+const TOOL_RAW_INPUT_CHAR_LIMIT = 12 * 1024;
+const TOOL_RAW_OUTPUT_CHAR_LIMIT = 16 * 1024;
+const TOOL_CONTENT_BLOCK_LIMIT = 8;
+const TOOL_CONTENT_TEXT_CHAR_LIMIT = 16 * 1024;
+const TOOL_TITLE_CHAR_LIMIT = 512;
+const TOOL_LOCATION_COUNT_LIMIT = 8;
+const TOOL_PATH_CHAR_LIMIT = 1024;
+
+function boundedUnknown(value: unknown, limit: number): unknown {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string') return truncateRetainedText(value, limit);
+  try {
+    const serialized = JSON.stringify(value);
+    if (serialized === undefined || serialized.length <= limit) return value;
+    return truncateRetainedText(serialized, limit);
+  } catch {
+    return '[unserializable tool payload omitted]';
+  }
+}
+
+function compactContentBlock(block: ContentBlock): ContentBlock {
+  switch (block.type) {
+    case 'text':
+      return { ...block, text: truncateRetainedText(block.text, TOOL_CONTENT_TEXT_CHAR_LIMIT) };
+    case 'image':
+      return { ...block, data: '' };
+    case 'audio':
+      return { ...block, data: '' };
+    case 'resource_link':
+      return {
+        ...block,
+        uri: truncateRetainedText(block.uri, TOOL_PATH_CHAR_LIMIT),
+        description: block.description === undefined
+          ? undefined
+          : truncateRetainedText(block.description, TOOL_TITLE_CHAR_LIMIT),
+      };
+    case 'resource':
+      return {
+        ...block,
+        resource: {
+          ...block.resource,
+          uri: truncateRetainedText(block.resource.uri, TOOL_PATH_CHAR_LIMIT),
+          text: block.resource.text === undefined
+            ? undefined
+            : truncateRetainedText(block.resource.text, TOOL_CONTENT_TEXT_CHAR_LIMIT),
+          blob: block.resource.blob === undefined ? undefined : '',
+        },
+      };
+  }
+}
+
+function compactToolContent(content: ToolCallContent[] | undefined): ToolCallContent[] | undefined {
+  if (content === undefined) return undefined;
+  return content.slice(0, TOOL_CONTENT_BLOCK_LIMIT).map((item) => {
+    if (item.type === 'diff') {
+      return {
+        ...item,
+        path: item.path === undefined ? undefined : truncateRetainedText(item.path, TOOL_PATH_CHAR_LIMIT),
+        oldText: item.oldText == null
+          ? item.oldText
+          : truncateRetainedText(item.oldText, TOOL_CONTENT_TEXT_CHAR_LIMIT),
+        newText: item.newText === undefined
+          ? undefined
+          : truncateRetainedText(item.newText, TOOL_CONTENT_TEXT_CHAR_LIMIT),
+      };
+    }
+    if (item.type === 'content' && item.content) {
+      return { ...item, content: compactContentBlock(item.content) };
+    }
+    if (item.type === 'terminal' && item.terminalId) {
+      return { ...item, terminalId: truncateRetainedText(item.terminalId, TOOL_TITLE_CHAR_LIMIT) };
+    }
+    return item;
+  });
+}
+
+/** Keep only bounded merge state after each render. The full wire payload has
+ * already been converted into the bounded transcript ToolPayload at this point. */
+export function compactToolCallForRetention(
+  call: ToolCall | ToolCallUpdate,
+): ToolCall | ToolCallUpdate {
+  const compact: ToolCall | ToolCallUpdate = {
+    toolCallId: call.toolCallId,
+    title: call.title === undefined ? undefined : truncateRetainedText(call.title, TOOL_TITLE_CHAR_LIMIT),
+    kind: call.kind,
+    status: call.status,
+    content: compactToolContent(call.content),
+    locations: call.locations
+      ?.slice(0, TOOL_LOCATION_COUNT_LIMIT)
+      .map((location) => ({
+        ...location,
+        path: truncateRetainedText(location.path, TOOL_PATH_CHAR_LIMIT),
+      })),
+    rawInput: boundedUnknown(call.rawInput, TOOL_RAW_INPUT_CHAR_LIMIT),
+    rawOutput: boundedUnknown(call.rawOutput, TOOL_RAW_OUTPUT_CHAR_LIMIT),
+  };
+  try {
+    if (JSON.stringify(compact).length <= TOOL_CALL_RETENTION_CHAR_LIMIT) return compact;
+  } catch {
+    // Fall through to metadata-only retention.
+  }
+  return {
+    toolCallId: compact.toolCallId,
+    title: compact.title,
+    kind: compact.kind,
+    status: compact.status,
+    locations: compact.locations,
+  };
+}
+
+/**
+ * Terminal output kept per call. The well shows at most 80 lines of 140 cells,
+ * so the head is all any surface reads.
+ */
+export const TERMINAL_OUTPUT_CHAR_LIMIT = 16 * 1024;
+
+/** A call's command, as the terminal convention reported it (spec 380 phase 3). */
+interface TerminalState {
+  /** Output appended so far, head kept; null until any output arrived. */
+  readonly output: string | null;
+  /** `terminal_exit.exit_code`; null when not reported or the server knew none. */
+  readonly exit: number | null;
+}
+
 interface CallState {
   wire: ToolCall | ToolCallUpdate;
   view: ToolView;
+  terminal: TerminalState | null;
+}
+
+/** Fold one update's terminal meta into the call's state. `changed`: what the well shows moved. */
+function foldTerminal(
+  prior: TerminalState | null,
+  meta: unknown,
+): { state: TerminalState | null; changed: boolean } {
+  const update = terminalMetaOf(meta);
+  if (!update) return { state: prior, changed: false };
+  let output = prior?.output ?? null;
+  if (update.output !== null) {
+    const head = output ?? '';
+    output = head.length >= TERMINAL_OUTPUT_CHAR_LIMIT
+      ? head
+      : (head + update.output).slice(0, TERMINAL_OUTPUT_CHAR_LIMIT);
+  }
+  const exit = update.exit ? update.exit.code : prior?.exit ?? null;
+  return {
+    state: { output, exit },
+    changed: output !== (prior?.output ?? null) || exit !== (prior?.exit ?? null),
+  };
 }
 
 export interface ToolDecodeResult {
@@ -89,8 +241,10 @@ function contentBlocks(call: ToolCall | ToolCallUpdate): ContentBlock[] {
 /** What this update contributes to the row's images: the caller resolves paths. */
 function imageUpdate(call: ToolCall | ToolCallUpdate, merged: ToolCall | ToolCallUpdate): ToolImageUpdate {
   const blocks = contentBlocks(call);
-  const textOutput = blocks
-    .map((block) => (block.type === 'text' ? block.text : ''))
+  // Command output that travels as terminal meta is scanned like the console
+  // block it replaces.
+  const terminalChunk = terminalMetaOf(call._meta)?.output ?? '';
+  const textOutput = [...blocks.map((block) => (block.type === 'text' ? block.text : '')), terminalChunk]
     .filter((text) => text.length > 0);
   const scans = [
     scanValueForImagePaths(call.rawInput),
@@ -106,17 +260,28 @@ function imageUpdate(call: ToolCall | ToolCallUpdate, merged: ToolCall | ToolCal
   };
 }
 
-/** Output sections and exit code, as the pre-spec-380 `buildToolPayload` built them. */
+/**
+ * Output sections and exit code, as the pre-spec-380 `buildToolPayload` built
+ * them. Terminal output, once any arrived, is the whole well: a server that
+ * uses the terminal sends the output nowhere else, so `rawOutput` / `content`
+ * text beside it is at most a display copy of the input. A `terminal_exit`
+ * code wins over `rawOutput`.
+ */
 function outputOf(
   adapter: LaneAdapter,
   merged: ToolCall | ToolCallUpdate,
   kind: string,
   command: string,
+  terminal: TerminalState | null,
 ): { sections: ToolSection[]; exit: number | null } {
-  const raw = adapter.outputSections?.(merged.rawOutput) ?? rawOutputGenericSections(merged.rawOutput);
-  const content = contentOutputSections(merged.content);
   const known = extractToolExitCode(merged.rawOutput);
-  const source = raw.length > 0 ? raw : content;
+  let source: Array<{ label: string; text: string }>;
+  if (terminal?.output != null) {
+    source = [{ label: 'output', text: terminal.output }];
+  } else {
+    const raw = adapter.outputSections?.(merged.rawOutput) ?? rawOutputGenericSections(merged.rawOutput);
+    source = raw.length > 0 ? raw : contentOutputSections(merged.content);
+  }
   const peeled = adapter.exitPrefix ? peelSectionExit(source, known) : { exitCode: known, sections: source };
   const lineLimit = kind === 'execute' && isGitDiffCommand(command) ? 80 : kind === 'execute' ? 12 : 6;
   const sections = peeled.sections
@@ -126,7 +291,7 @@ function outputOf(
     }))
     .filter((section) => section.text)
     .slice(0, 4);
-  return { sections, exit: peeled.exitCode };
+  return { sections, exit: terminal?.exit ?? peeled.exitCode };
 }
 
 /**
@@ -140,12 +305,13 @@ function genericDraft(
   merged: ToolCall | ToolCallUpdate,
   status: ToolState,
   prior: ToolView | null,
+  terminal: { state: TerminalState | null; changed: boolean },
 ): ToolDraft {
   const { kind, command, subject } = toolSubject(merged);
-  const output = outputOf(adapter, merged, kind, command);
+  const output = outputOf(adapter, merged, kind, command, terminal.state);
   const diffs = extractToolDiffs(merged.content);
   const hasContentUpdate = call.content !== undefined && call.content.length > 0;
-  const hasOutputUpdate = call.rawOutput !== undefined || hasContentUpdate;
+  const hasOutputUpdate = call.rawOutput !== undefined || hasContentUpdate || terminal.changed;
   const title = cleanToolTitle(merged.title, merged.kind ?? 'tool') || merged.title?.trim() || '';
   const toolName = extractRawToolName(merged.rawInput) || null;
   const commandLine = extractCommandLineRaw(merged.rawInput) || null;
@@ -211,19 +377,25 @@ export class ToolCallDecoder {
     if (updateOnly && !previous) return null;
     const merged = mergeToolCall(previous?.wire, call);
     const prior = previous?.view ?? null;
+    const terminal = foldTerminal(previous?.terminal ?? null, call._meta);
     const step: ToolStep = {
       call,
       merged,
       prior,
       agentNames: this.agentNames,
       permission: false,
-      draft: genericDraft(this.adapter, call, merged, 'pending', prior),
+      terminalOutput: terminal.state?.output ?? null,
+      draft: genericDraft(this.adapter, call, merged, 'pending', prior, terminal),
     };
     const wire = (merged.status ?? 'pending') as ToolState;
     step.draft.status = this.adapter.toolStatus?.(step, wire) ?? wire;
     this.adapter.tool?.(step);
     const view: ToolView = step.draft;
-    this.remember(call.toolCallId, { wire: compactToolCallForRetention(merged), view });
+    this.remember(call.toolCallId, {
+      wire: compactToolCallForRetention(merged),
+      view,
+      terminal: terminal.state,
+    });
     return {
       view,
       images: imageUpdate(call, merged),
@@ -243,7 +415,15 @@ export class ToolCallDecoder {
       prior: null,
       agentNames: this.agentNames,
       permission: true,
-      draft: genericDraft(this.adapter, call, call, (call.status ?? 'pending') as ToolState, null),
+      terminalOutput: null,
+      draft: genericDraft(
+        this.adapter,
+        call,
+        call,
+        (call.status ?? 'pending') as ToolState,
+        null,
+        { state: null, changed: false },
+      ),
     };
     this.adapter.tool?.(step);
     return step.draft;

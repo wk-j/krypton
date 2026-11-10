@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { executionOutputParts, executionState, parseExecutionPayload } from './harness-execution';
-import { compactToolCallForRetention } from './harness-tool-retention';
+import { parseExecutionPayload } from './adapters/omp-execution';
+import { compactToolCallForRetention } from './adapters/tool';
+import { executionOutputParts, executionState } from './harness-execution';
 import type { ExecutionPayload } from './harness-view-types';
 import type { ToolCall, ToolCallUpdate } from './types';
 

@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import { TOOL_CALL_RETENTION_CHAR_LIMIT, compactToolCallForRetention } from './adapters/tool';
 import type { ToolView } from './adapters/types';
 import {
   HARNESS_TRANSCRIPT_CAP,
-  TOOL_CALL_RETENTION_CHAR_LIMIT,
   appendBoundedTranscriptItem,
   clearToolTranscriptRetention,
-  compactToolCallForRetention,
   isOrphanToolCallUpdate,
   type ToolRetentionState,
 } from './harness-tool-retention';

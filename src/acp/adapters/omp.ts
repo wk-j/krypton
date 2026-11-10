@@ -1,13 +1,17 @@
 // Spec 380 — Oh My Pi (`omp acp`, backend id `omp`).
 
-import { parseExecutionPayload } from '../harness-execution';
-import { isOmpBackgroundUpdate, jobsPayload, parseOmpJobs } from '../harness-subagents';
+import { jobsPayload } from '../harness-subagents';
 import { cleanToolTitle } from '../harness-tool-render';
+import { UNVERIFIED_SUPPLIES } from './generic';
+import { parseExecutionPayload } from './omp-execution';
+import { isOmpBackgroundUpdate, parseOmpJobs } from './subagents';
 import { applySubagentCard, clearSections, isTerminalState } from './tool';
 import type { LaneAdapter, ToolState, ToolStep } from './types';
 
 export const ompAdapter: LaneAdapter = {
   id: 'omp',
+  // No `turnState` hook: Krypton reads thread state from codex-acp only.
+  supplies: { ...UNVERIFIED_SUPPLIES, turnState: 'no' },
   // spec 370: a background spawn keeps reporting on its own call after it
   // returned. Those `in_progress` frames refresh the card; they never reopen it.
   toolStatus(step: ToolStep, wire: ToolState): ToolState {

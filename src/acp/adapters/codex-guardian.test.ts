@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { isCodexGuardianReview, parseGuardianReview } from './harness-guardian-review';
-import { mergeToolCall } from './harness-tool-render';
-import type { ToolCall, ToolCallUpdate } from './types';
+import type { ToolCall, ToolCallUpdate } from '../types';
+import { isCodexGuardianReview, parseGuardianReview } from './codex-guardian';
+import { mergeToolCall } from './generic';
 
 const id = 'guardian_assessment:review-1';
 
