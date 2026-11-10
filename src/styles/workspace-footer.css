@@ -380,19 +380,23 @@
   color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
 }
 
-/* spec 337: Rails verifier — worst state across harnesses. Muted like the link
-   chip; findings stay neutral (ADR-0004: model findings are evidence). Only a
-   failed check is coloured, as a fault (ADR-0017). Hidden when no harness has a
-   `.krypton/rails.toml`. Static — no pulse, no animation. */
+/* spec 337: Rails verifier — worst state across harnesses, in the same recessed
+   readout as git. Findings stay neutral (ADR-0004: model findings are evidence).
+   Only a failed check is coloured, as a fault (ADR-0017). Hidden when no harness
+   has a `.krypton/rails.toml`. Static — no pulse, no animation. */
 .krypton-workspace-footer__segment--rails {
   flex: 0 0 auto;
   height: 18px;
   display: inline-flex;
   align-items: center;
   padding: 0 6px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
   overflow: visible;
   text-overflow: clip;
   letter-spacing: 0.04em;
+  font-weight: 600;
   color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.5));
 }
 
