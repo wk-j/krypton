@@ -8,6 +8,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
+import type { ToolView } from './acp/adapters/types';
 import type { FencedTool } from './acp/headless-fence';
 import type { AcpMcpServerHttp } from './acp/types';
 
@@ -75,11 +76,10 @@ export function inlineRemoteMcpServers(remote: InlineRemote | null): AcpMcpServe
   }];
 }
 
-/** The `host_exec` command in a tool call's input, if any. */
-export function hostExecCommand(title: string | undefined, rawInput: unknown): string | null {
-  if (title !== INLINE_HOST_EXEC_TITLE || rawInput === null || typeof rawInput !== 'object') return null;
-  const command = (rawInput as Record<string, unknown>).command;
-  return typeof command === 'string' && command.trim() !== '' ? command : null;
+/** The `host_exec` command of a decoded tool call, if it is one (spec 380). */
+export function hostExecCommandOfView(view: Pick<ToolView, 'mcp' | 'commandLine'>): string | null {
+  if (view.mcp?.server !== INLINE_HOST_EXEC.server || view.mcp.tool !== INLINE_HOST_EXEC.tool) return null;
+  return view.commandLine && view.commandLine.trim() !== '' ? view.commandLine : null;
 }
 
 /**

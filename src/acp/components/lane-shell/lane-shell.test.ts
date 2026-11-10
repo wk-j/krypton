@@ -14,7 +14,7 @@ function lane(): HarnessLane {
     accent: '#4dd0ff',
     transcript: [],
     backgroundTasks: [],
-    toolCalls: new Map(),
+    toolViews: new Map(),
     queuedPrompts: [],
     pendingPermissions: [],
     pendingQuestions: [],

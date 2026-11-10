@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { assistantMessageEvent } from './client';
+import { assistantMessageEvent } from './adapters/generic';
 import { sanitizeHref } from './harness-markdown';
 import {
   classifyResourceTarget,

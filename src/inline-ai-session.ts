@@ -12,11 +12,12 @@
 // `session/new` must never land while another conversation's turn is still
 // streaming.
 
+import type { LaneEvent } from './acp/adapters/types';
 import { AcpClient } from './acp/client';
 import { answerFencedRequest } from './acp/headless-fence';
-import type { AcpEvent, AcpInstanceOwner, AcpMcpServerDescriptor, StopReason } from './acp/types';
+import type { AcpInstanceOwner, AcpMcpServerDescriptor, StopReason } from './acp/types';
 import type { InlineAiConfig } from './config';
-import { INLINE_HOST_EXEC, hostExecCommand } from './inline-ai-remote';
+import { INLINE_HOST_EXEC, hostExecCommandOfView } from './inline-ai-remote';
 
 export type InlineTurnEvent =
   | { type: 'status'; text: string }
@@ -98,19 +99,18 @@ export class InlineAcpSession {
     if (this.client !== client) {
       throw new InlineAiError(`inline AI: "${backend}" exited — press ⌘K again`);
     }
-    const off = client.onEvent((event: AcpEvent) => {
+    const off = client.onEvent((event: LaneEvent) => {
       if (conversation.closed) return;
       if (event.type === 'message_chunk') {
         if (event.content.type === 'text' && event.text) onEvent({ type: 'chunk', text: event.text });
-      } else if (event.type === 'tool_call') {
-        const { title, rawInput } = event.call;
-        onEvent({ type: 'tool', title: title ?? 'tool', command: hostExecCommand(title, rawInput) });
+      } else if (event.type === 'tool' && event.phase === 'call') {
+        const { view } = event;
+        onEvent({ type: 'tool', title: view.title || 'tool', command: hostExecCommandOfView(view) });
       } else if (event.type === 'permission_request') {
         // claude-agent-acp sends host_exec's input with its permission request;
         // its `tool_call` arrives with an empty one (spec 336 smoke).
-        const { title, rawInput } = event.toolCall;
-        const command = hostExecCommand(title, rawInput);
-        if (command !== null) onEvent({ type: 'tool', title: title ?? 'tool', command });
+        const command = hostExecCommandOfView(event.view);
+        if (command !== null) onEvent({ type: 'tool', title: event.view.title || 'tool', command });
       }
     });
     onEvent({ type: 'status', text: 'Thinking...' });
@@ -199,7 +199,7 @@ export class InlineAcpSession {
     // Lives as long as the process: the fence must answer a request even
     // after the turn that raised it settled, and a death between turns must
     // drop the client so the next Cmd+K respawns.
-    client.onEvent((event: AcpEvent) => {
+    client.onEvent((event: LaneEvent) => {
       if (answerFencedRequest(client, event, INLINE_HOST_EXEC)) return;
       // Rust sets `reason` only when the subprocess died.
       if (event.type === 'stop' && event.reason !== undefined) this.forget(client);

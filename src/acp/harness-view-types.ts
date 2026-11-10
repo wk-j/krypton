@@ -8,6 +8,7 @@
 
 import type * as smd from 'streaming-markdown';
 
+import type { LaneInit, PermissionRequest, ToolView } from './adapters/types';
 import type {
   AskUserCardState,
   AskUserQuestion,
@@ -25,7 +26,6 @@ import type {
   AcpAvailableCommand,
   AcpSessionCapabilities,
   AcpSessionInfo,
-  AgentInitInfo,
   HarnessLaneStatus,
   HarnessMcpLaneStats,
   MessageResourceGitState,
@@ -34,7 +34,6 @@ import type {
   PlanEntry,
   ProviderErrorPayload,
   ToolCall,
-  ToolCallUpdate,
   TranscriptAnnotation,
   UsageInfo,
 } from './types';
@@ -49,10 +48,8 @@ import type { PolicyDelivery } from './lane-context';
 export type ComposerFocus = 'text' | 'transcript';
 export type PendingExtraction = never;
 
-export interface HarnessPermission {
-  requestId: number;
-  toolCall: ToolCall;
-  options: PermissionOption[];
+/** A pending permission: the decoded request (spec 380) plus the view's bookkeeping. */
+export interface HarnessPermission extends PermissionRequest {
   resolvedLabel?: string;
   auto?: boolean;
   transcriptItem?: HarnessTranscriptItem;
@@ -766,7 +763,8 @@ export interface HarnessLane {
   currentAssistantMessageId: string | null;
   currentThoughtId: string | null;
   toolTranscriptIds: Map<string, string>;
-  toolCalls: Map<string, ToolCall | ToolCallUpdate>;
+  /** Spec 380: the latest decoded view per tool call (was the merged wire call). */
+  toolViews: Map<string, ToolView>;
   seenTranscriptIds: Set<string>;
   stickToBottom: boolean;
   savedScrollTop: number;
@@ -777,8 +775,6 @@ export interface HarnessLane {
   imageState: LaneImageState;
   /** spec 282: Claude child toolCallId → parent Task toolCallId (child rows absorbed into the card). */
   subagentChildren: Map<string, string>;
-  /** spec 282: Codex subagent threadId → display name (from `_meta.codex.subagent.path`). */
-  codexAgentNames: Map<string, string>;
   supportsImages: boolean;
   /** spec 278: the adapter advertised `_session/steering`; Enter on a busy lane
    *  steers instead of queueing. Cleared if a steer gets "method not found". */
@@ -1078,7 +1074,7 @@ export interface SessionPickerState {
   sessionCursor: number;
   backendId: string | null;
   probeClient: AcpClient | null;
-  initInfo: AgentInitInfo | null;
+  initInfo: LaneInit | null;
   capabilities: AcpSessionCapabilities | null;
   sessions: AcpSessionInfo[];
   nextCursor: string | null;

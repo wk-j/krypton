@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AcpClient } from './acp/client';
-import type { AcpEvent, AcpInstanceOwner, AcpMcpServerDescriptor, StopReason } from './acp/types';
+import { permissionEvent, toolEventSource } from './acp/adapters/test-utils';
+import type { LaneEvent } from './acp/adapters/types';
+import type { AcpInstanceOwner, AcpMcpServerDescriptor, StopReason } from './acp/types';
 import type { InlineAiConfig } from './config';
 import {
   InlineAcpSession,
@@ -26,7 +28,7 @@ function deferred<T>(): Deferred<T> {
 class FakeClient {
   readonly calls: string[] = [];
   readonly turns: Array<Deferred<StopReason>> = [];
-  private readonly listeners: Array<(e: AcpEvent) => void> = [];
+  private readonly listeners: Array<(e: LaneEvent) => void> = [];
   modeError: Error | null = null;
   disposed = false;
   owner!: AcpInstanceOwner;
@@ -47,7 +49,7 @@ class FakeClient {
 
   async sessionNew(): Promise<unknown> {
     this.calls.push('sessionNew');
-    return { session_id: `ses_${this.calls.length}` };
+    return { sessionId: `ses_${this.calls.length}` };
   }
 
   async setLaneModel(modelId: string): Promise<'ok'> {
@@ -60,7 +62,7 @@ class FakeClient {
     if (this.modeError) throw this.modeError;
   }
 
-  onEvent(cb: (e: AcpEvent) => void): () => void {
+  onEvent(cb: (e: LaneEvent) => void): () => void {
     this.listeners.push(cb);
     return () => {
       const i = this.listeners.indexOf(cb);
@@ -68,7 +70,7 @@ class FakeClient {
     };
   }
 
-  emit(event: AcpEvent): void {
+  emit(event: LaneEvent): void {
     for (const cb of this.listeners.slice()) cb(event);
   }
 
@@ -120,7 +122,7 @@ const HOST_EXEC_SERVER: AcpMcpServerDescriptor = {
   name: 'krypton_inline', type: 'http', url: 'http://127.0.0.1:1/mcp/inline', headers: [],
 };
 
-function chunk(text: string): AcpEvent {
+function chunk(text: string): LaneEvent {
   return { type: 'message_chunk', text, content: { type: 'text', text } };
 }
 
@@ -276,11 +278,9 @@ describe('InlineAcpSession', () => {
     const turn = h.session.open(CFG, '/repo', OWNER).prompt('x', (e) => events.push(e));
     const client = await h.nthClient(1);
     const wire = await client.prompted(1);
-    client.emit({ type: 'tool_call', call: { toolCallId: 't1', title: 'Terminal' } });
-    client.emit({
-      type: 'tool_call',
-      call: { toolCallId: 't2', title: 'mcp__krypton_inline__host_exec', rawInput: { command: 'df -h' } },
-    });
+    const tools = toolEventSource('claude');
+    client.emit(tools.call({ toolCallId: 't1', title: 'Terminal' }));
+    client.emit(tools.call({ toolCallId: 't2', title: 'mcp__krypton_inline__host_exec', rawInput: { command: 'df -h' } }));
     client.emit({ type: 'thought_chunk', text: 'hidden' });
     client.emit(chunk('git commit'));
     wire.resolve('end_turn');
@@ -300,12 +300,12 @@ describe('InlineAcpSession', () => {
     const turn = h.session.open(CFG, '/repo', OWNER).prompt('x', () => undefined);
     const client = await h.nthClient(1);
     const wire = await client.prompted(1);
-    client.emit({ type: 'permission_request', requestId: 7, toolCall: { toolCallId: 't' }, options: [] });
+    client.emit(permissionEvent('claude', { toolCallId: 't' }, [], 7));
     client.emit({ type: 'fs_write_pending', requestId: 8, path: '/repo/a', oldText: '', newText: 'x' });
     client.emit({ type: 'elicitation_request', requestId: 9, message: 'pick', requestedSchema: {} });
     wire.resolve('end_turn');
     await turn;
-    client.emit({ type: 'permission_request', requestId: 10, toolCall: { toolCallId: 't' }, options: [] });
+    client.emit(permissionEvent('claude', { toolCallId: 't' }, [], 10));
 
     expect(client.calls).toEqual(expect.arrayContaining(['perm:7:null', 'fsWrite:8:false', 'cancel', 'perm:10:null']));
   });
@@ -328,8 +328,8 @@ describe('InlineAcpSession', () => {
       rawInput: { command: 'ls -la' },
       _meta: { claudeCode: { toolName: 'mcp__krypton_inline__host_exec', mcpServer: { name: 'krypton_inline', source: 'dynamic' } } },
     };
-    client.emit({ type: 'permission_request', requestId: 11, toolCall: hostExec, options });
-    client.emit({ type: 'permission_request', requestId: 12, toolCall: { toolCallId: 'b', title: 'touch /tmp/x' }, options });
+    client.emit(permissionEvent('claude', hostExec, options, 11));
+    client.emit(permissionEvent('claude', { toolCallId: 'b', title: 'touch /tmp/x' }, options, 12));
     wire.resolve('end_turn');
     await turn;
 

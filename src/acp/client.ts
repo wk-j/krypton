@@ -1,83 +1,42 @@
 // Krypton — ACP client.
 // Thin frontend wrapper around the Rust `acp_*` Tauri commands and
 // `acp-event-<session>` notifications. One AcpClient per harness lane.
+// Spec 380: every payload and command result goes through the lane's decoder
+// (`adapters/`), so listeners and callers only ever see canonical lane data.
 
 import { invoke } from '@tauri-apps/api/core';
 import { type UnlistenFn } from '@tauri-apps/api/event';
 
 import { setupListener } from '../util/listener';
+import { createLaneDecoder } from './adapters/decoder';
+import { steerOutcome } from './adapters/generic';
+import type { LaneDecoder, LaneEvent, LaneInit, LaneSession, RawAcpEvent } from './adapters/types';
 import { skipInterviewDecision, type AskUserReply } from './ask-user-question';
 import { elicitationResponse, type QuestionTarget } from './elicitation';
-import { claudeParentToolUseId } from './harness-subagents';
 import type {
-  AcpAvailableCommand,
   AcpBackendDescriptor,
   AcpInstanceOwner,
   AcpSessionListResult,
   AcpMcpServerDescriptor,
-  AcpEvent,
-  AgentInfo,
-  AgentInitInfo,
-  AgentSessionInfo,
   ContentBlock,
-  PermissionOption,
-  PlanEntry,
-  ProviderErrorPayload,
   SteerOutcome,
   StopReason,
-  ToolCall,
-  ToolCallUpdate,
-  UsageInfo,
+  WireInitInfo,
+  WireSessionInfo,
 } from './types';
-
-interface RawAcpEvent {
-  type: 'session_update' | 'permission_request' | 'ask_user_question' | 'elicitation_request' | 'stop' | 'error' | 'fs_activity' | 'fs_write_pending' | 'provider_error' | 'turn_marker';
-  // session_update:
-  kind?: string;
-  update?: {
-    sessionUpdate: string;
-    content?: ContentBlock | { type: 'text'; text: string };
-    [k: string]: unknown;
-  };
-  // permission_request / ask_user_question / elicitation_request:
-  requestId?: number;
-  questions?: unknown;
-  toolCallId?: string;
-  requestedSchema?: unknown;
-  params?: {
-    toolCall?: ToolCall;
-    options?: PermissionOption[];
-    [k: string]: unknown;
-  };
-  // stop:
-  stopReason?: StopReason;
-  reason?: string;
-  // error:
-  message?: string;
-  // fs_activity:
-  method?: 'read' | 'write';
-  path?: string;
-  ok?: boolean;
-  error?: string;
-  // fs_write_pending:
-  oldText?: string;
-  newText?: string;
-  // provider_error:
-  payload?: ProviderErrorPayload;
-  // turn_marker (spec 278; requestId above):
-  outcome?: unknown;
-}
 
 export class AcpClient {
   private session: number;
   private backend: string;
   private unlisten: UnlistenFn | null = null;
-  private listeners: Array<(e: AcpEvent) => void> = [];
+  private listeners: Array<(e: LaneEvent) => void> = [];
   private disposed = false;
+  private readonly decoder: LaneDecoder;
 
   private constructor(session: number, backend: string) {
     this.session = session;
     this.backend = backend;
+    this.decoder = createLaneDecoder(backend);
   }
 
   static async listBackends(): Promise<AcpBackendDescriptor[]> {
@@ -127,31 +86,21 @@ export class AcpClient {
    *  If `onInitialized` is supplied, the result it returns replaces the MCP server
    *  list seeded at spawn time. Returning `undefined` keeps the seeded list. */
   async initialize(
-    onInitialized?: (caps: unknown) => Promise<AcpMcpServerDescriptor[] | undefined>,
-  ): Promise<AgentInfo> {
+    onInitialized?: (init: LaneInit) => Promise<AcpMcpServerDescriptor[] | undefined>,
+  ): Promise<{ init: LaneInit; session: LaneSession }> {
     const init = await this.initializeOnly();
     if (onInitialized) {
-      const servers = await onInitialized(init.agent_capabilities);
+      const servers = await onInitialized(init);
       if (servers !== undefined) {
         await this.setMcpServers(servers);
       }
     }
-    const sn = await this.sessionNew();
-    return {
-      agent_protocol_version: init.agent_protocol_version,
-      auth_methods: init.auth_methods,
-      agent_capabilities: init.agent_capabilities,
-      session_id: sn.session_id,
-      model_apply_failed: sn.model_apply_failed ?? false,
-      // spec 127: carry the agent-advertised model list + current id through.
-      available_models: sn.available_models ?? [],
-      current_model_id: sn.current_model_id ?? null,
-      steering_supported: init.steering_supported ?? false,
-    } as AgentInfo;
+    const session = await this.sessionNew();
+    return { init, session };
   }
 
-  async initializeOnly(): Promise<AgentInitInfo> {
-    return invoke<AgentInitInfo>('acp_initialize', { session: this.session });
+  async initializeOnly(): Promise<LaneInit> {
+    return this.decoder.init(await invoke<WireInitInfo>('acp_initialize', { session: this.session }));
   }
 
   async setMcpServers(mcpServers: AcpMcpServerDescriptor[]): Promise<void> {
@@ -161,30 +110,33 @@ export class AcpClient {
     });
   }
 
-  async sessionNew(): Promise<AgentSessionInfo> {
-    return invoke<AgentSessionInfo>('acp_session_new', { session: this.session });
+  async sessionNew(): Promise<LaneSession> {
+    this.decoder.reset();
+    return this.decoder.session(await invoke<WireSessionInfo>('acp_session_new', { session: this.session }));
   }
 
   async listSessions(cwd: string | null, cursor?: string | null): Promise<AcpSessionListResult> {
-    return invoke<AcpSessionListResult>('acp_session_list', {
+    return this.decoder.sessionList(await invoke<unknown>('acp_session_list', {
       session: this.session,
       cwd,
       cursor: cursor ?? null,
-    });
+    }));
   }
 
-  async resumeSession(sessionId: string): Promise<AgentSessionInfo> {
-    return invoke<AgentSessionInfo>('acp_session_resume', {
+  async resumeSession(sessionId: string): Promise<LaneSession> {
+    this.decoder.reset();
+    return this.decoder.session(await invoke<WireSessionInfo>('acp_session_resume', {
       session: this.session,
       sessionId,
-    });
+    }));
   }
 
-  async loadSession(sessionId: string): Promise<AgentSessionInfo> {
-    return invoke<AgentSessionInfo>('acp_session_load', {
+  async loadSession(sessionId: string): Promise<LaneSession> {
+    this.decoder.reset();
+    return this.decoder.session(await invoke<WireSessionInfo>('acp_session_load', {
       session: this.session,
       sessionId,
-    });
+    }));
   }
 
   /** spec 127: switch the model of this live lane. Resolves to 'ok' on success or
@@ -203,7 +155,7 @@ export class AcpClient {
     await invoke('acp_set_session_mode', { session: this.session, modeId });
   }
 
-  onEvent(cb: (e: AcpEvent) => void): () => void {
+  onEvent(cb: (e: LaneEvent) => void): () => void {
     this.listeners.push(cb);
     return () => {
       const i = this.listeners.indexOf(cb);
@@ -212,14 +164,10 @@ export class AcpClient {
   }
 
   async prompt(blocks: ContentBlock[]): Promise<StopReason> {
-    const result = await invoke<{ stopReason: StopReason; usage?: UsageInfo; _meta?: { usage?: UsageInfo } }>(
-      'acp_prompt',
-      { session: this.session, blocks },
+    const { stopReason, usage } = this.decoder.promptResult(
+      await invoke<unknown>('acp_prompt', { session: this.session, blocks }),
     );
-    const stopReason: StopReason = result.stopReason ?? 'end_turn';
-    // Off-spec usage: claude-agent-acp puts it at top-level, codex-acp under _meta.
-    const usage = result.usage ?? result._meta?.usage;
-    if (usage && Object.keys(usage).length > 0) {
+    if (usage) {
       for (const cb of this.listeners.slice()) cb({ type: 'usage', usage });
     }
     // Per the ACP spec, the `session/prompt` JSON-RPC *response* is the turn-end signal;
@@ -294,245 +242,8 @@ export class AcpClient {
 
   private handleRaw(raw: RawAcpEvent): void {
     if (this.disposed) return;
-    let event: AcpEvent | null = null;
-    switch (raw.type) {
-      case 'session_update': {
-        const update = (raw.update ?? {}) as {
-          sessionUpdate?: string;
-          content?: unknown;
-          entries?: PlanEntry[];
-          [k: string]: unknown;
-        };
-        switch (raw.kind) {
-          case 'user_message_chunk': {
-            const content = normalizeContentBlock(update.content);
-            event = { type: 'user_message_chunk', text: content.type === 'text' ? content.text : '', content };
-            break;
-          }
-          case 'agent_message_chunk':
-            event = assistantMessageEvent(update.content, update.messageId, claudeParentToolUseId(update._meta));
-            break;
-          case 'agent_thought_chunk': {
-            const parentToolUseId = claudeParentToolUseId(update._meta);
-            event = { type: 'thought_chunk', text: extractText(update.content), ...(parentToolUseId ? { parentToolUseId } : {}) };
-            break;
-          }
-          case 'tool_call':
-            event = { type: 'tool_call', call: update as unknown as ToolCall };
-            break;
-          case 'tool_call_update':
-            event = { type: 'tool_call_update', update: update as unknown as ToolCallUpdate };
-            break;
-          case 'plan': {
-            const entries = update.entries ?? [];
-            event = { type: 'plan', entries };
-            break;
-          }
-          case 'usage_update': {
-            const u = update as Record<string, unknown>;
-            const cost = u.cost as { amount?: number; currency?: string } | undefined;
-            const usage: UsageInfo = {
-              used: typeof u.used === 'number' ? u.used : undefined,
-              size: typeof u.size === 'number' ? u.size : undefined,
-              cost:
-                cost && typeof cost.amount === 'number'
-                  ? { amount: cost.amount, currency: cost.currency ?? 'USD' }
-                  : undefined,
-            };
-            event = { type: 'usage', usage };
-            break;
-          }
-          case 'available_commands_update': {
-            const raw = (update.availableCommands as Array<Record<string, unknown>> | undefined) ?? [];
-            const commands: AcpAvailableCommand[] = raw
-              .map((c) => {
-                const input = c.input as { hint?: string } | undefined;
-                return {
-                  name: typeof c.name === 'string' ? c.name : '',
-                  description: typeof c.description === 'string' ? c.description : undefined,
-                  inputHint: typeof input?.hint === 'string' ? input.hint : undefined,
-                };
-              })
-              .filter((c) => c.name.length > 0);
-            event = { type: 'available_commands', commands };
-            break;
-          }
-          case 'current_mode_update': {
-            const modeId = typeof update.currentModeId === 'string' ? update.currentModeId : '';
-            event = { type: 'mode_update', modeId };
-            break;
-          }
-          case 'session_info_update': {
-            // spec 278: only codex-acp's thread status is consumed (title etc. are not).
-            const state = codexThreadState(update._meta);
-            if (state) event = { type: 'turn_state', state };
-            break;
-          }
-        }
-        break;
-      }
-      case 'fs_activity': {
-        event = {
-          type: 'fs_activity',
-          method: raw.method === 'write' ? 'write' : 'read',
-          path: typeof raw.path === 'string' ? raw.path : '',
-          ok: Boolean(raw.ok),
-          error: typeof raw.error === 'string' ? raw.error : undefined,
-        };
-        break;
-      }
-      case 'fs_write_pending': {
-        event = {
-          type: 'fs_write_pending',
-          requestId: raw.requestId ?? 0,
-          path: typeof raw.path === 'string' ? raw.path : '',
-          oldText: typeof raw.oldText === 'string' ? raw.oldText : '',
-          newText: typeof raw.newText === 'string' ? raw.newText : '',
-        };
-        break;
-      }
-      case 'provider_error': {
-        if (raw.payload) event = { type: 'provider_error', payload: raw.payload };
-        break;
-      }
-      case 'permission_request': {
-        const params = raw.params ?? {};
-        event = {
-          type: 'permission_request',
-          requestId: raw.requestId ?? 0,
-          toolCall: params.toolCall ?? ({} as ToolCall),
-          options: params.options ?? [],
-        };
-        break;
-      }
-      case 'ask_user_question': {
-        event = {
-          type: 'ask_user_question',
-          requestId: raw.requestId ?? 0,
-          questions: raw.questions,
-          toolCallId: typeof raw.toolCallId === 'string' ? raw.toolCallId : undefined,
-        };
-        break;
-      }
-      case 'elicitation_request': {
-        event = {
-          type: 'elicitation_request',
-          requestId: raw.requestId ?? 0,
-          message: typeof raw.message === 'string' ? raw.message : '',
-          requestedSchema: raw.requestedSchema,
-          toolCallId: typeof raw.toolCallId === 'string' ? raw.toolCallId : undefined,
-        };
-        break;
-      }
-      case 'turn_marker':
-        if (typeof raw.requestId === 'number' && (raw.kind === 'prompt' || raw.kind === 'steer')) {
-          event = {
-            type: 'turn_marker',
-            kind: raw.kind,
-            requestId: raw.requestId,
-            outcome: raw.kind === 'steer' ? steerOutcome(raw.outcome) : null,
-          };
-        }
-        break;
-      case 'stop':
-        event = {
-          type: 'stop',
-          stopReason: (raw.stopReason ?? 'end_turn') as StopReason,
-          reason: typeof raw.reason === 'string' ? raw.reason : undefined,
-        };
-        break;
-      case 'error':
-        event = { type: 'error', message: raw.message ?? 'unknown error' };
-        break;
-    }
-    if (event) {
+    for (const event of this.decoder.event(raw)) {
       for (const cb of this.listeners.slice()) cb(event);
     }
   }
-}
-
-/** spec 278: a `_session/steering` outcome; unknown or missing → 'failed'. */
-function steerOutcome(value: unknown): SteerOutcome {
-  return value === 'injected' || value === 'startedNewTurn' || value === 'promptRequired'
-    ? value
-    : 'failed';
-}
-
-/** spec 278: `_meta.codex.threadStatus.type` → turn state; anything else → null. */
-export function codexThreadState(meta: unknown): 'active' | 'idle' | null {
-  if (!meta || typeof meta !== 'object') return null;
-  const codex = (meta as { codex?: unknown }).codex;
-  if (!codex || typeof codex !== 'object') return null;
-  const status = (codex as { threadStatus?: unknown }).threadStatus;
-  if (!status || typeof status !== 'object') return null;
-  const type = (status as { type?: unknown }).type;
-  return type === 'active' || type === 'idle' ? type : null;
-}
-
-function extractText(content: unknown): string {
-  if (!content || typeof content !== 'object') return '';
-  const c = content as { type?: string; text?: string };
-  if (c.type === 'text' && typeof c.text === 'string') return c.text;
-  return '';
-}
-
-/** Decode one assistant content block without discarding non-text ACP data. */
-export function assistantMessageEvent(content: unknown, messageId: unknown, parentToolUseId?: string | null): AcpEvent {
-  const block = normalizeContentBlock(content);
-  return {
-    type: 'message_chunk',
-    text: block.type === 'text' ? block.text : '',
-    content: block,
-    messageId: typeof messageId === 'string' && messageId.length > 0 ? messageId : undefined,
-    ...(parentToolUseId ? { parentToolUseId } : {}),
-  };
-}
-
-function normalizeContentBlock(content: unknown): ContentBlock {
-  if (!content || typeof content !== 'object') return { type: 'text', text: '' };
-  const value = content as Record<string, unknown>;
-  if (value.type === 'text') {
-    return { type: 'text', text: typeof value.text === 'string' ? value.text : '' };
-  }
-  if (value.type === 'resource_link' && typeof value.uri === 'string') {
-    return {
-      type: 'resource_link',
-      uri: value.uri,
-      name: typeof value.name === 'string' ? value.name : undefined,
-      title: typeof value.title === 'string' ? value.title : undefined,
-      description: typeof value.description === 'string' ? value.description : undefined,
-      mimeType: typeof value.mimeType === 'string' ? value.mimeType : undefined,
-      size: typeof value.size === 'number' && Number.isFinite(value.size) && value.size >= 0
-        ? value.size
-        : undefined,
-    };
-  }
-  if (value.type === 'resource' && value.resource && typeof value.resource === 'object') {
-    const resource = value.resource as Record<string, unknown>;
-    if (typeof resource.uri === 'string') {
-      return {
-        type: 'resource',
-        resource: {
-          uri: resource.uri,
-          mimeType: typeof resource.mimeType === 'string' ? resource.mimeType : undefined,
-          text: typeof resource.text === 'string' ? resource.text : undefined,
-          blob: typeof resource.blob === 'string' ? resource.blob : undefined,
-        },
-      };
-    }
-  }
-  // Image/audio blocks are forwarded when complete; malformed or future blocks
-  // degrade to empty text so existing consumers remain safe.
-  if (value.type === 'image' && typeof value.data === 'string' && typeof value.mimeType === 'string') {
-    return {
-      type: 'image',
-      data: value.data,
-      mimeType: value.mimeType,
-      uri: typeof value.uri === 'string' ? value.uri : undefined,
-    };
-  }
-  if (value.type === 'audio' && typeof value.data === 'string' && typeof value.mimeType === 'string') {
-    return { type: 'audio', data: value.data, mimeType: value.mimeType };
-  }
-  return { type: 'text', text: '' };
 }

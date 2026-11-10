@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { hostExecCommand, inlineRemoteMcpServers, remoteHostBlock, remoteLabel, type InlineRemote } from './inline-ai-remote';
+import { hostExecCommandOfView, inlineRemoteMcpServers, remoteHostBlock, remoteLabel, type InlineRemote } from './inline-ai-remote';
+import { toolEventSource } from './acp/adapters/test-utils';
 
 const ON: InlineRemote = {
   kind: 'on',
@@ -48,11 +49,14 @@ describe('inlineRemoteMcpServers', () => {
   });
 });
 
-describe('hostExecCommand', () => {
+describe('hostExecCommandOfView', () => {
+  const view = (title: string, rawInput: unknown): Parameters<typeof hostExecCommandOfView>[0] =>
+    toolEventSource('codex').call({ toolCallId: 't', title, rawInput }).view;
+
   it('reads the command of a host_exec call only', () => {
-    expect(hostExecCommand('mcp__krypton_inline__host_exec', { command: 'df -h' })).toBe('df -h');
-    expect(hostExecCommand('mcp__other__host_exec', { command: 'df -h' })).toBeNull();
-    expect(hostExecCommand('mcp__krypton_inline__host_exec', {})).toBeNull();
+    expect(hostExecCommandOfView(view('mcp__krypton_inline__host_exec', { command: 'df -h' }))).toBe('df -h');
+    expect(hostExecCommandOfView(view('mcp__other__host_exec', { command: 'df -h' }))).toBeNull();
+    expect(hostExecCommandOfView(view('mcp__krypton_inline__host_exec', {}))).toBeNull();
   });
 });
 

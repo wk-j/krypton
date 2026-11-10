@@ -1,4 +1,5 @@
-// spec 229 — Grok ask_user_question parse + key state.
+// spec 229 — Grok ask_user_question key state. Parsing the wire questions is
+// the lane decoder's job (`adapters/generic.ts`, spec 380).
 // spec 279 — the same card answers ACP form elicitations (`elicitation.ts`).
 // Pure functions so the card can be tested without the harness view.
 
@@ -66,46 +67,6 @@ export type AskUserReply =
   | { kind: 'cancel' };
 
 const OPTION_HOTKEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'];
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-export function parseAskUserQuestions(input: unknown): AskUserQuestion[] {
-  const root = asRecord(input);
-  const nested = asRecord(root?.params);
-  const raw = root?.questions ?? nested?.questions;
-  if (!Array.isArray(raw)) return [];
-  const out: AskUserQuestion[] = [];
-  for (const item of raw) {
-    const rec = asRecord(item);
-    if (!rec) continue;
-    const question = typeof rec.question === 'string' ? rec.question : '';
-    const optionsRaw = Array.isArray(rec.options) ? rec.options : [];
-    const options: AskUserOption[] = [];
-    for (const opt of optionsRaw) {
-      const o = asRecord(opt);
-      if (!o) continue;
-      const label = typeof o.label === 'string' ? o.label : '';
-      if (!label) continue;
-      options.push({
-        label,
-        description: typeof o.description === 'string' ? o.description : '',
-        preview: typeof o.preview === 'string' ? o.preview : undefined,
-      });
-    }
-    if (!question.trim() && options.length === 0) continue;
-    const multi = rec.multiSelect === true || rec.multi_select === true;
-    out.push({
-      question,
-      options,
-      multiSelect: multi || undefined,
-    });
-  }
-  return out;
-}
 
 export function optionIndexFromKey(key: string): number | null {
   const i = OPTION_HOTKEYS.indexOf(key.toLowerCase());

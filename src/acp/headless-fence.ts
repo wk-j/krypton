@@ -12,8 +12,8 @@
 // The tool's own server is the real gate; the fence only stops the agent from
 // parking on it.
 
+import type { LaneEvent, ToolView } from './adapters/types';
 import type { AcpClient } from './client';
-import type { AcpEvent, ToolCall } from './types';
 
 /** An MCP tool, as the agent names it: `mcp__<server>__<tool>`. */
 export interface FencedTool {
@@ -21,29 +21,22 @@ export interface FencedTool {
   tool: string;
 }
 
-function record(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : null;
-}
-
 /**
- * True only for `tool` on `server`, matched exactly on the adapter's labels:
- * the title is `mcp__<server>__<tool>`, and claude-agent-acp's
- * `_meta.claudeCode`, when present, names the same tool on the same server.
- * Arguments (`rawInput`) are never evidence, and conflicting labels decline.
+ * True only for `tool` on `server`, matched exactly on the adapter identity
+ * (spec 380): the title is `mcp__<server>__<tool>`, and on a Claude lane
+ * `_meta.claudeCode` restates the same tool on the same server — the Claude
+ * adapter voids the identity otherwise. Arguments (`rawInput`) are never
+ * evidence, and conflicting labels decline.
  */
-export function isExactMcpTool(call: ToolCall, { server, tool }: FencedTool): boolean {
-  const identity = `mcp__${server}__${tool}`;
-  if (call.title !== identity) return false;
-  const claudeCode = record(record(call._meta)?.claudeCode);
-  if (claudeCode === null) return true;
-  return claudeCode.toolName === identity && record(claudeCode.mcpServer)?.name === server;
+export function isExactMcpTool(view: Pick<ToolView, 'mcp'>, { server, tool }: FencedTool): boolean {
+  return view.mcp !== null && view.mcp.server === server && view.mcp.tool === tool;
 }
 
 /** Answer `event` if it is a request the fence owns. True when it was one. */
-export function answerFencedRequest(client: AcpClient, event: AcpEvent, allow?: FencedTool): boolean {
+export function answerFencedRequest(client: AcpClient, event: LaneEvent, allow?: FencedTool): boolean {
   switch (event.type) {
     case 'permission_request': {
-      const once = allow && isExactMcpTool(event.toolCall, allow)
+      const once = allow && isExactMcpTool(event.view, allow)
         ? event.options.find((option) => option.kind === 'allow_once')
         : undefined;
       void client.respondPermission(event.requestId, once?.optionId ?? null).catch(() => undefined);

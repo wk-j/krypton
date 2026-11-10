@@ -378,6 +378,9 @@ d. The loop stops once the grip, the mouse and the button fades settle
       providers (Claude, Codex, Copilot, Cursor) and notifies the compositor.
 7. Each lane owns one AcpClient, receives an HTTP MCP memory server descriptor
    in session/new.mcpServers, and listens to its own acp-event-<session> stream.
+   The client decodes every payload and every init/session/prompt result through
+   its lane decoder (src/acp/adapters/, spec 380) before any listener sees it:
+   listeners get LaneEvent, lane setup reads LaneInit / LaneSession.
    Lanes render into a shared dashboard, but prompts are dispatched only to the
    active tab in the command center.
    a. OMP lanes also receive the project `.mcp.json` servers (spec-83 bridge,
@@ -1265,8 +1268,10 @@ PUBLISH
        fully-typed `#cancel` + Enter still fires immediately. The registry is the
        single source of truth and must stay in sync with `runHashCommand`.
     e. current_mode_update follows the same path; modes are looked up against
-       agentCapabilities.availableModes captured during initialize, and the lane
-       head paints `renderModeChip()` between the model and MCP chips.
+       the session's ACP `modes` (decoded into LaneSession, spec 380), else the
+       off-spec agentCapabilities.availableModes from initialize. A session that
+       names its currentModeId sets the lane's mode at once. The lane head paints
+       `renderModeChip()` between the model and MCP chips.
 17. fs/* activity surfacing:
     a. When the agent calls fs/read_text_file or fs/write_text_file as an inbound
        JSON-RPC request, src-tauri/src/acp.rs handles the I/O locally, then
@@ -1277,7 +1282,7 @@ PUBLISH
        FS chips. Grok and OMP writes still use fs/write_text_file.
     b. emit_fs_activity emits an `fs_activity` payload on acp-event-<session>
        with method/path/ok/error fields.
-    c. The TS dispatcher converts it into an `fs_activity` AcpEvent; the harness
+    c. The lane decoder converts it into an `fs_activity` LaneEvent; the harness
        appends a transcript item rendered as a `📖 read` / `✏️ wrote` /
        `✗ failed` chip showing the path. NotFound reads still render as ok=true
        (returning empty content matches existing wire semantics). Invalid UTF-8
@@ -1336,12 +1341,12 @@ PUBLISH
        approval and extension select / confirm / input / editor dialogs.
 19. tool_call.content[].diff rendering (Spec 89):
     Whenever a tool_call or tool_call_update arrives with a content entry of
-    type 'diff' (oldText + newText), buildToolPayload extracts it into
-    ToolPayload.diffs; renderToolBody emits the unified +/- diff via the shared
-    renderDiffPreview helper using the `acp-harness` CSS prefix.
+    type 'diff' (oldText + newText), the lane decoder (src/acp/adapters/tool.ts,
+    spec 380) extracts it into ToolView.diffs, which the row payload passes on as
+    ToolPayload.diffs; ToolRow paints the unified +/- diff with DiffBlock.
 20. Plan tracking pinned panel (Spec 90):
     a. session/update { sessionUpdate: 'plan' } already flows from Rust through
-       client.ts as an AcpEvent { type: 'plan', entries }.
+       the lane decoder as a LaneEvent { type: 'plan', entries }.
     b. The harness handler stores entries on lane.plan (replacing any prior
        plan) and calls renderPlanPanel(lane). It does NOT append a transcript
        item; the legacy inline `appendTranscript('plan', ...)` was removed.

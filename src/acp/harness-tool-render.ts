@@ -32,7 +32,7 @@ import {
 // ticker overwrites the glyph on the next tick.
 const TOOL_SPINNER_SEED = '⠋';
 
-function statusGlyph(status: string): string {
+export function statusGlyph(status: string): string {
   if (status === 'completed') return '✓';
   if (status === 'failed' || status === 'canceled') return '✗';
   return TOOL_SPINNER_SEED;
@@ -105,10 +105,8 @@ export function extractRawToolName(rawInput: unknown): string {
   return '';
 }
 
-export function isMemoryTool(call: ToolCall | ToolCallUpdate): boolean {
-  const rawName = extractRawToolName(call.rawInput).toLowerCase();
-  const title = (call.title ?? '').toLowerCase();
-  return rawName.startsWith('memory_') || title.includes('memory_');
+export function isMemoryTool(view: { readonly toolName: string | null; readonly title: string }): boolean {
+  return (view.toolName ?? '').toLowerCase().startsWith('memory_') || view.title.toLowerCase().includes('memory_');
 }
 
 export function cleanToolTitle(title: string | undefined, fallback: string): string {
@@ -191,8 +189,9 @@ export function peelExitPrefix(text: string): { code: number; rest: string } | n
   return { code, rest: text.slice(match[0].length) };
 }
 
-function peelSectionExit(
-  sections: Array<{ label: string; text: string }>,
+/** Grok's `exit: N` first line on `stdout`/`output` sections → the exit code. */
+export function peelSectionExit(
+  sections: ReadonlyArray<{ label: string; text: string }>,
   known: number | null,
 ): { exitCode: number | null; sections: Array<{ label: string; text: string }> } {
   let exitCode = known;
@@ -214,8 +213,12 @@ function peelSectionExit(
 }
 
 export function rawOutputSections(rawOutput: unknown): Array<{ label: string; text: string }> {
-  const grok = grokRawOutputSections(rawOutput);
-  if (grok) return grok;
+  return grokRawOutputSections(rawOutput) ?? rawOutputGenericSections(rawOutput);
+}
+
+/** `rawOutput` walked by its generic keys (spec 380: every backend; Grok's typed
+ *  shapes are read by the Grok adapter first). */
+export function rawOutputGenericSections(rawOutput: unknown): Array<{ label: string; text: string }> {
   const decodedRoot = decodeByteArray(rawOutput);
   if (decodedRoot !== null) return decodedRoot ? [{ label: 'output', text: decodedRoot }] : [];
   if (typeof rawOutput === 'object' && rawOutput) {
@@ -480,47 +483,6 @@ export function toolSubject(call: ToolCall | ToolCallUpdate): { kind: string; co
   const command = kind === 'execute' ? extractCommandLine(call.rawInput) : '';
   const subject = command || extractModifiedPath(call) || cleanToolTitle(call.title, kind) || '';
   return { kind, command, subject };
-}
-
-export function buildToolPayload(
-  call: ToolCall | ToolCallUpdate,
-  status: string,
-  startedAt?: number,
-  endedAt?: number,
-): ToolPayload {
-  const { kind, command, subject } = toolSubject(call);
-  const raw = rawOutputSections(call.rawOutput);
-  const content = contentOutputSections(call.content);
-  const peeled = peelSectionExit(
-    raw.length > 0 ? raw : content,
-    extractToolExitCode(call.rawOutput),
-  );
-  const exitCode = peeled.exitCode;
-  const diffs = extractToolDiffs(call.content);
-  const result = (exitCode !== null && exitCode !== 0)
-    ? `exit ${exitCode}`
-    : (status === 'failed' ? 'failed' : '');
-  const sectionLineLimit = kind === 'execute' && isGitDiffCommand(command) ? 80 : kind === 'execute' ? 12 : 6;
-  const trimmed = peeled.sections
-    .map((s) => ({
-      label: s.label,
-      text: boundedOutputLines(normalizeToolDump(s.text, kind), sectionLineLimit),
-    }))
-    .filter((s) => s.text)
-    .slice(0, 4);
-  return {
-    glyph: statusGlyph(status),
-    status,
-    kind,
-    subject,
-    command,
-    result,
-    exitCode,
-    sections: trimmed,
-    diffs,
-    startedAt,
-    endedAt,
-  };
 }
 
 export function isTerminalToolStatus(status: string): boolean {

@@ -17,14 +17,13 @@
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 
+import type { LaneEvent, LaneSession, ToolView } from './acp/adapters/types';
 import { AcpClient } from './acp/client';
 import { loadHomeDir, truncate } from './acp/harness-format';
 import { answerFencedRequest } from './acp/headless-fence';
 import { learnCommitPrompt } from './acp/harness-prompts';
-import { mergeToolCall, toolChipKind, toolSubject } from './acp/harness-tool-render';
-import type {
-  AcpEvent, AcpInstanceOwner, AgentSessionInfo, StopReason, ToolCall, ToolCallUpdate, ToolStatus,
-} from './acp/types';
+import { toolChipKind } from './acp/harness-tool-render';
+import type { AcpInstanceOwner, StopReason } from './acp/types';
 import { loadConfig, type KnowledgeConfig } from './config';
 
 export type ExplainState = 'queued' | 'running';
@@ -131,8 +130,8 @@ interface RunHandle {
   declined: boolean;
   /** Set once the scratch dir exists; tool calls are recorded only after. */
   places: JobPlaces | null;
-  /** The merged tool call behind each kept step, by toolCallId. */
-  calls: Map<string, ToolCall | ToolCallUpdate>;
+  /** Ids of the tool calls whose steps are still kept. */
+  calls: Set<string>;
   abandoned: Promise<typeof ABANDONED>;
   abandon: () => void;
 }
@@ -145,7 +144,7 @@ function key(root: string, sha: string): string {
   return `${root}\u0000${sha}`;
 }
 
-function stepState(status: ToolStatus | undefined): ExplainStepState {
+function stepState(status: ToolView['status']): ExplainStepState {
   if (status === 'completed') return 'done';
   if (status === 'failed') return 'failed';
   return 'running';
@@ -295,7 +294,7 @@ export class CommitExplainer {
     // Executor form: tsconfig's ES2021 lib has no `Promise.withResolvers`.
     const abandoned = new Promise<typeof ABANDONED>((resolve) => { abandon = () => resolve(ABANDONED); });
     const handle: RunHandle = {
-      client: null, cancelled: false, asked: false, declined: false, places: null, calls: new Map(), abandoned, abandon,
+      client: null, cancelled: false, asked: false, declined: false, places: null, calls: new Set(), abandoned, abandon,
     };
     this.running.set(k, handle);
     job.state = 'running';
@@ -346,7 +345,7 @@ export class CommitExplainer {
     handle.client = client;
     live();
 
-    let session: AgentSessionInfo;
+    let session: LaneSession;
     try {
       await client.initializeOnly();
       // Installed before session/new and kept for the process: nobody sits
@@ -362,7 +361,7 @@ export class CommitExplainer {
         await client.setLaneModel(cfg.model);
       } catch {
         const base = cfg.model.split('[')[0];
-        const near = (session.available_models ?? [])
+        const near = session.models
           .map((m) => m.model_id)
           .filter((id) => id.split('[')[0] === base);
         const hint = near.length > 0 ? ` (available: ${near.join(', ')})` : '';
@@ -418,7 +417,7 @@ export class CommitExplainer {
   /** The job fence: approve nothing. The first reject option is picked: a
    *  `decline` lets the turn go on, while codex's `cancel` (all a sandbox
    *  escalation offers) ends it and `explain` sends a continuation turn. */
-  private fence(job: ExplainJob, handle: RunHandle, client: AcpClient, event: AcpEvent): void {
+  private fence(job: ExplainJob, handle: RunHandle, client: AcpClient, event: LaneEvent): void {
     if (event.type === 'permission_request') {
       const decline = event.options.find((option) => option.kind === 'reject_once');
       handle.declined = true;
@@ -429,35 +428,31 @@ export class CommitExplainer {
     if (answerFencedRequest(client, event)) return;
     if (handle.cancelled) return;
     switch (event.type) {
-      case 'tool_call':
-        if (this.recordStep(job, handle, event.call, true)) this.emit({ kind: 'update', job });
-        return;
-      case 'tool_call_update':
-        if (this.recordStep(job, handle, event.update, false)) this.emit({ kind: 'update', job });
+      case 'tool':
+        if (this.recordStep(job, handle, event.view, event.phase === 'call')) this.emit({ kind: 'update', job });
         return;
       // Chunks stamped with a parent tool belong to a subagent, not this agent's phase.
       case 'thought_chunk':
-        if (!event.parentToolUseId) this.setPhase(job, 'thinking');
+        if (!event.parentToolId) this.setPhase(job, 'thinking');
         return;
       case 'message_chunk':
-        if (!event.parentToolUseId) this.setPhase(job, 'replying');
+        if (!event.parentToolId) this.setPhase(job, 'replying');
     }
   }
 
   /** Record a tool call (`isNew`) or an update as a step; true when a step
-   *  changed. An update for a step no longer kept is dropped. */
-  private recordStep(job: ExplainJob, handle: RunHandle, call: ToolCall | ToolCallUpdate, isNew: boolean): boolean {
+   *  changed. An update for a step no longer kept is dropped. The lane decoder
+   *  already merged the update (spec 380). */
+  private recordStep(job: ExplainJob, handle: RunHandle, view: ToolView, isNew: boolean): boolean {
     const places = handle.places;
-    const previous = handle.calls.get(call.toolCallId);
+    const previous = handle.calls.has(view.id);
     if (!places || (!previous && !isNew)) return false;
-    const merged = mergeToolCall(previous, call);
-    handle.calls.set(call.toolCallId, merged);
-    const { kind, subject } = toolSubject(merged);
+    handle.calls.add(view.id);
     const step: ExplainStep = {
-      id: call.toolCallId,
-      kind: toolChipKind(kind),
-      subject: jobSubject(subject, places),
-      state: stepState(merged.status),
+      id: view.id,
+      kind: toolChipKind(view.kind),
+      subject: jobSubject(view.subject, places),
+      state: stepState(view.status),
     };
     if (previous) {
       const at = job.steps.findIndex((s) => s.id === step.id);

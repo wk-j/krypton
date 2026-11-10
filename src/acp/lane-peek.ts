@@ -32,7 +32,6 @@ import {
 } from './harness-format';
 import { formatAwaitingPeerAge, statusLabel } from './harness-lane-chrome';
 import { installThoughtVeil, renderPeekThoughtMarkdown } from './harness-markdown';
-import { cleanToolTitle, extractCommandLineRaw, inferToolLabel } from './harness-tool-render';
 import {
   applyThoughtTeletype,
   clearThoughtTeletype,
@@ -835,13 +834,12 @@ export function syncPeekThoughtBody(
 export function deriveActiveToolForPeek(lane: HarnessLane, now: number): LanePeekSnapshot['activeTool'] {
   // Pick the oldest still-pending/in_progress tool — the likely blocking call. Map iteration
   // is insertion order so the first match is also the oldest.
-  for (const call of lane.toolCalls.values()) {
-    if (call.status !== 'in_progress' && call.status !== 'pending') continue;
-    const name = inferToolLabel(call);
-    const loc = call.locations?.[0]?.path ?? null;
-    const command = extractCommandLineRaw(call.rawInput).replace(/\s+/g, ' ').trim();
-    const leftover = cleanToolTitle(call.title, 'tool');
-    const subject = loc ? basename(loc) : command || leftover || null;
+  for (const view of lane.toolViews.values()) {
+    if (view.status !== 'in_progress' && view.status !== 'pending') continue;
+    const name = view.kind;
+    const loc = view.locations[0] ?? null;
+    const command = (view.commandLine ?? '').replace(/\s+/g, ' ').trim();
+    const subject = loc ? basename(loc) : command || view.title || null;
     return {
       name,
       subject,

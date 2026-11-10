@@ -120,7 +120,7 @@ export class JobList extends Component<JobListProps> {
     super(el('div'));
   }
 
-  /** `buildToolPayload` builds a fresh payload per frame, so identity is the diff. */
+  /** The lane decoder builds a fresh jobs payload per frame, so identity is the diff. */
   protected readDeps(next: JobListProps): readonly unknown[] {
     return [next.payload];
   }

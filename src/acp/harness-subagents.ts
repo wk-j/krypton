@@ -114,13 +114,6 @@ function tail(value: string, limit: number): string {
 
 // ─── Meta readers ─────────────────────────────────────────────────────────
 
-/** Claude subagent output / child tool calls carry their Task call id here. */
-export function claudeParentToolUseId(meta: unknown): string | null {
-  if (!Value.Check(ClaudeMeta, meta)) return null;
-  const id = meta.claudeCode.parentToolUseId;
-  return typeof id === 'string' && id.length > 0 ? id : null;
-}
-
 /** Codex `subAgentActivity` rows name a thread: `{ threadId, path }`. */
 export function codexSubagentName(meta: unknown): { threadId: string; name: string } | null {
   if (!Value.Check(CodexSubagentMeta, meta)) return null;

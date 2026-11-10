@@ -179,7 +179,14 @@ export function publishControlEvent(e: {
   with no matching events dropped. Treat `gap` as "re-snapshot defensively"
   (re-pull `lane.transcript`/`lane.status`), not proof that *your* lane lost data.
 - **Chunk payload** — coalesced `message_chunk`/`thought_chunk` deltas carry
-  `{ type, text }`, the same shape as a forwarded `AcpEvent`.
+  `{ type, text }`, the same shape as a forwarded `LaneEvent` (spec 380).
+- **Tool payload** (spec 380) — `tool_call` / `tool_call_update` events carry the
+  lane decoder's canonical event `{ type: 'tool', phase, view, images }`; `view`
+  is the same `ToolView` the harness row paints (`id`, `kind`, `title`, `toolName`,
+  `subject`, `status`, `exit`, `sections`, …). No wire `rawInput`/`rawOutput`.
+- **Permission payload** (spec 380) — `permission_request` carries `{ requestId,
+  view, options, harnessTool, highRisk, argsPreview, serverName }`; `permission.list`
+  names the tool from `view.title` (else the declared kind).
 
 ### Deliberately NOT exposed (v1)
 

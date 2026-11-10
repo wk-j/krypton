@@ -4,6 +4,7 @@ import {
   BACKGROUND_TASK_MAX,
   applyTaskStatus,
   formatBackgroundTaskLines,
+  launchCommand,
   parseBackgroundLaunch,
   pruneBackgroundTasks,
   registerBackgroundTask,
@@ -125,12 +126,19 @@ describe('parseBackgroundLaunch', () => {
   });
 });
 
+/** The launch the Claude adapter decodes from a wire call (spec 380). */
+function decodedLaunch(call: ToolCall): { id: string; outputPath: string; command: string } {
+  const launch = parseBackgroundLaunch(call);
+  if (!launch) throw new Error('not a launch');
+  return { ...launch, command: launchCommand(call) };
+}
+
 describe('registerBackgroundTask', () => {
   it('registers a launch once, however many events repeat it', () => {
     const tasks: BackgroundTask[] = [];
 
-    const first = registerBackgroundTask(tasks, launchCall(), 1_000);
-    const second = registerBackgroundTask(tasks, launchCall(), 1_200);
+    const first = registerBackgroundTask(tasks, 'toolu_launch', decodedLaunch(launchCall()), 1_000);
+    const second = registerBackgroundTask(tasks, 'toolu_launch', decodedLaunch(launchCall()), 1_200);
 
     expect(first).not.toBeNull();
     expect(second).toBeNull();
@@ -146,7 +154,7 @@ describe('registerBackgroundTask', () => {
 
   it('falls back to the tool title when the adapter sent no command', () => {
     const tasks: BackgroundTask[] = [];
-    registerBackgroundTask(tasks, launchCall({ rawInput: undefined }), 1_000);
+    registerBackgroundTask(tasks, 'toolu_launch', decodedLaunch(launchCall({ rawInput: undefined })), 1_000);
     expect(tasks[0].command).toBe('Terminal');
   });
 });

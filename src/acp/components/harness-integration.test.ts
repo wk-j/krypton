@@ -24,6 +24,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 import { assistantInstanceStore } from '../../assistant-instance-store';
 import { AcpHarnessView } from '../acp-harness-view';
+import { toolEventSource } from '../adapters/test-utils';
 import { sourceConnectorKey } from './transcript-row/shared';
 import type { HarnessLane, HarnessTranscriptItem } from '../harness-view-types';
 import type { TranscriptAnnotation } from '../types';
@@ -452,11 +453,11 @@ describe('harness view integration (spec 301)', () => {
     activate(view, lane.id);
     call(view, 'renderDashboard');
     // Mount the row synchronously so the queued load resolves onto a mounted row.
+    const tools = toolEventSource('omp');
     const read = async (toolCallId: string): Promise<HTMLElement | null> => {
-      call(view, 'onLaneEvent', lane, {
-        type: 'tool_call',
-        call: { toolCallId, title: 'Read crsv.png', kind: 'read', status: 'pending', locations: [{ path }] },
-      });
+      call(view, 'onLaneEvent', lane, tools.call({
+        toolCallId, title: 'Read crsv.png', kind: 'read', status: 'pending', locations: [{ path }],
+      }));
       call(view, 'renderActiveTranscript', lane);
       await lane.imageState.queue;
       return view.element.querySelector<HTMLElement>(`[data-msg-id="${lane.toolTranscriptIds.get(toolCallId)}"]`);
@@ -485,22 +486,19 @@ describe('harness view integration (spec 301)', () => {
     lanes(view).push(lane);
     activate(view, lane.id);
     call(view, 'renderDashboard');
+    const tools = toolEventSource('omp');
     const start = (toolCallId: string, path: string): void => {
-      call(view, 'onLaneEvent', lane, {
-        type: 'tool_call',
-        call: { toolCallId, title: 'Read', kind: 'read', status: 'pending', locations: [{ path }] },
-      });
+      call(view, 'onLaneEvent', lane, tools.call({
+        toolCallId, title: 'Read', kind: 'read', status: 'pending', locations: [{ path }],
+      }));
       call(view, 'renderActiveTranscript', lane);
     };
     const complete = (toolCallId: string): void => {
-      call(view, 'onLaneEvent', lane, {
-        type: 'tool_call_update',
-        update: {
-          toolCallId,
-          status: 'completed',
-          content: [{ type: 'content', content: { type: 'image', data: PNG_BASE64, mimeType: 'image/webp' } }],
-        },
-      });
+      call(view, 'onLaneEvent', lane, tools.update({
+        toolCallId,
+        status: 'completed',
+        content: [{ type: 'content', content: { type: 'image', data: PNG_BASE64, mimeType: 'image/webp' } }],
+      }));
       call(view, 'renderActiveTranscript', lane);
     };
     const captions = (toolCallId: string): string[] => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { codexThreadState } from './client';
+import { codexThreadState } from './adapters/codex';
 import { HarnessSteerController } from './harness-steer-controller';
 import type { HarnessSteerHost } from './harness-view-host';
 import type { HarnessLane, HarnessTranscriptItem, QueuedPrompt } from './harness-view-types';

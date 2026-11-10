@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { ToolRow } from './index';
-import { mergeToolPayloadForUpdate } from '../../harness-tool-retention';
 import { tickAllSpinners } from '../spinner';
 import type { RowProps } from '../transcript-row';
 import type { HarnessTranscriptItem, JobsPayload, SubagentEntry, SubagentPayload, ToolPayload } from '../../harness-view-types';
-import type { ToolCallUpdate } from '../../types';
 
 function payload(over: Partial<ToolPayload> = {}): ToolPayload {
   return {
@@ -236,7 +234,7 @@ describe('ToolRow output', () => {
     expect(output?.firstElementChild?.getAttribute('data-status')).toBe('fail');
   });
 
-  it('renders a 500-line section verbatim — the cap lives in buildToolPayload', () => {
+  it('renders a 500-line section verbatim — the cap lives in the lane decoder', () => {
     const text = Array.from({ length: 500 }, (_, i) => `line ${i + 1}`).join('\n');
     const tool = payload({ kind: 'read', command: '', subject: 'src/ui/list.ts', sections: [{ label: 'content', text }] });
     const row = new ToolRow(props(tool));
@@ -374,7 +372,7 @@ describe('ToolRow live contract', () => {
     const host = mount(row);
     row.update(props(pending));
 
-    // What `mergeToolPayloadForUpdate` hands the next pass: a fresh object, the
+    // What the lane decoder hands the next pass (spec 380): a fresh object, the
     // same `sections` / `diffs` arrays.
     const inProgress = payload({ status: 'in_progress', glyph: '\u283b', sections, diffs });
     expect(records(host, () => row.update(props(inProgress))).length).toBe(0);
@@ -448,17 +446,6 @@ describe('ToolRow live contract', () => {
     expect(row.el.className).toBe(
       'acp-harness__msg acp-harness__msg--tool acp-harness__msg--in_progress acp-harness__msg--streaming',
     );
-  });
-
-  it('relies on mergeToolPayloadForUpdate preserving section and diff identity', () => {
-    const previous = payload({ sections: [{ label: 'stdout', text: 'a' }], diffs: [{ path: 'a', oldText: '', newText: 'b' }] });
-    const next = payload({ sections: [], diffs: [] });
-    const update: ToolCallUpdate = { toolCallId: 'call-1', status: 'in_progress' };
-
-    const merged = mergeToolPayloadForUpdate(previous, next, update);
-
-    expect(merged.sections).toBe(previous.sections);
-    expect(merged.diffs).toBe(previous.diffs);
   });
 });
 

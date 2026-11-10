@@ -15,7 +15,9 @@ vi.mock('../profiler/ipc', () => ({ invoke: vi.fn(async () => []) }));
 
 import { AcpHarnessView } from './acp-harness-view';
 import type { HarnessLane } from './harness-view-types';
-import type { AcpEvent, ToolStatus } from './types';
+import type { LaneEvent } from './adapters/types';
+import { toolEventSource } from './adapters/test-utils';
+import type { ToolStatus } from './types';
 
 let view: AcpHarnessView;
 let changes: number;
@@ -38,10 +40,9 @@ function activate(lane: HarnessLane): void {
 }
 
 function toolEnds(lane: HarnessLane, toolCallId: string, status: ToolStatus | 'canceled'): void {
-  const start: AcpEvent = { type: 'tool_call', call: { toolCallId, title: 'grep', status: 'in_progress' } };
-  call('onLaneEvent', lane, start);
-  const end = { type: 'tool_call_update', update: { toolCallId, status } } as AcpEvent;
-  call('onLaneEvent', lane, end);
+  const source = toolEventSource('omp');
+  call('onLaneEvent', lane, source.call({ toolCallId, title: 'grep', status: 'in_progress' }));
+  call('onLaneEvent', lane, source.update({ toolCallId, status: status as ToolStatus }));
 }
 
 function press(key = 'a'): void {

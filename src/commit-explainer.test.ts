@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import type { AcpClient } from './acp/client';
-import type { AcpEvent, AcpInstanceOwner, StopReason } from './acp/types';
+import { permissionEvent, toolEventSource } from './acp/adapters/test-utils';
+import type { LaneEvent } from './acp/adapters/types';
+import type { AcpInstanceOwner, StopReason } from './acp/types';
 import {
   CommitExplainer,
   DECLINED_CONTINUE_PROMPT,
@@ -16,7 +18,7 @@ import type { KnowledgeConfig } from './config';
 const ROOT = '/repo';
 
 class FakeClient {
-  readonly listeners: ((e: AcpEvent) => void)[] = [];
+  readonly listeners: ((e: LaneEvent) => void)[] = [];
   readonly prompts: string[] = [];
   readonly permissionAnswers: [number, string | null][] = [];
   readonly fsAnswers: [number, boolean][] = [];
@@ -30,12 +32,19 @@ class FakeClient {
   constructor(readonly cwd: string, readonly owner: AcpInstanceOwner) {}
 
   async initializeOnly(): Promise<object> { return {}; }
-  onEvent(cb: (e: AcpEvent) => void): () => void {
+  onEvent(cb: (e: LaneEvent) => void): () => void {
     this.listeners.push(cb);
     return () => undefined;
   }
   async sessionNew(): Promise<object> {
-    return { session_id: 's', available_models: [{ model_id: 'gpt-6.1-sol[low]', name: 'low' }] };
+    return {
+      sessionId: 's',
+      models: [{ model_id: 'gpt-6.1-sol[low]', name: 'low' }],
+      currentModelId: null,
+      modes: [],
+      currentModeId: null,
+      modelApplyFailed: false,
+    };
   }
   async setLaneModel(model: string): Promise<'ok'> {
     this.model = model;
@@ -55,7 +64,7 @@ class FakeClient {
   async respondPermission(id: number, option: string | null): Promise<void> { this.permissionAnswers.push([id, option]); }
   async respondFsWrite(id: number, accept: boolean): Promise<void> { this.fsAnswers.push([id, accept]); }
 
-  emit(event: AcpEvent): void {
+  emit(event: LaneEvent): void {
     for (const cb of this.listeners) cb(event);
   }
   end(stop: StopReason = 'end_turn'): void {
@@ -122,17 +131,12 @@ describe('CommitExplainer (spec 0376)', () => {
     await vi.waitFor(() => expect(r.clients[0]?.prompts).toHaveLength(1));
     const client = r.clients[0];
 
-    client.emit({
-      type: 'permission_request',
-      requestId: 7,
-      toolCall: { toolCallId: 't', title: 'git commit' } as never,
-      options: [
-        { optionId: 'approved', name: 'Yes', kind: 'allow_once' },
-        { optionId: 'approved-for-session', name: 'Always', kind: 'allow_always' },
-        { optionId: 'decline', name: 'No, continue', kind: 'reject_once' },
-        { optionId: 'cancel', name: 'No, stop', kind: 'reject_once' },
-      ],
-    });
+    client.emit(permissionEvent('codex', { toolCallId: 't', title: 'git commit' }, [
+      { optionId: 'approved', name: 'Yes', kind: 'allow_once' },
+      { optionId: 'approved-for-session', name: 'Always', kind: 'allow_always' },
+      { optionId: 'decline', name: 'No, continue', kind: 'reject_once' },
+      { optionId: 'cancel', name: 'No, stop', kind: 'reject_once' },
+    ], 7));
     client.emit({ type: 'fs_write_pending', requestId: 8, path: '/repo/x', oldText: '', newText: 'y' });
     await vi.waitFor(() => expect(client.fsAnswers).toEqual([[8, false]]));
     expect(client.permissionAnswers).toEqual([[7, 'decline']]);
@@ -145,15 +149,10 @@ describe('CommitExplainer (spec 0376)', () => {
     await vi.waitFor(() => expect(r.clients[0]?.prompts).toHaveLength(1));
     const client = r.clients[0];
     // A sandbox escalation offers only `cancel`, which ends codex's turn.
-    const escalate = (requestId: number): void => client.emit({
-      type: 'permission_request',
-      requestId,
-      toolCall: { toolCallId: 't', title: 'Run command' } as never,
-      options: [
-        { optionId: 'allow_once', name: 'Yes', kind: 'allow_once' },
-        { optionId: 'cancel', name: 'No', kind: 'reject_once' },
-      ],
-    });
+    const escalate = (requestId: number): void => client.emit(permissionEvent('codex', { toolCallId: 't', title: 'Run command' }, [
+      { optionId: 'allow_once', name: 'Yes', kind: 'allow_once' },
+      { optionId: 'cancel', name: 'No', kind: 'reject_once' },
+    ], requestId));
     for (let turn = 1; turn <= EXPLAIN_MAX_CONTINUATIONS; turn += 1) {
       escalate(turn);
       client.end('cancelled');
@@ -173,12 +172,9 @@ describe('CommitExplainer (spec 0376)', () => {
     r.explainer.start(ROOT, 'repo', 'abcdef1234');
     await vi.waitFor(() => expect(r.clients[0]?.prompts).toHaveLength(1));
     const client = r.clients[0];
-    client.emit({
-      type: 'permission_request',
-      requestId: 1,
-      toolCall: { toolCallId: 't', title: 'Run command' } as never,
-      options: [{ optionId: 'cancel', name: 'No', kind: 'reject_once' }],
-    });
+    client.emit(permissionEvent('codex', { toolCallId: 't', title: 'Run command' }, [
+      { optionId: 'cancel', name: 'No', kind: 'reject_once' },
+    ], 1));
     client.end('cancelled');
     await vi.waitFor(() => expect(client.prompts).toHaveLength(2));
     expect(r.explainer.job(ROOT, 'abcdef1234')).toMatchObject({ phase: 'continuing', continuations: 1 });
@@ -280,17 +276,17 @@ describe('CommitExplainer (spec 0376)', () => {
     const job = r.explainer.start(ROOT, 'repo', 'abcdef1234');
     await vi.waitFor(() => expect(r.clients[0]?.prompts).toHaveLength(1));
     const client = r.clients[0];
+    const tools = toolEventSource('codex');
     for (let n = 1; n <= 5; n += 1) {
-      client.emit({
-        type: 'tool_call',
-        call: { toolCallId: `t${n}`, kind: 'read', status: 'in_progress', locations: [{ path: `${ROOT}/src/F${n}.ts` }] },
-      });
+      client.emit(tools.call({
+        toolCallId: `t${n}`, kind: 'read', status: 'in_progress', locations: [{ path: `${ROOT}/src/F${n}.ts` }],
+      }));
     }
-    client.emit({ type: 'tool_call_update', update: { toolCallId: 't4', status: 'failed' } });
-    client.emit({ type: 'tool_call_update', update: { toolCallId: 't5', status: 'completed' } });
+    client.emit(tools.update({ toolCallId: 't4', status: 'failed' }));
+    client.emit(tools.update({ toolCallId: 't5', status: 'completed' }));
     const before = r.changes.length;
     // t1 fell out of the kept steps: its update changes nothing.
-    client.emit({ type: 'tool_call_update', update: { toolCallId: 't1', status: 'completed' } });
+    client.emit(tools.update({ toolCallId: 't1', status: 'completed' }));
 
     expect(r.changes).toHaveLength(before);
     expect(job.stepCount).toBe(5);
@@ -315,7 +311,7 @@ describe('CommitExplainer (spec 0376)', () => {
     expect(job.phase).toBe('replying');
     expect(r.changes).toHaveLength(before + 1);
 
-    client.emit({ type: 'thought_chunk', text: 'sub', parentToolUseId: 'task-1' });
+    client.emit({ type: 'thought_chunk', text: 'sub', parentToolId: 'task-1' });
     expect(job.phase).toBe('replying');
     client.emit({ type: 'thought_chunk', text: 'hm' });
     expect(job.phase).toBe('thinking');

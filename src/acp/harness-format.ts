@@ -7,9 +7,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 import type {
-  AcpSessionCapabilities,
   AcpSessionInfo,
-  AgentInitInfo,
   ReviewFinding,
 } from './types';
 import type { LaneActivity } from './harness-view-types';
@@ -162,15 +160,6 @@ export function filterSessionsForProject(sessions: AcpSessionInfo[], projectDir:
   if (!projectDir) return sessions;
   const project = normalizePathForCompare(projectDir);
   return sessions.filter((session) => !session.cwd || normalizePathForCompare(session.cwd) === project);
-}
-
-export function sessionCapabilitiesFromAgent(caps: AgentInitInfo['agent_capabilities']): AcpSessionCapabilities {
-  const sessionCaps = caps.sessionCapabilities;
-  return {
-    canList: Boolean(sessionCaps?.list),
-    canResume: Boolean(sessionCaps?.resume),
-    canLoad: caps.loadSession === true,
-  };
 }
 
 export function shortId(id: string): string {

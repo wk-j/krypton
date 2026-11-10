@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Specs (365)
+## Specs (367)
 
 | # | Spec |
 |---|------|
@@ -382,6 +382,8 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | 377 | [Commit Explainer Job Strip](./0377-commit-explainer-job-strip.md) |
 | 378 | [Codex Guardian Review Row](./0378-codex-guardian-review-row.md) |
 | 379 | [Connected Transcript Sources](./0379-connected-transcript-sources.md) |
+| 380 | [ACP Lane Adapters](./0380-acp-lane-adapters.md) |
+| 381 | [Harness Component Gallery](./0381-harness-component-gallery.md) |
 
 ## ADRs (30)
 

@@ -113,7 +113,9 @@ export interface ModelInfo {
   description?: string | null;
 }
 
-export interface AgentInfo {
+/** `acp_initialize` result as Rust returns it. Wire data: `client.ts` and
+ *  `adapters/` only — the UI reads `LaneInit` (spec 380). */
+export interface WireInitInfo {
   agent_protocol_version: number;
   auth_methods: unknown[];
   agent_capabilities: {
@@ -122,37 +124,27 @@ export interface AgentInfo {
     loadSession?: boolean;
     [k: string]: unknown;
   };
-  session_id: string;
-  /** spec 126: true when a configured model was not applied (session/set_model
-   *  errored/timed out for an adapter that advertised model state). */
-  model_apply_failed?: boolean;
-  /** spec 127: agent-advertised models + confirmed current id (from session/new). */
-  available_models?: ModelInfo[];
-  current_model_id?: string | null;
   /** spec 278: the agent advertised the `_session/steering` extension. */
-  steering_supported?: boolean;
-}
-
-export interface AgentInitInfo {
-  agent_protocol_version: number;
-  auth_methods: unknown[];
-  agent_capabilities: AgentInfo['agent_capabilities'];
-  /** spec 278: see AgentInfo.steering_supported. */
   steering_supported?: boolean;
 }
 
 /** spec 278: `_session/steering` result. Unknown outcomes map to 'failed'. */
 export type SteerOutcome = 'injected' | 'startedNewTurn' | 'promptRequired' | 'failed';
 
-export interface AgentSessionInfo {
+/** `acp_session_new` / `_resume` / `_load` result as Rust returns it. Wire data:
+ *  `client.ts` and `adapters/` only — the UI reads `LaneSession` (spec 380). */
+export interface WireSessionInfo {
   session_id: string;
-  /** spec 126: see AgentInfo.model_apply_failed. */
+  /** spec 126: true when a configured model was not applied (session/set_model
+   *  errored/timed out for an adapter that advertised model state). */
   model_apply_failed?: boolean;
   /** spec 127: agent-advertised models from session/new (or resume/load). Empty
    *  when the backend advertises no model state — model picker disabled. */
   available_models?: ModelInfo[];
   /** spec 127: confirmed current model id, or null/undefined when unverified. */
   current_model_id?: string | null;
+  /** ACP `SessionModeState` from the same response, unparsed. */
+  modes?: unknown;
 }
 
 export interface AcpSessionCapabilities {
@@ -166,7 +158,6 @@ export interface AcpSessionInfo {
   cwd: string;
   title?: string | null;
   updatedAt?: string | null;
-  _meta?: Record<string, unknown> | null;
 }
 
 export interface AcpSessionListResult {
@@ -922,30 +913,3 @@ export type LaneBusEvent =
   | { type: 'triage:changed'; payload: { openCount: number } }
   | { type: 'review:quality'; payload: { totalReviews: number } }
   | { type: 'review:priority'; payload: { highCount: number } };
-
-export type AcpEvent =
-  | { type: 'user_message_chunk'; text: string; content: ContentBlock }
-  /** `parentToolUseId` (spec 282): Claude subagent output, stamped with its Task call id. */
-  | { type: 'message_chunk'; text: string; content: ContentBlock; messageId?: string; parentToolUseId?: string }
-  | { type: 'thought_chunk'; text: string; parentToolUseId?: string }
-  | { type: 'tool_call'; call: ToolCall }
-  | { type: 'tool_call_update'; update: ToolCallUpdate }
-  | { type: 'plan'; entries: PlanEntry[] }
-  | { type: 'permission_request'; requestId: number; toolCall: ToolCall; options: PermissionOption[] }
-  | { type: 'ask_user_question'; requestId: number; questions: unknown; toolCallId?: string }
-  | { type: 'elicitation_request'; requestId: number; message: string; requestedSchema: unknown; toolCallId?: string }
-  | { type: 'usage'; usage: UsageInfo }
-  | { type: 'available_commands'; commands: AcpAvailableCommand[] }
-  | { type: 'mode_update'; modeId: string }
-  | { type: 'fs_activity'; method: 'read' | 'write'; path: string; ok: boolean; error?: string }
-  | { type: 'fs_write_pending'; requestId: number; path: string; oldText: string; newText: string }
-  | { type: 'provider_error'; payload: ProviderErrorPayload }
-  | { type: 'stop'; stopReason: StopReason; reason?: string }
-  /** spec 278: agent thread state, from codex-acp's `session_info_update`
-   *  `_meta.codex.threadStatus` — the only end signal of a turn a steer started. */
-  | { type: 'turn_state'; state: 'active' | 'idle' }
-  /** spec 278: a `session/prompt` or `_session/steering` reply, announced by the
-   *  Rust reader in stdout order with the session updates around it (the
-   *  invoke result is not). `outcome` is the steering outcome, else null. */
-  | { type: 'turn_marker'; kind: 'prompt' | 'steer'; requestId: number; outcome: SteerOutcome | null }
-  | { type: 'error'; message: string };

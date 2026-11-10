@@ -11,10 +11,9 @@
 // over the whole section/diff/subagent payload — and compared it against the
 // string stashed on the node. `bodyDeps()` below is that signature as ten
 // values (plus spec 370's `jobs`) compared with `Object.is`. Two of them are arrays compared by
-// REFERENCE, which is only sound because `mergeToolPayloadForUpdate`
-// (`harness-tool-retention.ts:140-159`) preserves `sections` / `diffs` identity
-// when the ACP update carried no output (`:155-156`) — verified, and tested in
-// `tool-row.test.ts`.
+// REFERENCE, which is only sound because the lane decoder (`adapters/tool.ts`,
+// spec 380) keeps the prior `sections` / `diffs` arrays when the ACP update
+// carried no output — tested in `adapters/tool.test.ts`.
 //
 // `statusBucket` is `toolStatusSignature` (`harness-transcript-render.ts:448-451`):
 // `pending` and `in_progress` collapse into one bucket so the in-flight tick
@@ -61,10 +60,8 @@ import {
   isGitDiffCommand,
   isGrepLikeOutput,
   isTerminalToolStatus,
-  normalizeToolDump,
   parseGitDiffStat,
   parseGitStatusShort,
-  peelExitPrefix,
   renderArtifactRedaction,
   renderGrepSection,
   shouldRenderExecuteExit,
@@ -414,19 +411,10 @@ export class ToolRow extends TranscriptRow {
 
   private outputNodes(tool: ToolPayload): HTMLElement[] {
     this.statCursor = 0;
-    let exitCode = tool.exitCode ?? null;
-    const painted: ToolSection[] = [];
-    for (const raw of tool.sections) {
-      let text = normalizeToolDump(raw.text, tool.kind);
-      if (/^(stdout|output)$/i.test(raw.label)) {
-        const peeled = peelExitPrefix(text);
-        if (peeled) {
-          if (exitCode === null) exitCode = peeled.code;
-          text = peeled.rest;
-        }
-      }
-      if (text.trim()) painted.push({ label: raw.label, text });
-    }
+    // Spec 380: sections arrive decoded — backend wrappers (Grok's `exit: N`,
+    // `<workspace_result>`, read anchors) were removed by the lane adapter.
+    const exitCode = tool.exitCode ?? null;
+    const painted: ToolSection[] = tool.sections.filter((section) => section.text.trim());
 
     const nodes: HTMLElement[] = [];
     let pendingExit = exitCode !== null && toolChipKind(tool.kind) === 'execute' ? exitCode : null;

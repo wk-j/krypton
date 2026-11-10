@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AcpClient } from '../client';
-import type { AcpEvent, AcpInstanceOwner, StopReason } from '../types';
+import { permissionEvent } from '../adapters/test-utils';
+import type { LaneEvent } from '../adapters/types';
+import type { AcpInstanceOwner, StopReason } from '../types';
 
 import { AcpAssistSession, type AcpSpawn } from './acp-completion';
 import { AssistError } from './engine';
@@ -22,7 +24,7 @@ function deferred<T>(): Deferred<T> {
 /** A stand-in for the one ACP client the session owns. */
 class FakeClient {
   readonly calls: string[] = [];
-  private readonly listeners: Array<(e: AcpEvent) => void> = [];
+  private readonly listeners: Array<(e: LaneEvent) => void> = [];
   turn = deferred<StopReason>();
   modelError: Error | null = null;
   disposed = false;
@@ -41,7 +43,7 @@ class FakeClient {
 
   async sessionNew(): Promise<unknown> {
     this.calls.push('sessionNew');
-    return { session_id: 'ses_1' };
+    return { sessionId: 'ses_1' };
   }
 
   async setLaneModel(modelId: string): Promise<'ok'> {
@@ -50,7 +52,7 @@ class FakeClient {
     return 'ok';
   }
 
-  onEvent(cb: (e: AcpEvent) => void): () => void {
+  onEvent(cb: (e: LaneEvent) => void): () => void {
     this.listeners.push(cb);
     return () => {
       const i = this.listeners.indexOf(cb);
@@ -58,7 +60,7 @@ class FakeClient {
     };
   }
 
-  emit(event: AcpEvent): void {
+  emit(event: LaneEvent): void {
     for (const cb of this.listeners.slice()) cb(event);
   }
 
@@ -87,7 +89,7 @@ class FakeClient {
   }
 }
 
-function chunk(text: string): AcpEvent {
+function chunk(text: string): LaneEvent {
   return { type: 'message_chunk', text, content: { type: 'text', text } };
 }
 
@@ -229,7 +231,7 @@ describe('AcpAssistSession', () => {
     const pending = call(h.session);
     const client = await h.prompted();
 
-    client.emit({ type: 'permission_request', requestId: 7, toolCall: {} as never, options: [] });
+    client.emit(permissionEvent('claude', { toolCallId: 'x' }, [], 7));
     client.emit({ type: 'fs_write_pending', requestId: 8, path: '/repo/a.ts', oldText: '', newText: 'x' });
     client.emit({ type: 'ask_user_question', requestId: 9, questions: [] });
     client.turn.resolve('end_turn');

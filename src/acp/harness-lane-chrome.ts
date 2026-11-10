@@ -10,12 +10,9 @@
 
 import type {
   AcpAvailableCommand,
-  AgentInfo,
-  AgentInitInfo,
   HarnessLaneStatus,
-  ToolCall,
-  ToolCallUpdate,
 } from './types';
+import type { LaneInit, ToolView } from './adapters/types';
 import type { AcpLaneProcMetric } from '../types';
 import type { LaneModelConfig } from '../config';
 import type { KeyHint } from '../ui/kbd';
@@ -25,13 +22,7 @@ import type {
   HarnessPermission,
   HarnessTranscriptItem,
 } from './harness-view-types';
-import { harnessAutoAllowToolName } from './harness-permission-scan';
-import {
-  cleanToolTitle,
-  extractCommandLine,
-  inferToolLabel,
-} from './harness-tool-render';
-import { extractModifiedPath } from './acp-harness-memory';
+import { cleanToolTitle } from './harness-tool-render';
 import { basename, truncateInline } from './harness-format';
 
 // Braille spinner frames driven by a single JS interval. A shared frame counter,
@@ -41,37 +32,17 @@ import { basename, truncateInline } from './harness-format';
 // reading as a stutter / snap.
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
+/** The lane's model label: the configured model, else one the agent reported
+ *  in its capabilities, else the session's confirmed current model id. */
 export function inferLaneModelName(
   backendId: string,
-  info: AgentInfo | AgentInitInfo,
+  init: LaneInit,
+  currentModelId: string | null,
   laneModels: Record<string, LaneModelConfig>,
 ): string | null {
   const configured = laneModels[backendId]?.active;
   if (configured && configured.length > 0) return configured;
-  const reported = findModelName(info.agent_capabilities);
-  if (reported) return reported;
-  return (info as AgentInfo).current_model_id ?? null;
-}
-
-function findModelName(value: unknown, depth = 0): string | null {
-  if (depth > 8 || !value || typeof value !== 'object') return null;
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const match = findModelName(item, depth + 1);
-      if (match) return match;
-    }
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  for (const key of ['model', 'modelId', 'model_id', 'selectedModel', 'selected_model', 'activeModel', 'active_model', 'defaultModel', 'default_model']) {
-    const candidate = record[key];
-    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
-  }
-  for (const item of Object.values(record)) {
-    const match = findModelName(item, depth + 1);
-    if (match) return match;
-  }
-  return null;
+  return init.reportedModel ?? currentModelId;
 }
 
 // Interpreters whose bare process name ("node", "python3") says nothing about
@@ -242,7 +213,7 @@ export function laneActivity(lane: HarnessLane, pendingPeers: PendingPeerSummary
   if (lane.status === 'needs_permission') {
     const permission = lane.pendingPermissions[0];
     if (permission) {
-      return `perm ${compactPermissionSubject(permission.toolCall) || compactPermissionTool(permission)}`;
+      return `perm ${compactPermissionSubject(permission.view) || compactPermissionTool(permission)}`;
     }
     const ask = lane.pendingQuestions[0];
     if (ask) {
@@ -259,7 +230,7 @@ export function laneActivity(lane: HarnessLane, pendingPeers: PendingPeerSummary
 
 export function compactPermissionLabel(permission: HarnessPermission): string {
   const tool = compactPermissionTool(permission);
-  const subject = compactPermissionSubject(permission.toolCall);
+  const subject = compactPermissionSubject(permission.view);
   return truncateInline(subject ? `${tool} ${subject}` : tool, 48);
 }
 
@@ -272,16 +243,14 @@ export function compactPermissionMeta(permission: HarnessPermission): readonly K
 }
 
 function compactPermissionTool(permission: HarnessPermission): string {
-  const call = permission.toolCall;
-  const kind = inferToolLabel(call);
-  return harnessAutoAllowToolName(permission) ?? (cleanToolTitle(call.title, kind) || kind);
+  const { view } = permission;
+  return permission.harnessTool ?? (cleanToolTitle(view.title, view.kind) || view.kind);
 }
 
-function compactPermissionSubject(call: ToolCall | ToolCallUpdate): string {
-  const path = extractModifiedPath(call) ?? call.locations?.[0]?.path ?? '';
+function compactPermissionSubject(view: ToolView): string {
+  const path = view.modifiedPath ?? view.locations[0] ?? '';
   if (path) return basename(path);
-  const command = extractCommandLine(call.rawInput);
-  if (command) return truncateInline(command, 28);
+  if (view.commandLine) return truncateInline(view.commandLine, 28);
   return '';
 }
 

@@ -10,9 +10,10 @@
 // permission auto-declined, every file write refused, every question
 // cancelled. A one-shot that needs a tool has already gone wrong.
 
+import type { LaneEvent } from '../adapters/types';
 import { AcpClient } from '../client';
 import { answerFencedRequest } from '../headless-fence';
-import type { AcpEvent, AcpInstanceOwner, ContentBlock } from '../types';
+import type { AcpInstanceOwner, ContentBlock } from '../types';
 
 import { AssistError } from './engine';
 import type { AssistCompletion } from './engine';
@@ -62,7 +63,7 @@ export class AcpAssistSession {
     if (call.signal.aborted) throw new DOMException('assist turn aborted', 'AbortError');
     call.ready();
     let text = '';
-    const off = client.onEvent((event: AcpEvent) => {
+    const off = client.onEvent((event: LaneEvent) => {
       if (event.type === 'message_chunk') {
         if (event.content.type === 'text') text += event.text;
         return;

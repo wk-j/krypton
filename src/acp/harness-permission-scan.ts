@@ -5,6 +5,7 @@
 // the human-readable args preview, and matches tool-call paths against the
 // artifact registry / scratch dir.
 
+import type { ToolView } from './adapters/types';
 import type { PermissionOption, ToolCall, ToolCallUpdate } from './types';
 import type {
   HarnessPermission,
@@ -14,7 +15,6 @@ import type {
 import { truncate } from './harness-format';
 import { extractModifiedPath } from './acp-harness-memory';
 
-const MEMORY_PERMISSION_SCAN_DEPTH = 8;
 /** specs 133/206 — alphabet shared by artifact and response-reference hints. */
 export const ARTIFACT_HINT_ALPHABET = 'asdfghjklqweruiop';
 
@@ -71,20 +71,19 @@ const HARNESS_AUTO_ALLOW_TOOL_NAMES = new Set([
   ...HARNESS_ISSUE_TOOL_NAMES,
   ...HARNESS_COMPUTER_TOOL_NAMES,
 ]);
-const HARNESS_SERVER_MARKERS = ['krypton-harness-bus', 'krypton_harness_bus', 'krypton-harness-memory', 'krypton_harness_memory', '/mcp/harness/'];
-const TIMELINE_SERVER_NAMES: Record<string, true> = {
+const HARNESS_SERVER_NAMES: Record<string, true> = {
   'krypton-harness-bus': true,
   krypton_harness_bus: true,
   'krypton-harness-memory': true,
   krypton_harness_memory: true,
 };
-const TIMELINE_SERVER_KEYS = ['server', 'serverName', 'server_name', 'serverUrl', 'server_url'] as const;
+const HARNESS_SERVER_KEYS = ['server', 'serverName', 'server_name', 'serverUrl', 'server_url'] as const;
 /** spec 359: fx qualifies MCP tools as `mcp_<server>_<tool>` (single
  *  underscores) in the permission request's toolCall `name`/`title`. */
 const FX_QUALIFIED_HARNESS_TOOL = /^mcp_(?:krypton-harness-(?:bus|memory)|krypton_harness_(?:bus|memory))_([a-z_]+)$/;
 
-function isTimelineServer(value: string): boolean {
-  if (TIMELINE_SERVER_NAMES[value.trim().toLowerCase()] === true) return true;
+function isHarnessServer(value: string): boolean {
+  if (HARNESS_SERVER_NAMES[value.trim().toLowerCase()] === true) return true;
   try {
     const url = new URL(value);
     return url.protocol === 'http:' && !url.username && !url.password && !url.search && !url.hash
@@ -95,42 +94,53 @@ function isTimelineServer(value: string): boolean {
   }
 }
 
-function qualifiedTimelineTool(value: unknown): string | null {
+/** `krypton-harness-memory/peer_send`, `mcp__krypton_harness_bus__peer_send`,
+ *  `Tool: krypton-harness-bus:timeline_list` or fx's `mcp_<server>_<tool>`. The whole
+ *  string must be the qualified name; a built-in name anywhere else never counts. */
+function qualifiedHarnessTool(value: unknown): string | null {
   if (typeof value !== 'string') return null;
-  const match = /^(?:tool:\s*)?(?:mcp__)?(krypton-harness-(?:bus|memory)|krypton_harness_(?:bus|memory))(?:__|\/|:)(timeline_[a-z_]+)$/i.exec(value.trim());
-  const name = match?.[2].toLowerCase() ?? FX_QUALIFIED_HARNESS_TOOL.exec(value.trim().toLowerCase())?.[1];
-  return name && HARNESS_TIMELINE_TOOL_NAMES.has(name) ? name : null;
+  const trimmed = value.trim().toLowerCase();
+  const match = /^(?:tool:\s*)?(?:mcp__)?(?:krypton-harness-(?:bus|memory)|krypton_harness_(?:bus|memory))(?:__|\/|:)([a-z_]+)$/.exec(trimmed);
+  const name = match?.[1] ?? FX_QUALIFIED_HARNESS_TOOL.exec(trimmed)?.[1];
+  return name && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(name) ? name : null;
 }
 
-/** Timeline privileges come from a paired adapter identity, never argument text. */
-function timelinePermissionToolName(call: ToolCall, optionNames: string[]): string | null {
-  // rawInput is the tool's argument payload, not adapter identity metadata.
+/**
+ * The built-in harness tool a permission request is for, or null.
+ *
+ * Identity comes only from what the adapter states about the call: a qualified
+ * title, top-level server metadata paired with an exact bare title, a whole
+ * qualified `Tool:` content line, or the Junie option-label wrapper. `rawInput`
+ * is the tool's argument payload, which the agent writes freely, so it is never
+ * identity evidence. A shell command never qualifies, and an explicitly foreign
+ * qualified title cannot be overridden by content or option labels.
+ */
+function builtInPermissionToolName(call: ToolCall, optionNames: string[]): string | null {
+  if (call.kind === 'execute') return null;
   const metadata = call as unknown as Record<string, unknown>;
-  for (const key of TIMELINE_SERVER_KEYS) {
+  for (const key of HARNESS_SERVER_KEYS) {
     const server = metadata[key];
-    if (typeof server === 'string' && !isTimelineServer(server)) return null;
+    if (typeof server === 'string' && !isHarnessServer(server)) return null;
   }
   const title = call.title?.trim().toLowerCase();
-  const qualified = qualifiedTimelineTool(title);
+  const qualified = qualifiedHarnessTool(title);
   if (qualified) return qualified;
-  // A foreign qualified title cannot be overridden by arguments, content or
-  // option labels claiming to belong to the built-in server.
   // `mcp_` also covers fx's single-underscore `mcp_<server>_<tool>` form.
   if (title && (/^mcp_/.test(title) || /^(?:tool:\s*)?[^\s/:]+[/:][^\s]+$/.test(title))) return null;
-  const hasServer = TIMELINE_SERVER_KEYS.some((key) => {
+  const hasServer = HARNESS_SERVER_KEYS.some((key) => {
     const server = metadata[key];
-    return typeof server === 'string' && isTimelineServer(server);
+    return typeof server === 'string' && isHarnessServer(server);
   });
-  if (hasServer && title && HARNESS_TIMELINE_TOOL_NAMES.has(title)) return title;
+  if (hasServer && title && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(title)) return title;
   for (const block of call.content ?? []) {
     const content = block.content;
     if (block.type !== 'content' || content?.type !== 'text') continue;
-    const name = qualifiedTimelineTool(content.text);
+    const name = qualifiedHarnessTool(content.text);
     if (name) return name;
   }
   for (const label of optionNames) {
     const match = /^Always allow\s*\(\s*["']([^"']+)["']\s*\)$/i.exec(label.trim());
-    const name = qualifiedTimelineTool(match?.[1]);
+    const name = qualifiedHarnessTool(match?.[1]);
     if (name) return name;
   }
   return null;
@@ -143,95 +153,13 @@ export function pickPermissionOption(options: PermissionOption[], action: 'accep
   return options.find((option) => option.kind === 'reject_once') ?? options.find((option) => option.kind === 'reject_always') ?? null;
 }
 
-export function harnessAutoAllowToolName(permission: Pick<HarnessPermission, 'toolCall' | 'options'>): string | null {
-  const call = permission.toolCall;
+/** The built-in harness tool a wire permission request is for (spec 96). The
+ *  lane decoder calls this once per request (spec 380); the view reads the result. */
+export function harnessAutoAllowToolName(permission: { toolCall: ToolCall; options?: PermissionOption[] }): string | null {
   const optionNames = (permission.options ?? [])
     .map((option) => option.name)
     .filter((name): name is string => typeof name === 'string');
-  const timeline = timelinePermissionToolName(call, optionNames);
-  if (timeline) return timeline;
-  const hasServerMarker = containsHarnessServerMarker(call)
-    || optionNames.some((name) => HARNESS_SERVER_MARKERS.some((marker) => name.includes(marker)));
-  if (!hasServerMarker) return null;
-  const name = structuredHarnessToolNameFromUnknown(call.rawInput)
-    ?? harnessToolNameFromUnknown(call.rawInput)
-    ?? harnessToolNameFromString(call.title)
-    ?? harnessToolNameFromUnknown(call.content)
-    ?? harnessToolNameFromOptionLabels(optionNames);
-  return name && !HARNESS_TIMELINE_TOOL_NAMES.has(name) ? name : null;
-}
-
-export function harnessToolNameFromOptionLabels(names: string[]): string | null {
-  for (const name of names) {
-    const match = harnessToolNameFromString(name);
-    if (match) return match;
-  }
-  return null;
-}
-
-export function structuredHarnessToolNameFromUnknown(value: unknown, depth = 0): string | null {
-  if (depth > MEMORY_PERMISSION_SCAN_DEPTH) return null;
-  if (!value || typeof value !== 'object') return null;
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const match = structuredHarnessToolNameFromUnknown(item, depth + 1);
-      if (match) return match;
-    }
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  for (const key of ['name', 'toolName', 'tool_name', 'tool']) {
-    const value = record[key];
-    if (typeof value === 'string') {
-      const match = harnessToolNameFromString(value);
-      if (match) return match;
-    }
-  }
-  for (const item of Object.values(record)) {
-    const match = structuredHarnessToolNameFromUnknown(item, depth + 1);
-    if (match) return match;
-  }
-  return null;
-}
-
-export function harnessToolNameFromUnknown(value: unknown, depth = 0): string | null {
-  if (depth > MEMORY_PERMISSION_SCAN_DEPTH) return null;
-  if (typeof value === 'string') return harnessToolNameFromString(value);
-  if (!value || typeof value !== 'object') return null;
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const match = harnessToolNameFromUnknown(item, depth + 1);
-      if (match) return match;
-    }
-    return null;
-  }
-  const record = value as Record<string, unknown>;
-  for (const key of ['name', 'toolName', 'tool_name', 'tool', 'title', 'text']) {
-    const match = harnessToolNameFromUnknown(record[key], depth + 1);
-    if (match) return match;
-  }
-  const content = record.content;
-  if (typeof content === 'string') return harnessToolNameFromString(content);
-  if (content && typeof content === 'object') {
-    const match = harnessToolNameFromUnknown(content, depth + 1);
-    if (match) return match;
-  }
-  return null;
-}
-
-export function harnessToolNameFromString(value: string | undefined): string | null {
-  if (!value) return null;
-  const normalized = value.trim().toLowerCase();
-  const fx = FX_QUALIFIED_HARNESS_TOOL.exec(normalized)?.[1];
-  if (fx && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(fx)) return fx;
-  const timeline = /^(?:tool:\s*)?(?:(?:mcp__)?krypton[_-]harness[_-](?:bus|memory)(?:__|\/))?(timeline_record|timeline_list|timeline_merge|timeline_pending_resolve|timeline_conflict_list|timeline_conflict_record|timeline_conflict_checked)$/.exec(normalized);
-  if (timeline) return timeline[1];
-  for (const toolName of HARNESS_AUTO_ALLOW_TOOL_NAMES) {
-    if (HARNESS_TIMELINE_TOOL_NAMES.has(toolName)) continue;
-    if (normalized === toolName || normalized.endsWith(`__${toolName}`)) return toolName;
-  }
-  const match = normalized.match(/(?:^|[^a-z0-9_])(handoff_set|peer_send|peer_list|attention_flag|attention_resolve|review_outcome|mark_review_priority|issue_progress|ticket_progress|ticket_note|ticket_add_resource|ticket_link|lesson_record|lesson_retire|computer_list|computer_exec)(?:$|[^a-z0-9_])/);
-  return match && HARNESS_AUTO_ALLOW_TOOL_NAMES.has(match[1]) ? match[1] : null;
+  return builtInPermissionToolName(permission.toolCall, optionNames);
 }
 
 export function harnessToolFamily(toolName: string): HarnessToolFamily | null {
@@ -327,14 +255,6 @@ export function boundedInlineValue(value: unknown, max = 140): string {
   }
 }
 
-export function containsHarnessServerMarker(value: unknown, depth = 0): boolean {
-  if (depth > MEMORY_PERMISSION_SCAN_DEPTH) return false;
-  if (typeof value === 'string') return HARNESS_SERVER_MARKERS.some((marker) => value.includes(marker));
-  if (!value || typeof value !== 'object') return false;
-  if (Array.isArray(value)) return value.some((item) => containsHarnessServerMarker(item, depth + 1));
-  return Object.values(value as Record<string, unknown>).some((item) => containsHarnessServerMarker(item, depth + 1));
-}
-
 export function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -410,6 +330,11 @@ export function isArtifactScratchPath(path: string | null | undefined): boolean 
  * path only inside rawInput (not as a diff/location), which `extractModifiedPath`
  * would miss — leaking HTML during the registry-event race. Only path-ish keys
  * are inspected, never large content blobs. */
+/** spec 133 — does a decoded tool view name a lane artifact scratch path? */
+export function viewTargetsArtifactScratch(view: Pick<ToolView, 'modifiedPath' | 'locations' | 'inputPaths'>): boolean {
+  return [view.modifiedPath, ...view.locations, ...view.inputPaths].some((path) => isArtifactScratchPath(path));
+}
+
 export function callTargetsArtifactScratch(call: ToolCall | ToolCallUpdate): boolean {
   if (isArtifactScratchPath(extractModifiedPath(call))) return true;
   for (const loc of call.locations ?? []) {

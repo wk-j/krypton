@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
+import { permissionEvent } from './adapters/test-utils';
+import type { ToolView } from './adapters/types';
 import { isExactMcpTool, type FencedTool } from './headless-fence';
 import type { ToolCall } from './types';
+
+/** The request as a Claude lane decodes it (spec 380): the identity is the adapter's. */
+function claudeView(call: Partial<ToolCall> & { toolCallId: string }): ToolView {
+  return permissionEvent('claude', call).view;
+}
 
 const HOST_EXEC: FencedTool = { server: 'krypton_inline', tool: 'host_exec' };
 const IDENTITY = 'mcp__krypton_inline__host_exec';
@@ -21,11 +28,11 @@ function claudeCall(over: Partial<ToolCall> & { toolName?: string; server?: stri
 
 describe('isExactMcpTool', () => {
   it('matches the exact title with agreeing claudeCode labels', () => {
-    expect(isExactMcpTool(claudeCall(), HOST_EXEC)).toBe(true);
+    expect(isExactMcpTool(claudeView(claudeCall()), HOST_EXEC)).toBe(true);
   });
 
   it('matches the exact title when the adapter sends no claudeCode metadata', () => {
-    expect(isExactMcpTool({ toolCallId: 't', title: IDENTITY }, HOST_EXEC)).toBe(true);
+    expect(isExactMcpTool(claudeView({ toolCallId: 't', title: IDENTITY }), HOST_EXEC)).toBe(true);
   });
 
   it.each([
@@ -36,10 +43,10 @@ describe('isExactMcpTool', () => {
     ['a Bash request', { title: 'df -h', kind: 'execute' as const, toolName: 'Bash' }],
     ['the identity only in the arguments', { title: 'mcp__evil__run', toolName: 'mcp__evil__run', server: 'evil', rawInput: { title: IDENTITY } }],
   ])('declines %s', (_name, over) => {
-    expect(isExactMcpTool(claudeCall(over), HOST_EXEC)).toBe(false);
+    expect(isExactMcpTool(claudeView(claudeCall(over)), HOST_EXEC)).toBe(false);
   });
 
   it('declines claudeCode metadata that lacks the server', () => {
-    expect(isExactMcpTool({ toolCallId: 't', title: IDENTITY, _meta: { claudeCode: { toolName: IDENTITY } } }, HOST_EXEC)).toBe(false);
+    expect(isExactMcpTool(claudeView({ toolCallId: 't', title: IDENTITY, _meta: { claudeCode: { toolName: IDENTITY } } }), HOST_EXEC)).toBe(false);
   });
 });

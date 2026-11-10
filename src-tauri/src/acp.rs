@@ -498,6 +498,9 @@ pub struct AgentSessionInfo {
     /// running model, not the pre-switch default). `None` when unverified (e.g. an
     /// alias was applied — we don't assert a guessed canonical id).
     pub current_model_id: Option<String>,
+    /// The response's ACP `modes` (`SessionModeState`), forwarded unparsed: the
+    /// frontend's lane adapter decodes it (spec 380).
+    pub modes: Option<Value>,
 }
 
 /// Non-fatal spawn-time selection result. Confirmed identity lives in the
@@ -2797,6 +2800,7 @@ pub async fn acp_session_new(
         model_apply_failed: apply.failed,
         available_models: model_state.available,
         current_model_id,
+        modes: new_session.get("modes").cloned(),
     })
 }
 
@@ -2858,6 +2862,7 @@ async fn acp_session_restore(
         model_apply_failed: false,
         available_models: model_state.available,
         current_model_id: model_state.current,
+        modes: response.get("modes").cloned(),
     })
 }
 

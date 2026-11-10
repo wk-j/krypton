@@ -123,7 +123,6 @@ import { GenUiPanel } from './components/genui-panel';
 import type { GenUiPanelState } from './components/genui-panel';
 import { ToolRow } from './components/tool-row';
 import { ExecutionDialog } from './components/execution-dialog';
-import { parseExecutionPayload } from './harness-execution';
 import { initialState as initialUiState } from './genui/evaluate';
 import {
   formatUiFailure,
@@ -148,23 +147,21 @@ import {
 import {
   applyAskUserKey,
   createAskUserCardState,
-  parseAskUserQuestions,
   payloadFromCard,
   questionActionsHint,
+  type AskUserQuestion,
   type AskUserReply,
 } from './ask-user-question';
+import type { LaneEvent, LaneInit, LaneSession, PermissionRequest, ToolImageUpdate, ToolView } from './adapters/types';
+import { permissionSubject } from './adapters/permission';
+import { permissionPayloadFromRequest, toolPayloadFromView } from './harness-transcript-items';
 import { parseElicitationForm } from './elicitation';
 import type {
   AcpBackendDescriptor,
-  AcpEvent,
   AcpInstanceOwner,
   DiffReviewComment,
   ReviewResponse,
-  AcpMcpCapabilities,
   AcpMcpServerDescriptor,
-  AgentInfo,
-  AgentInitInfo,
-  AgentSessionInfo,
   ContentBlock,
   HarnessLaneStatus,
   HarnessMcpLaneStats,
@@ -185,8 +182,6 @@ import type {
   ReferenceGitChange,
   ReferenceGitSnapshot,
   StopReason,
-  ToolCall,
-  ToolCallUpdate,
   TranscriptAnnotation,
   UsageInfo,
 } from './types';
@@ -383,7 +378,6 @@ import {
   wordAutocompleteEnabled,
   type GhostSuggestion,
 } from './word-predict';
-import { extractModifiedPath } from './acp-harness-memory';
 import { classifyProviderError, shouldAppendProviderError } from './provider-error';
 import {
   loadProjectMcpServers,
@@ -480,7 +474,6 @@ import {
   makeId,
   parseReviewFindings,
   pathToFileUri,
-  sessionCapabilitiesFromAgent,
   shortId,
   truncate,
 } from './harness-format';
@@ -491,22 +484,14 @@ import {
   registerBackgroundTask,
 } from './harness-background-tasks';
 import {
-  buildToolPayload,
-  cleanToolTitle,
-  extractCommandLineRaw,
   formatToolElapsed,
-  inferToolLabel,
   isMemoryTool,
   isTerminalToolStatus,
-  mergeToolCall,
 } from './harness-tool-render';
-import { isCodexGuardianReview, parseGuardianReview } from './harness-guardian-review';
 import {
   appendBoundedTranscriptItem,
   clearToolTranscriptRetention,
-  compactToolCallForRetention,
   isOrphanToolCallUpdate,
-  mergeToolPayloadForUpdate,
 } from './harness-tool-retention';
 export {
   boundedOutputLines,
@@ -514,7 +499,6 @@ export {
   rawOutputSections,
   stringifyToolValue,
 } from './harness-tool-render';
-import { permissionCommandIsHighRisk } from './harness-tool-render';
 import {
   describePush,
   formatHandoffAge,
@@ -557,16 +541,12 @@ import {
   ARTIFACT_HINT_ALPHABET,
   artifactWritePathMatches,
   reviewWritePathMatches,
-  callTargetsArtifactScratch,
+  viewTargetsArtifactScratch,
   errorText,
-  extractHarnessServerName,
   generateArtifactHintLabels,
-  harnessAutoAllowToolName,
   harnessToolFamily,
   isArtifactWriteGrantKind,
   normalizeArtifactPath,
-  permissionArgsPreview,
-  permissionToolFamily,
   pickPermissionOption,
 } from './harness-permission-scan';
 import {
@@ -639,19 +619,12 @@ import {
   readImageFile,
   resolveImagePath,
   retainImage,
-  scanValueForImagePaths,
 } from './harness-images';
 import {
   absorbChildToolCall,
   appendChildOutput,
   applyOmpJobs,
-  claudeParentToolUseId,
-  codexSubagentName,
-  isOmpBackgroundUpdate,
-  jobsPayload,
   markLastReported,
-  parseOmpJobs,
-  parseSubagentPayload,
   type OmpJob,
 } from './harness-subagents';
 import { HarnessImageViewer } from './harness-image-viewer';
@@ -2559,7 +2532,7 @@ export class AcpHarnessView implements ContentView {
       case 'permission.list':
         return lane.pendingPermissions.map((permission) => ({
           requestId: permission.requestId,
-          tool: permission.toolCall.title ?? permission.toolCall.kind ?? 'tool',
+          tool: permission.view.title || permission.view.declaredKind || 'tool',
           options: permission.options,
         }));
       case 'permission.resolve': {
@@ -5380,7 +5353,6 @@ export class AcpHarnessView implements ContentView {
       lane.streamingMarkdownItemId = null;
       disposeAllImages(lane.imageState);
       lane.subagentChildren.clear();
-      lane.codexAgentNames.clear();
       clearToolTranscriptRetention(lane);
     }
     if (this.memoryUnlisten) {
@@ -6274,7 +6246,7 @@ export class AcpHarnessView implements ContentView {
         more: lane.pendingPermissions.length - 1,
         highRisk,
         focus: focus !== null && lane.id === focus.id,
-        command: highRisk ? extractCommandLineRaw(permission.toolCall.rawInput) : '',
+        command: highRisk ? permission.view.commandLine ?? '' : '',
       });
     }
     return rows;
@@ -8097,10 +8069,9 @@ export class AcpHarnessView implements ContentView {
       stagedImages: [],
       imageState: createLaneImageState(),
       subagentChildren: new Map(),
-      codexAgentNames: new Map(),
       transcript: [{ id: makeId(), kind: 'system', text: `starting ${displayName}...` }],
       toolTranscriptIds: new Map(),
-      toolCalls: new Map(),
+      toolViews: new Map(),
       seenTranscriptIds: new Set(),
       availableCommands: [],
       modesById: new Map(),
@@ -8233,11 +8204,11 @@ export class AcpHarnessView implements ContentView {
           await client.dispose();
           return;
         }
-        const servers = await this.mcpServersForLane(lane, init.agent_capabilities);
+        const servers = await this.mcpServersForLane(lane, init);
         await client.setMcpServers(servers ?? []);
-        const caps = sessionCapabilitiesFromAgent(init.agent_capabilities);
+        const caps = init.sessions;
         const mode: 'resume' | 'load' | null = caps.canResume ? 'resume' : caps.canLoad ? 'load' : null;
-        let session: AgentSessionInfo | null = null;
+        let session: LaneSession | null = null;
         if (!mode) {
           this.appendTranscript(lane, 'system', 'backend cannot resume sessions - starting fresh session');
         } else {
@@ -8263,15 +8234,12 @@ export class AcpHarnessView implements ContentView {
           await client.dispose();
           return;
         }
-        lane.sessionId = session.session_id;
+        lane.sessionId = session.sessionId;
         this.publishStream(lane, 'lane_session_changed', {
           sessionId: lane.sessionId,
         });
-        this.configureLaneFromInfo(lane, init);
-        // spec 127: resume/load/new all surface model state; init has none.
-        lane.availableModels = session.available_models ?? [];
-        lane.currentModelId = session.current_model_id ?? null;
-        lane.modelApplyFailed = session.model_apply_failed ?? false;
+        this.configureLaneFromInfo(lane, init, null);
+        this.applyRestoredSession(lane, init, session);
         this.setLaneStatus(lane, 'idle');
         // spec 370: the old OMP process took its background jobs with it.
         this.markBackgroundCardsLastReported(lane);
@@ -8283,18 +8251,18 @@ export class AcpHarnessView implements ContentView {
             : `connected to ${lane.displayName}.`,
         );
       } else {
-        const info: AgentInfo = await client.initialize(async (caps) => {
-          return this.mcpServersForLane(lane, caps);
+        const { init, session } = await client.initialize(async (laneInit) => {
+          return this.mcpServersForLane(lane, laneInit);
         });
         if (lane.spawnEpoch !== spawnEpoch || lane.client !== client) {
           await client.dispose();
           return;
         }
-        lane.sessionId = info.session_id ?? null;
+        lane.sessionId = session.sessionId;
         this.publishStream(lane, 'lane_session_changed', {
           sessionId: lane.sessionId,
         });
-        this.configureLaneFromInfo(lane, info);
+        this.configureLaneFromInfo(lane, init, session);
         this.setLaneStatus(lane, 'idle');
         this.appendTranscript(lane, 'system', `connected to ${lane.displayName}.`);
       }
@@ -8349,7 +8317,7 @@ export class AcpHarnessView implements ContentView {
     }];
   }
 
-  private async mcpServersForLane(lane: HarnessLane, caps: unknown): Promise<AcpMcpServerDescriptor[] | undefined> {
+  private async mcpServersForLane(lane: HarnessLane, init: LaneInit): Promise<AcpMcpServerDescriptor[] | undefined> {
     const memoryServers = this.memoryServerForLane(lane);
     // Claude Code's adapter loads `.mcp.json` natively — re-injecting via
     // ACP would duplicate every entry. Pi has no MCP host at all (by design),
@@ -8377,40 +8345,44 @@ export class AcpHarnessView implements ContentView {
     }
     const projectServers = await loadProjectMcpServers(this.projectDir, this.remoteRuntimeId);
     if (projectServers.length === 0) return memoryServers;
-    const mcpCaps = (caps as { mcpCapabilities?: AcpMcpCapabilities } | null)?.mcpCapabilities;
-    const gated = filterByCapability(projectServers, mcpCaps);
+    const gated = filterByCapability(projectServers, init.mcp);
     return dedupeByName(gated, memoryServers);
   }
 
-  private configureLaneFromInfo(lane: HarnessLane, info: AgentInfo | AgentInitInfo): void {
-    lane.modelName = inferLaneModelName(lane.backendId, info, this.laneModels);
-    // AgentInitInfo (resume/load path) carries no apply status — no model was
-    // applied there, so it correctly falls back to false.
-    lane.modelApplyFailed = (info as AgentInfo).model_apply_failed ?? false;
+  /**
+   * Lane state from the decoded `initialize` answer and, on a fresh session,
+   * its `session/new` answer. Restored sessions pass `null` here and apply their
+   * own session through `applyRestoredSession`, so their model name keeps the
+   * init-only inference it always had.
+   */
+  private configureLaneFromInfo(lane: HarnessLane, init: LaneInit, session: LaneSession | null): void {
+    lane.modelName = inferLaneModelName(lane.backendId, init, session?.currentModelId ?? null, this.laneModels);
+    lane.modelApplyFailed = session?.modelApplyFailed ?? false;
     // spec 127: agent-advertised model list + confirmed current id for the picker.
-    // AgentInitInfo carries neither; the resume path overrides these from its own
-    // AgentSessionInfo after this call.
-    lane.availableModels = (info as AgentInfo).available_models ?? [];
-    lane.currentModelId = (info as AgentInfo).current_model_id ?? null;
-    lane.supportsEmbeddedContext = !!info.agent_capabilities?.promptCapabilities?.embeddedContext;
-    lane.supportsImages = !!info.agent_capabilities?.promptCapabilities?.image;
-    lane.supportsSteering = info.steering_supported === true;
-    lane.modesById = new Map();
-    const availableModes = (info.agent_capabilities as { availableModes?: unknown } | null)?.availableModes;
-    if (Array.isArray(availableModes)) {
-      for (const m of availableModes) {
-        if (m && typeof m === 'object') {
-          const mode = m as { id?: unknown; name?: unknown; description?: unknown };
-          if (typeof mode.id === 'string') {
-            lane.modesById.set(mode.id, {
-              id: mode.id,
-              name: typeof mode.name === 'string' ? mode.name : mode.id,
-              description: typeof mode.description === 'string' ? mode.description : undefined,
-            });
-          }
-        }
-      }
-    }
+    lane.availableModels = session ? [...session.models] : [];
+    lane.currentModelId = session?.currentModelId ?? null;
+    lane.supportsEmbeddedContext = init.promptEmbeddedContext;
+    lane.supportsImages = init.promptImage;
+    lane.supportsSteering = init.steering;
+    this.applyLaneModes(lane, init, session);
+  }
+
+  /** spec 127: a resumed, loaded or replacement session surfaces its own model
+   *  and mode state; `initialize` carries none. */
+  private applyRestoredSession(lane: HarnessLane, init: LaneInit, session: LaneSession): void {
+    lane.availableModels = [...session.models];
+    lane.currentModelId = session.currentModelId;
+    lane.modelApplyFailed = session.modelApplyFailed;
+    this.applyLaneModes(lane, init, session);
+  }
+
+  /** Spec 380: mode names come from the session's ACP `modes`, else the off-spec
+   *  capability list. A session that names its current mode shows it at once. */
+  private applyLaneModes(lane: HarnessLane, init: LaneInit, session: LaneSession | null): void {
+    const modes = session && session.modes.length > 0 ? session.modes : init.modes;
+    lane.modesById = new Map(modes.map((mode) => [mode.id, mode]));
+    const currentId = session?.currentModeId;
+    if (currentId) lane.currentMode = lane.modesById.get(currentId) ?? { id: currentId, name: currentId };
   }
 
   /** Forward a lane event to the control server's SSE subscribers (doc 175). */
@@ -8452,12 +8424,16 @@ export class AcpHarnessView implements ContentView {
     this.onOutputPump?.(text.length);
   }
 
-  private onLaneEvent(lane: HarnessLane, event: AcpEvent): void {
+  private onLaneEvent(lane: HarnessLane, event: LaneEvent): void {
     // Mirror agent events to control SSE (doc 175), except staged #ui assistant
     // text and intermediate stops. The final stop follows transcript commit.
     const uiGeneration = this.uiGenerationFor(lane);
     if (!(uiGeneration && (event.type === 'message_chunk' || event.type === 'stop'))) {
-      this.publishStream(lane, event.type as ControlEventKind, event);
+      // Tool events keep ACP's two control kinds; the payload is the canonical event.
+      const kind = event.type === 'tool'
+        ? (event.phase === 'call' ? 'tool_call' : 'tool_call_update')
+        : event.type;
+      this.publishStream(lane, kind as ControlEventKind, event);
     }
     let needsRender = true;
     switch (event.type) {
@@ -8477,7 +8453,7 @@ export class AcpHarnessView implements ContentView {
         break;
       case 'message_chunk':
         // spec 282: Claude subagent text streams into its Task card.
-        if (event.parentToolUseId && this.absorbSubagentOutput(lane, event.parentToolUseId, event.text, false)) {
+        if (event.parentToolId && this.absorbSubagentOutput(lane, event.parentToolId, event.text, false)) {
           needsRender = false;
           break;
         }
@@ -8518,7 +8494,7 @@ export class AcpHarnessView implements ContentView {
         }
         break;
       case 'thought_chunk':
-        if (event.parentToolUseId && this.absorbSubagentOutput(lane, event.parentToolUseId, event.text, true)) {
+        if (event.parentToolId && this.absorbSubagentOutput(lane, event.parentToolId, event.text, true)) {
           needsRender = false;
           break;
         }
@@ -8527,37 +8503,32 @@ export class AcpHarnessView implements ContentView {
         this.scheduleStreamingBodyOnly(lane);
         needsRender = false;
         break;
-      case 'tool_call':
+      case 'tool': {
+        const { view } = event;
+        const update = event.phase === 'update';
         // spec 282: a Claude subagent's own tool call folds into its Task card.
-        if (this.absorbSubagentChild(lane, event.call)) {
+        if (this.absorbSubagentChild(lane, view)) {
+          if (update) this.observeFileTouch(lane, view);
           needsRender = false;
           break;
         }
-        if (uiGeneration) uiGeneration.segmentOpen = false;
-        this.sealStreaming(lane);
-        this.liveVoiceCtl.onToolCall(lane); // spec 280: progress so far → commentary
-        this.renderTool(lane, event.call, false);
-        this.collectToolImages(lane, event.call);
-        this.captureBackgroundLaunch(lane, event.call);
-        this.noteToolActivity(lane, event.call.toolCallId);
-        this.scheduleToolRender(lane);
-        needsRender = false;
-        break;
-      case 'tool_call_update':
-        if (this.absorbSubagentChild(lane, event.update)) {
-          this.observeFileTouch(lane, event.update);
-          needsRender = false;
-          break;
+        if (!update) {
+          if (uiGeneration) uiGeneration.segmentOpen = false;
+          this.sealStreaming(lane);
+          this.liveVoiceCtl.onToolCall(lane); // spec 280: progress so far → commentary
         }
-        this.renderTool(lane, event.update, true);
-        this.collectToolImages(lane, event.update);
-        this.captureBackgroundLaunch(lane, event.update);
-        this.noteToolActivity(lane, event.update.toolCallId);
-        this.observeFileTouch(lane, event.update);
-        if (isMemoryTool(event.update)) void this.refreshMemory();
+        this.renderTool(lane, event);
+        this.collectToolImages(lane, view, event.images);
+        this.captureBackgroundLaunch(lane, view);
+        this.noteToolActivity(lane, view);
+        if (update) {
+          this.observeFileTouch(lane, view);
+          if (isMemoryTool(view)) void this.refreshMemory();
+        }
         this.scheduleToolRender(lane);
         needsRender = false;
         break;
+      }
       case 'plan':
         this.sealStreaming(lane);
         this.renderPlan(lane, event.entries);
@@ -8569,7 +8540,7 @@ export class AcpHarnessView implements ContentView {
         break;
       case 'permission_request':
         this.sealStreaming(lane);
-        this.addPermission(lane, event.requestId, event.toolCall, event.options);
+        this.addPermission(lane, event);
         break;
       case 'ask_user_question':
         this.sealStreaming(lane);
@@ -8697,15 +8668,13 @@ export class AcpHarnessView implements ContentView {
     if (needsRender) this.scheduleLaneRender(lane);
   }
 
-  /** spec 156/231: stamp live activity from the merged tool record (after
-   *  renderTool has cached it). The rail HUD reads this on the 1 s tick / next
-   *  render. Terminal updates are skipped, so a finished tool's label lingers
-   *  until the next chunk or tool call replaces it — no completion bookkeeping. */
-  private noteToolActivity(lane: HarnessLane, toolCallId: string | undefined): void {
-    if (!toolCallId) return;
-    const merged = lane.toolCalls.get(toolCallId);
-    if (!merged || (merged.status && isTerminalToolStatus(merged.status))) return;
-    lane.activity = { kind: 'tool', label: merged.title ?? merged.kind ?? 'tool' };
+  /** spec 156/231: stamp live activity from the decoded tool view. The rail HUD
+   *  reads this on the 1 s tick / next render. Terminal updates are skipped, so
+   *  a finished tool's label lingers until the next chunk or tool call replaces
+   *  it — no completion bookkeeping. */
+  private noteToolActivity(lane: HarnessLane, view: ToolView): void {
+    if (isTerminalToolStatus(view.status)) return;
+    lane.activity = { kind: 'tool', label: view.title || view.kind || 'tool' };
   }
 
   private async submitActiveLane(delivery: PromptDelivery = 'queue'): Promise<void> {
@@ -9351,14 +9320,13 @@ export class AcpHarnessView implements ContentView {
     });
   }
 
-  private observeFileTouch(lane: HarnessLane, call: ToolCall | ToolCallUpdate): void {
-    const path = extractModifiedPath(call);
-    if (path && call.status === 'completed') {
-      this.fileTouchMap.set(path, {
-        path,
+  private observeFileTouch(lane: HarnessLane, view: ToolView): void {
+    if (view.modifiedPath && view.status === 'completed') {
+      this.fileTouchMap.set(view.modifiedPath, {
+        path: view.modifiedPath,
         laneId: lane.id,
         laneDisplayName: lane.displayName,
-        toolKind: call.kind === 'edit' ? 'edit' : 'write_like',
+        toolKind: view.kind === 'edit' ? 'edit' : 'write_like',
         at: Date.now(),
       });
     }
@@ -9367,12 +9335,9 @@ export class AcpHarnessView implements ContentView {
   private addAskUser(
     lane: HarnessLane,
     requestId: number,
-    raw: unknown,
+    questions: AskUserQuestion[],
     toolCallId?: string,
   ): void {
-    const questions = Array.isArray(raw)
-      ? parseAskUserQuestions({ questions: raw })
-      : parseAskUserQuestions(raw);
     if (questions.length === 0) {
       if (lane.client) void lane.client.respondQuestion({ requestId, wire: 'grok' }, { kind: 'cancel' });
       this.appendTranscript(lane, 'system', 'ask_user_question: no questions provided');
@@ -9497,12 +9462,13 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
-  private addPermission(lane: HarnessLane, requestId: number, toolCall: ToolCall, options: PermissionOption[]): void {
-    const permission: HarnessPermission = { requestId, toolCall, options };
+  private addPermission(lane: HarnessLane, request: PermissionRequest): void {
+    const permission: HarnessPermission = { ...request };
+    const { view } = permission;
     const payload = this.describePermission(lane, permission);
     const item = this.appendPermissionTranscript(lane, permission, payload);
     permission.transcriptItem = item;
-    const harnessToolName = harnessAutoAllowToolName(permission);
+    const harnessToolName = permission.harnessTool;
     if (harnessToolName && (pickPermissionOption(permission.options, 'accept') || harnessToolFamily(harnessToolName) === 'timeline')) {
       void this.resolveHarnessPermission(lane, permission, harnessToolName);
       return;
@@ -9511,7 +9477,7 @@ export class AcpHarnessView implements ContentView {
     // mechanism from the memory/peer server-marker detector. The write tool is a
     // backend-native filesystem tool, so we key off path + registry entry +
     // same lane, never the built-in-server marker.
-    const artifactWrite = this.matchArtifactWriteForGrant(lane, toolCall);
+    const artifactWrite = this.matchArtifactWriteForGrant(lane, view);
     if (artifactWrite && pickPermissionOption(permission.options, 'accept')) {
       void this.resolveArtifactWritePermission(lane, permission, artifactWrite);
       return;
@@ -9519,7 +9485,7 @@ export class AcpHarnessView implements ContentView {
     // spec 211: the same issued-path mechanism for a Review Board bundle. The
     // grant covers the whole directory (not one file), so the lane can add
     // `assets/` alongside `review.md`.
-    const reviewWrite = this.matchReviewWriteForGrant(lane, toolCall);
+    const reviewWrite = this.matchReviewWriteForGrant(lane, view);
     if (reviewWrite && pickPermissionOption(permission.options, 'accept')) {
       void this.resolveReviewWritePermission(lane, permission, reviewWrite);
       return;
@@ -9538,7 +9504,7 @@ export class AcpHarnessView implements ContentView {
       );
       return;
     }
-    if (lane.permissionMode === 'bypass' || (lane.permissionMode === 'acceptEdits' && toolCall.kind === 'edit')) {
+    if (lane.permissionMode === 'bypass' || (lane.permissionMode === 'acceptEdits' && view.declaredKind === 'edit')) {
       void this.resolvePermission(lane, 'accept', true, `mode:${lane.permissionMode}`);
       return;
     }
@@ -9553,7 +9519,7 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     // spec 280: only a request that actually waits for the human reaches the voice session.
-    this.liveVoiceCtl.onPermissionRequested(lane, requestId, toolCall.title ?? '');
+    this.liveVoiceCtl.onPermissionRequested(lane, permission.requestId, view.title);
   }
 
   /** spec 311: queue a remote command for the human. Deliberately NOT a
@@ -9639,7 +9605,7 @@ export class AcpHarnessView implements ContentView {
    *  not gated here — fs writes are diff-shown + VCS-recoverable. Reuses the spec
    *  140 classifier so there is one source of truth. */
   private isHighRiskPermission(permission: HarnessPermission): boolean {
-    return permissionCommandIsHighRisk(permission.toolCall);
+    return permission.highRisk;
   }
 
   private async resolvePermission(
@@ -9815,17 +9781,16 @@ export class AcpHarnessView implements ContentView {
 
   /** Match a tool call against the artifact registry by path (broad — used for
    * transcript redaction, which must also cover reads of the artifact). */
-  private matchArtifactWrite(lane: HarnessLane, call: ToolCall | ToolCallUpdate): HarnessArtifactRecord | null {
-    const target = extractModifiedPath(call) ?? call.locations?.[0]?.path ?? null;
-    return this.findArtifactForWrite(lane.displayName, target);
+  private matchArtifactWrite(lane: HarnessLane, view: ToolView): HarnessArtifactRecord | null {
+    return this.findArtifactForWrite(lane.displayName, view.modifiedPath);
   }
 
   /** Auto-approval gate: a path match is NOT enough — the spec auto-approves a
    * file *write*, not any tool whose `locations[]` happens to name the artifact
    * (a read/search/execute could otherwise be silently granted). */
-  private matchArtifactWriteForGrant(lane: HarnessLane, call: ToolCall | ToolCallUpdate): HarnessArtifactRecord | null {
-    if (!isArtifactWriteGrantKind(inferToolLabel(call))) return null;
-    return this.matchArtifactWrite(lane, call);
+  private matchArtifactWriteForGrant(lane: HarnessLane, view: ToolView): HarnessArtifactRecord | null {
+    if (!isArtifactWriteGrantKind(view.kind)) return null;
+    return this.matchArtifactWrite(lane, view);
   }
 
   private async resolveArtifactWritePermission(
@@ -10051,13 +10016,9 @@ export class AcpHarnessView implements ContentView {
 
   /** Auto-approval gate: a path match is not enough — only a file *write* is
    *  auto-approved, never a read/search/execute that merely names the bundle. */
-  private matchReviewWriteForGrant(
-    lane: HarnessLane,
-    call: ToolCall | ToolCallUpdate,
-  ): HarnessReviewRecord | null {
-    if (!isArtifactWriteGrantKind(inferToolLabel(call))) return null;
-    const target = extractModifiedPath(call) ?? call.locations?.[0]?.path ?? null;
-    return this.findReviewForWrite(lane.displayName, target);
+  private matchReviewWriteForGrant(lane: HarnessLane, view: ToolView): HarnessReviewRecord | null {
+    if (!isArtifactWriteGrantKind(view.kind)) return null;
+    return this.findReviewForWrite(lane.displayName, view.modifiedPath);
   }
 
   private async resolveReviewWritePermission(
@@ -10675,11 +10636,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   private describePermission(lane: HarnessLane, permission: HarnessPermission): PermissionPayload {
-    const call = permission.toolCall;
-    const subject = extractModifiedPath(call) ?? call.locations?.[0]?.path ?? call.title ?? 'unknown target';
-    const kind = inferToolLabel(call);
-    const toolName = harnessAutoAllowToolName(permission) ?? (cleanToolTitle(call.title, kind) || call.title || kind);
-    const family = harnessToolFamily(toolName);
+    const subject = permissionSubject(permission.view);
     let suffix: string | undefined;
     const touch = this.fileTouchMap.get(subject);
     if (touch && touch.laneId !== lane.id && Date.now() - touch.at <= FILE_TOUCH_WINDOW_MS) {
@@ -10689,23 +10646,9 @@ export class AcpHarnessView implements ContentView {
     // which for an artifact write is the HTML. Redact it (registry match OR raw
     // scratch-path pattern, to survive the pending-event race) so HTML never
     // leaks into the transcript via the permission row, just like the tool card.
-    const isArtifact = this.matchArtifactWrite(lane, call) !== null || callTargetsArtifactScratch(call);
-    return {
-      id: permission.requestId,
-      toolName,
-      toolFamily: family ?? permissionToolFamily(kind),
-      serverName: extractHarnessServerName(call),
-      kind,
-      subject,
-      suffix,
-      argsPreview: isArtifact ? 'html artifact · contents hidden' : permissionArgsPreview(call.rawInput, subject),
-      options: permission.options.map((option) => ({
-        optionId: option.optionId,
-        name: option.name,
-        action: option.kind.startsWith('allow') ? 'accept' : option.kind.startsWith('reject') ? 'reject' : 'other',
-      })),
-      decision: 'pending',
-    };
+    const hideArgs = this.matchArtifactWrite(lane, permission.view) !== null
+      || viewTargetsArtifactScratch(permission.view);
+    return permissionPayloadFromRequest(permission, { suffix, hideArgs });
   }
 
   private appendPermissionTranscript(
@@ -11194,7 +11137,7 @@ export class AcpHarnessView implements ContentView {
         lane_id: null,
       }, [], null, null, this.remoteRuntimeId);
       const init = await client.initializeOnly();
-      const capabilities = sessionCapabilitiesFromAgent(init.agent_capabilities);
+      const capabilities = init.sessions;
       if (!capabilities.canList) {
         await client.dispose();
         client = null;
@@ -11287,7 +11230,7 @@ export class AcpHarnessView implements ContentView {
     });
     try {
       await client.setInstanceOwner(this.laneInstanceOwner(lane));
-      const servers = await this.mcpServersForLane(lane, init.agent_capabilities);
+      const servers = await this.mcpServersForLane(lane, init);
       await client.setMcpServers(servers ?? []);
       const info = mode === 'resume'
         ? await client.resumeSession(session.sessionId)
@@ -11296,15 +11239,14 @@ export class AcpHarnessView implements ContentView {
         await client.dispose();
         return;
       }
-      lane.sessionId = info.session_id;
+      lane.sessionId = info.sessionId;
       this.publishStream(lane, 'lane_session_changed', {
         sessionId: lane.sessionId,
       });
-      this.configureLaneFromInfo(lane, init);
-      // spec 127: resume/load surfaces its own model state — merge it in (init,
-      // an AgentInitInfo, has none). The picker then works on restored lanes too.
-      lane.availableModels = info.available_models ?? [];
-      lane.currentModelId = info.current_model_id ?? null;
+      this.configureLaneFromInfo(lane, init, null);
+      // spec 127: resume/load surfaces its own model state, so the picker works
+      // on restored lanes too.
+      this.applyRestoredSession(lane, init, info);
       this.setLaneStatus(lane, 'idle');
       this.sealStreaming(lane);
       this.markBackgroundCardsLastReported(lane); // spec 370: replay is over
@@ -11438,7 +11380,6 @@ export class AcpHarnessView implements ContentView {
     }
     disposeAllImages(lane.imageState);
     lane.subagentChildren.clear();
-    lane.codexAgentNames.clear();
     clearToolTranscriptRetention(lane);
     const index = this.lanes.findIndex((l) => l.id === lane.id);
     if (index !== -1) this.lanes.splice(index, 1);
@@ -11713,7 +11654,6 @@ export class AcpHarnessView implements ContentView {
     this.assistCtl.resetLane(lane.id); // spec 306: suggestions were for the old session
     disposeAllImages(lane.imageState);
     lane.subagentChildren.clear();
-    lane.codexAgentNames.clear();
     clearToolTranscriptRetention(lane);
     this.updateToolTick();
     this.imageViewer.refresh();
@@ -14273,8 +14213,9 @@ export class AcpHarnessView implements ContentView {
 
   /** spec 305: remember a `run_in_background` launch so the harness can keep
    *  reporting the job after the turn that started it has ended. */
-  private captureBackgroundLaunch(lane: HarnessLane, call: ToolCall | ToolCallUpdate): void {
-    const task = registerBackgroundTask(lane.backgroundTasks, call, Date.now());
+  private captureBackgroundLaunch(lane: HarnessLane, view: ToolView): void {
+    if (!view.background) return;
+    const task = registerBackgroundTask(lane.backgroundTasks, view.id, view.background, Date.now());
     if (!task) return;
     this.updateSpinnerTicker();
     this.refreshMetricsRender();
@@ -14818,16 +14759,14 @@ export class AcpHarnessView implements ContentView {
    *  `resource_link` / `locations`, and paths scanned from rawInput, rawOutput,
    *  and text output. Path loads wait for the terminal status (a download only
    *  exists once it finishes); `read` tools load at once. */
-  private collectToolImages(lane: HarnessLane, call: ToolCall | ToolCallUpdate): void {
-    const itemId = lane.toolTranscriptIds.get(call.toolCallId);
+  private collectToolImages(lane: HarnessLane, view: ToolView, update: ToolImageUpdate): void {
+    const itemId = lane.toolTranscriptIds.get(view.id);
     const item = itemId ? lane.transcript.find((entry) => entry.id === itemId) : null;
     if (!item || item.tool?.artifactRedaction) return;
-    const kind = call.kind ?? lane.toolCalls.get(call.toolCallId)?.kind;
-    const blocks = (call.content ?? [])
-      .filter((entry) => entry.type === 'content' && entry.content)
-      .map((entry) => entry.content as ContentBlock);
-    const locations = (call.locations ?? [])
-      .map((location) => resolveImagePath(location.path, this.projectDir))
+    const kind = view.kind;
+    const blocks = update.blocks;
+    const locations = update.locations
+      .map((path) => resolveImagePath(path, this.projectDir))
       .filter((path): path is string => path !== null);
 
     const byteSources = blocks
@@ -14844,10 +14783,9 @@ export class AcpHarnessView implements ContentView {
       // One byte image pairs with the call's first location so the file is
       // shown once and the per-turn dedupe knows its path. Claude `Read` sends
       // both in one update; omp sends `locations` only on the `tool_call` start,
-      // so fall back to the merged call `renderTool` just retained.
-      const retainedPath = lane.toolCalls.get(call.toolCallId)?.locations?.[0]?.path;
+      // so fall back to the call's first location the decoder retained.
       const pairPath = byteSources.length === 1
-        ? (locations[0] ?? (retainedPath ? resolveImagePath(retainedPath, this.projectDir) : null))
+        ? (locations[0] ?? (update.pairPath ? resolveImagePath(update.pairPath, this.projectDir) : null))
         : null;
       for (const src of byteSources) {
         const path = src.uri ? resolveImagePath(src.uri, this.projectDir) : pairPath;
@@ -14866,22 +14804,11 @@ export class AcpHarnessView implements ContentView {
       for (const path of locations) {
         if (isImagePath(path)) candidates.push({ path, discovery: 'explicit', force });
       }
-      const textOutput = blocks
-        .map((block) => (block.type === 'text' ? block.text : ''))
-        .filter((text) => text.length > 0);
-      const scans = [
-        scanValueForImagePaths(call.rawInput),
-        scanValueForImagePaths(call.rawOutput),
-        scanValueForImagePaths(textOutput),
-      ];
-      for (const scan of scans) {
-        for (const raw of scan.paths) {
-          const path = resolveImagePath(raw, this.projectDir);
-          if (path) candidates.push({ path, discovery: 'scanned', force: false });
-        }
+      for (const raw of update.scanned) {
+        const path = resolveImagePath(raw, this.projectDir);
+        if (path) candidates.push({ path, discovery: 'scanned', force: false });
       }
-      const overflow = scans.reduce((sum, scan) => sum + scan.overflow, 0);
-      this.queueImagePaths(item, candidates, overflow);
+      this.queueImagePaths(item, candidates, update.overflow);
       if (isTerminalToolStatus(item.status ?? '') || kind === 'read') this.flushImagePaths(lane, item, 'tool');
     }
     this.syncImageStrip(lane, item);
@@ -14952,15 +14879,14 @@ export class AcpHarnessView implements ContentView {
 
   /** A Claude subagent's own tool call / update folds into its Task card
    *  instead of becoming a top-level row. False → render as before. */
-  private absorbSubagentChild(lane: HarnessLane, call: ToolCall | ToolCallUpdate): boolean {
-    const parentId = lane.subagentChildren.get(call.toolCallId) ?? claudeParentToolUseId(call._meta);
-    if (!parentId || parentId === call.toolCallId) return false;
+  private absorbSubagentChild(lane: HarnessLane, view: ToolView): boolean {
+    const parentId = lane.subagentChildren.get(view.id) ?? view.parentId;
+    if (!parentId || parentId === view.id) return false;
     const card = this.claudeSubagentCard(lane, parentId);
     if (!card?.tool?.subagents) return false;
-    const isNew = !lane.subagentChildren.has(call.toolCallId);
-    lane.subagentChildren.set(call.toolCallId, parentId);
-    const title = cleanToolTitle(call.title, call.kind ?? 'tool') || call.title?.trim() || '';
-    absorbChildToolCall(card.tool.subagents, title, isNew);
+    const isNew = !lane.subagentChildren.has(view.id);
+    lane.subagentChildren.set(view.id, parentId);
+    absorbChildToolCall(card.tool.subagents, view.title, isNew);
     this.scheduleToolRender(lane);
     return true;
   }
@@ -15188,28 +15114,22 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
-  private renderTool(
-    lane: HarnessLane,
-    call: ToolCall | ToolCallUpdate,
-    updateOnly: boolean,
-  ): void {
-    if (!call.toolCallId) return;
-    // ACP field updates require an earlier tool_call. Active tools retain their
-    // bounded merge state even after row eviction; a missing entry therefore
-    // means this is a late update for completed state that has been released.
-    if (updateOnly && isOrphanToolCallUpdate(lane, call.toolCallId)) return;
-    const merged = mergeToolCall(lane.toolCalls.get(call.toolCallId), call);
-    const existingId = lane.toolTranscriptIds.get(merged.toolCallId);
+  /**
+   * Spec 380: the row for one decoded tool update. The decoder already merged
+   * the update, held OMP's settled status, and built the cards; what stays here
+   * is view state — timing, the spec 365 error fire, spec 133 redaction, the
+   * execution target, spec 370 job routing and the row text.
+   */
+  private renderTool(lane: HarnessLane, event: Extract<LaneEvent, { type: 'tool' }>): void {
+    const { view } = event;
+    // ACP field updates require an earlier tool_call. Active tools keep their
+    // view even after row eviction; a missing entry therefore means this is a
+    // late update for completed state that has been released.
+    if (event.phase === 'update' && isOrphanToolCallUpdate(lane, view.id)) return;
+    const existingId = lane.toolTranscriptIds.get(view.id);
     const existing = existingId ? lane.transcript.find((item) => item.id === existingId) : null;
     const target = existing ?? this.appendTranscript(lane, 'tool', '');
-    // spec 370: an OMP background spawn keeps reporting on its own call after
-    // it returned. Those `in_progress` frames refresh the card; they never
-    // reopen the sealed row, its timer or the lane's active-tool count.
-    const wireStatus = merged.status ?? 'pending';
-    const status = target.tool && isTerminalToolStatus(target.tool.status) && !isTerminalToolStatus(wireStatus) &&
-        lane.backendId === 'omp' && isOmpBackgroundUpdate(call.rawOutput)
-      ? target.tool.status
-      : wireStatus;
+    const status = view.status;
     // Spec 114: before/after delta on the row's "active" state. A row is
     // active iff it has a start timestamp but no end timestamp.
     const wasActive = target.toolStartedAt !== undefined && target.toolEndedAt === undefined;
@@ -15231,30 +15151,21 @@ export class AcpHarnessView implements ContentView {
     if (wasActive !== isActive) {
       lane.activeToolCount += isActive ? 1 : -1;
     }
-    const tool = mergeToolPayloadForUpdate(
-      target.tool,
-      buildToolPayload(merged, status, target.toolStartedAt, target.toolEndedAt),
-      call,
-    );
-    if (isCodexGuardianReview(lane.backendId, merged)) {
-      tool.guardianReview = parseGuardianReview(merged, target.tool?.guardianReview, status);
-      // The dedicated row owns the bounded assessment. Do not retain the
-      // generic six-line output copy in the transcript as well.
-      tool.sections = [];
-      tool.diffs = [];
-    }
+    const prior = target.tool;
+    const tool = toolPayloadFromView(view, { startedAt: target.toolStartedAt, endedAt: target.toolEndedAt }, prior);
     // spec 133: redact write/edit cards on an artifact path to path + bytes +
     // hash — HTML must never reach the transcript model under the write tool
     // (the real spec-103 fix). Match the registry when known, but ALSO redact on
     // the raw scratch-path pattern so a write card that renders before the
     // pending event arrives still never shows the HTML (event/registry race).
-    const artifactRecord = this.matchArtifactWrite(lane, merged);
-    const artifactTarget = extractModifiedPath(merged) ?? merged.locations?.[0]?.path ?? null;
-    if (artifactRecord || callTargetsArtifactScratch(merged)) {
+    // A redacted row shows no card: write tools never spawn subagents or jobs.
+    if (prior?.artifactRedaction) tool.artifactRedaction = prior.artifactRedaction;
+    const artifactRecord = this.findArtifactForWrite(lane.displayName, view.modifiedPath);
+    if (artifactRecord || viewTargetsArtifactScratch(view)) {
       tool.diffs = [];
       tool.sections = [];
       tool.artifactRedaction = {
-        tail: artifactRecord?.tail ?? normalizeArtifactPath(artifactTarget ?? ''),
+        tail: artifactRecord?.tail ?? normalizeArtifactPath(view.modifiedPath ?? ''),
         size: artifactRecord?.size ?? null,
         hash: artifactRecord?.hash ?? null,
         pending: artifactRecord ? artifactRecord.state === 'pending' : true,
@@ -15265,34 +15176,13 @@ export class AcpHarnessView implements ContentView {
         void this.refreshArtifact(artifactRecord);
       }
     }
-    // spec 282: subagent spawns render as a live per-agent card.
-    if (!tool.artifactRedaction) {
-      const named = codexSubagentName(call._meta);
-      if (named) lane.codexAgentNames.set(named.threadId, named.name);
-      const subagents = parseSubagentPayload(merged, status, target.tool?.subagents, lane.codexAgentNames);
-      if (subagents) {
-        tool.subagents = subagents;
-        tool.kind = 'agents';
-        tool.subject = cleanToolTitle(merged.title, 'agents') || tool.subject;
-      }
+    if (tool.artifactRedaction) {
+      delete tool.subagents;
+      delete tool.execution;
+      delete tool.jobs;
     }
-    if (!tool.artifactRedaction && !tool.subagents) {
-      tool.execution = parseExecutionPayload(lane.backendId, call, target.tool?.execution);
-    }
-    // spec 370: an OMP `wait` paints its structured job snapshot, never the
-    // model-facing text, and reports on the agents of earlier spawn cards.
-    if (!tool.artifactRedaction && !tool.subagents && !tool.execution && lane.backendId === 'omp') {
-      const parsed = parseOmpJobs(merged.rawOutput);
-      const jobs = parsed ? jobsPayload(parsed) : target.tool?.jobs;
-      if (jobs) {
-        tool.jobs = jobs;
-        tool.kind = 'wait';
-        tool.subject = cleanToolTitle(merged.title, 'wait') || tool.subject;
-        tool.sections = [];
-      }
-      // Only a frame that carried the snapshot is news for the cards.
-      if (parsed && call.rawOutput !== undefined) this.applyJobsToCards(lane, parsed.jobs);
-    }
+    // spec 370: an OMP `wait` reports on the agents of earlier spawn cards.
+    if (tool.jobs && event.jobsReport) this.applyJobsToCards(lane, event.jobsReport);
     if (tool.execution) {
       target.executionTarget ??= { executionItemId: target.id, hintLabel: null };
     } else {
@@ -15304,10 +15194,8 @@ export class AcpHarnessView implements ContentView {
     target.text = text;
     target.status = status;
     target.tool = tool;
-    if (!existing) lane.toolTranscriptIds.set(merged.toolCallId, target.id);
-    // The transcript now owns the bounded display payload. Keep only bounded
-    // wire state for partial ACP updates; completed state is pruned with its row.
-    lane.toolCalls.set(merged.toolCallId, compactToolCallForRetention(merged));
+    if (!existing) lane.toolTranscriptIds.set(view.id, target.id);
+    lane.toolViews.set(view.id, view);
     if (SPEC114_DEV) assertActiveToolCount(lane);
     this.updateToolTick();
   }

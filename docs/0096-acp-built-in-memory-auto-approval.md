@@ -70,7 +70,7 @@ interface MemoryPermissionMatch {
 Auto-approve only when both conditions are true:
 
 1. The request identifies an allowed built-in tool. Historical `memory_set` / `memory_get` / `memory_list` were replaced by spec 293; `src/acp/harness-permission-scan.ts` defines the live handoff/peer/attention/review/ticket/lesson taxonomy. Timeline's exact final names are `timeline_record`, `timeline_list`, `timeline_merge`, `timeline_pending_resolve`, `timeline_conflict_list`, `timeline_conflict_record` and `timeline_conflict_checked` ([spec 316](0316-llm-managed-timeline.md)); `timeline_suggest` is removed. Evidence-first recording/grouping/legacy resolution is agent-owned, without a human persistence request or quote. Review request/reply remain retired (spec 145); review_outcome and default-on attention triage retain their existing contracts (specs 146/130).
-2. The tool identity must belong to the built-in Harness server (`krypton-harness-memory`, `krypton_harness_memory`, `krypton-harness-bus`, `krypton_harness_bus`, or `/mcp/harness/`). Timeline matching pairs exact tool identity with that server identity, including supported adapter option labels; an unrelated marker elsewhere must not authorize third-party or same-name lookalike tools. Other tool families retain their existing detector rules.
+2. The tool identity must belong to the built-in Harness server (`krypton-harness-memory`, `krypton_harness_memory`, `krypton-harness-bus`, `krypton_harness_bus`, or `/mcp/harness/`). Every built-in tool family pairs exact tool identity with that server identity, as Timeline did first: a qualified title (`mcp__<server>__<tool>`, fx `mcp_<server>_<tool>`), top-level server metadata paired with an exact bare title, a whole qualified `Tool: <server>/<tool>` content line, or the Junie `Always allow ("<server>:<tool>")` option label. A marker or name anywhere else — arguments (`rawInput`), free text, a shell command — never authorizes a call, and an `execute` call never qualifies (2026-11-10 fix; see [spec 380](./0380-acp-lane-adapters.md) "Auto-allow finding").
 
 All other requests, including a third-party MCP server that also exposes `memory_set` or `peer_send`, must enter the existing permission flow.
 
@@ -80,13 +80,13 @@ All other requests, including a third-party MCP server that also exposes `memory
 
 ```
 1. ACP adapter sends session/request_permission.
-2. AcpClient emits permission_request to AcpHarnessView.
-3. addPermission() calls the harness auto-allow detector.
+2. AcpClient's lane decoder (spec 380) runs the harness auto-allow detector once and emits
+   permission_request with `harnessTool` set; AcpHarnessView.addPermission() reads it.
 4. Timeline uses qualified adapter titles, top-level server identity paired with the title,
    standalone qualified `Tool:` content labels, or the supported Junie option-label wrapper.
    It never derives identity from `rawInput`/arguments; an explicitly foreign qualified title
-   cannot be overridden by argument text, content or option labels. Other tool families keep
-   their existing raw-input/title/content/option-label detector paths.
+   cannot be overridden by argument text, content or option labels. Since 2026-11-10 every
+   built-in tool family uses this same rule, and an `execute` call never qualifies.
 5. If allowed harness tool + built-in identity match:
    5a. resolveHarnessPermission() sends the available accept option.
    5b. Transcript logs a structured permission card with the harness auto-allow reason.

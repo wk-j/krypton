@@ -1,5 +1,6 @@
 // Krypton — bounded ACP Harness tool-call retention.
 
+import type { ToolView } from './adapters/types';
 import type { HarnessTranscriptItem, ToolPayload } from './harness-view-types';
 import type { ContentBlock, ToolCall, ToolCallContent, ToolCallUpdate } from './types';
 
@@ -20,7 +21,7 @@ const TRUNCATED_SUFFIX = '\n… truncated by Krypton …';
 
 export interface ToolRetentionState {
   transcript: HarnessTranscriptItem[];
-  toolCalls: Map<string, ToolCall | ToolCallUpdate>;
+  toolViews: Map<string, ToolView>;
   toolTranscriptIds: Map<string, string>;
   seenTranscriptIds: Set<string>;
   activeToolCount: number;
@@ -137,28 +138,6 @@ export function compactToolCallForRetention(
 
 /** A compacted prior wire payload can omit bulk fields. Preserve the already
  * bounded display data when a later ACP update only changes status/metadata. */
-export function mergeToolPayloadForUpdate(
-  previous: ToolPayload | undefined,
-  next: ToolPayload,
-  update: ToolCall | ToolCallUpdate,
-): ToolPayload {
-  if (!previous) return next;
-  const hasContentUpdate = update.content !== undefined && update.content.length > 0;
-  const hasOutputUpdate = update.rawOutput !== undefined || hasContentUpdate;
-  return {
-    ...next,
-    kind: next.kind === 'tool' ? previous.kind : next.kind,
-    subject: next.subject || previous.subject,
-    command: next.command || previous.command,
-    result: next.result || previous.result,
-    exitCode: hasOutputUpdate ? next.exitCode : previous.exitCode,
-    sections: hasOutputUpdate ? next.sections : previous.sections,
-    diffs: hasContentUpdate ? next.diffs : previous.diffs,
-    artifactRedaction: previous.artifactRedaction,
-    guardianReview: next.guardianReview ?? previous.guardianReview,
-  };
-}
-
 export function boundToolDiffText(value: string, remaining: number): string {
   return truncateRetainedText(value, Math.max(0, remaining));
 }
@@ -166,10 +145,10 @@ export function boundToolDiffText(value: string, remaining: number): string {
 /** ACP field updates require an earlier tool_call. An active row evicted under
  * transcript pressure still has merge state; a completed row does not. */
 export function isOrphanToolCallUpdate(
-  lane: Pick<ToolRetentionState, 'toolCalls' | 'toolTranscriptIds'>,
+  lane: Pick<ToolRetentionState, 'toolViews' | 'toolTranscriptIds'>,
   callId: string,
 ): boolean {
-  return !lane.toolCalls.has(callId) && !lane.toolTranscriptIds.has(callId);
+  return !lane.toolViews.has(callId) && !lane.toolTranscriptIds.has(callId);
 }
 
 /** Push one transcript row and release the backing wire payload when a
@@ -192,7 +171,7 @@ export function appendBoundedTranscriptItem(
     if (transcriptId !== dropped.id) continue;
     lane.toolTranscriptIds.delete(callId);
     if (!wasActive) {
-      lane.toolCalls.delete(callId);
+      lane.toolViews.delete(callId);
     }
     break;
   }
@@ -201,7 +180,7 @@ export function appendBoundedTranscriptItem(
 
 export function clearToolTranscriptRetention(lane: ToolRetentionState): void {
   lane.transcript.length = 0;
-  lane.toolCalls.clear();
+  lane.toolViews.clear();
   lane.toolTranscriptIds.clear();
   lane.seenTranscriptIds.clear();
   lane.activeToolCount = 0;

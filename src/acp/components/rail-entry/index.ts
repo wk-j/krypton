@@ -95,7 +95,7 @@ export class RailEntry extends Component<RailEntryProps> {
       lane.accent,
       lane.displayName,
       lane.backendId,
-      lane.toolCalls.size,
+      lane.toolViews.size,
       lane.usage?.used,
       lane.usage?.size,
       next.active,
@@ -200,7 +200,7 @@ export class RailEntry extends Component<RailEntryProps> {
       this.peersEl.remove();
     }
 
-    const toolCount = lane.toolCalls.size;
+    const toolCount = lane.toolViews.size;
     if (toolCount > 0) {
       nodes.push(this.chip('tools', live, {
         block: 'acp-harness__rail-metric',

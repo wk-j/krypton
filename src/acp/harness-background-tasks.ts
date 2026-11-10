@@ -60,20 +60,20 @@ export function launchCommand(call: ToolCall | ToolCallUpdate): string {
 /**
  * Register a launch on a lane. Returns the task when it is new, null when this
  * id is already tracked — `tool_call` and `tool_call_update` both carry the
- * launch text, so the same job arrives at least twice.
+ * launch text, so the same job arrives at least twice. The Claude adapter reads
+ * the launch from the wire (spec 380); this takes the decoded launch.
  */
 export function registerBackgroundTask(
   tasks: BackgroundTask[],
-  call: ToolCall | ToolCallUpdate,
+  toolCallId: string,
+  launch: { readonly id: string; readonly outputPath: string; readonly command: string },
   now: number,
 ): BackgroundTask | null {
-  const launch = parseBackgroundLaunch(call);
-  if (!launch) return null;
   if (tasks.some((task) => task.id === launch.id)) return null;
   const task: BackgroundTask = {
     id: launch.id,
-    toolCallId: call.toolCallId,
-    command: launchCommand(call),
+    toolCallId,
+    command: launch.command,
     outputPath: launch.outputPath,
     startedAt: now,
     state: 'running',

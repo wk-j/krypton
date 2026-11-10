@@ -143,6 +143,8 @@ acp_dispose(session: u64) -> Result<(), String>
 
 ### Frontend: `AcpClient` (`src/acp/client.ts`)
 
+> **Since spec 380** the client decodes every payload and every init/session/prompt result through its lane decoder (`src/acp/adapters/`): a generic adapter plus per-backend overrides. Listeners receive `LaneEvent` (`src/acp/adapters/types.ts`), and lane setup reads `LaneInit` / `LaneSession`. The `AcpEvent` block below is the original v1 shape, kept as design history. See [spec 380](./0380-acp-lane-adapters.md).
+
 ```ts
 export type AcpEvent =
   | { type: 'message_chunk'; text: string }
@@ -198,6 +200,8 @@ Implements `ContentView` (same interface as `AgentView`). Owns its own `AcpClien
 The view borrows visual conventions from `agent-view.ts` but does not import its code. Style file `src/styles/acp.css` mirrors `agent.css` patterns and reuses the same theme CSS variables.
 
 ### Mapping ACP → `AcpEvent`
+
+Since spec 380 this mapping lives in `src/acp/adapters/decoder.ts` and yields `LaneEvent`.
 
 | ACP wire | `AcpEvent` |
 |----------|------------|

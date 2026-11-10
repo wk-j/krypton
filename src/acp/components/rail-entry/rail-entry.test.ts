@@ -13,7 +13,7 @@ function makeLane(over: Partial<HarnessLane> = {}): HarnessLane {
     accent: '#0cf',
     status: 'idle',
     usage: null,
-    toolCalls: new Map(),
+    toolViews: new Map(),
     pendingPermissions: [],
     pendingQuestions: [],
     ...over,
@@ -95,7 +95,7 @@ describe('RailEntry', () => {
     const entry = new RailEntry();
     entry.update(props({
       lane: makeLane({
-        toolCalls: new Map([['a', {}], ['b', {}]]) as unknown as HarnessLane['toolCalls'],
+        toolViews: new Map([['a', {}], ['b', {}]]) as unknown as HarnessLane['toolViews'],
         usage: { used: 128_400, size: 200_000 },
       }),
     }));

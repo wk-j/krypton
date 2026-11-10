@@ -97,13 +97,13 @@ function statRows(lane: HarnessLane, projectDir: string | null): StatRowProps[] 
     }
   }
 
-  if (lane.toolCalls.size > 0) {
+  if (lane.toolViews.size > 0) {
     rows.push({
       key: 'tools',
       label: '',
-      value: String(lane.toolCalls.size),
+      value: String(lane.toolViews.size),
       icon: { id: 'tool' },
-      title: `${lane.toolCalls.size} tool calls`,
+      title: `${lane.toolViews.size} tool calls`,
     });
   }
   rows.push({
@@ -159,7 +159,7 @@ export class LaneStats extends Component<LaneStatsProps> {
       tokens?.input,
       tokens?.cachedRead,
       tokens?.cachedWrite,
-      lane.toolCalls.size,
+      lane.toolViews.size,
       lane.transcript.length,
       lane.pendingPermissions.length,
       lane.pendingQuestions.length,

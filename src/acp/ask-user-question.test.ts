@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import { parseAskUserQuestions } from './adapters/generic';
 import {
   acceptedDecision,
   applyAskUserKey,
   createAskUserCardState,
   optionIndexFromKey,
-  parseAskUserQuestions,
   shouldAutoAnswerAskUser,
   skipInterviewDecision,
   type AskUserQuestion,

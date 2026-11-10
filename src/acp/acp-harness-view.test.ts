@@ -87,7 +87,10 @@ import {
   syncPeekThoughtBody,
 } from './lane-peek';
 
-import type { AcpEvent, ContentBlock, PermissionOption, StopReason, ToolCall } from './types';
+import { decodeInit, decodeSession } from './adapters/generic';
+import { permissionEvent, toolEventSource } from './adapters/test-utils';
+import type { LaneEvent, LaneInit, LaneSession, PermissionRequest } from './adapters/types';
+import type { ContentBlock, PermissionOption, StopReason, ToolCall } from './types';
 import type { ComputerApprovalRequest } from './computer-approval';
 import type {
   HarnessLane,
@@ -119,7 +122,7 @@ vi.mock('@tauri-apps/api/core', async (importOriginal) => {
 
 describe('#ui preflight turns (spec 312)', () => {
   const proto = AcpHarnessView.prototype as unknown as {
-    onLaneEvent(lane: HarnessLane, event: AcpEvent): void;
+    onLaneEvent(lane: HarnessLane, event: LaneEvent): void;
     finishTurn(lane: HarnessLane, reason: StopReason): void;
   };
   const fence = '\x60\x60\x60';
@@ -289,9 +292,7 @@ describe('#ui preflight turns (spec 312)', () => {
   it('keeps the staged reply across a tool call and checks it at final stop', () => {
     const h = setup();
     h.send('Here is the result.');
-    proto.onLaneEvent.call(h.target, h.lane, {
-      type: 'tool_call', call: { toolCallId: 'tool-1', title: 'Read', kind: 'read' } as ToolCall,
-    });
+    proto.onLaneEvent.call(h.target, h.lane, toolEventSource().call({ toolCallId: 'tool-1', title: 'Read', kind: 'read' }));
     h.send(valid, 'final');
     h.stop();
     expect(h.rows.filter((row) => row.kind === 'assistant').map((row) => row.text))
@@ -354,6 +355,15 @@ function withTicketCtl<T extends object>(view: T): T {
       host: view,
     }),
   });
+}
+
+/** The request a lane decoder hands the view for this wire call (spec 380). */
+function decodedPermission(
+  permission: { toolCall: ToolCall; options: PermissionOption[] },
+  requestId: number,
+): PermissionRequest {
+  const { type: _type, ...request } = permissionEvent('codex', permission.toolCall, permission.options, requestId);
+  return request;
 }
 
 function permissionFor(toolCall: Partial<ToolCall>, options: PermissionOption[] = []): { toolCall: ToolCall; options: PermissionOption[] } {
@@ -625,9 +635,8 @@ describe('lane event region scheduling (spec 301)', () => {
       id: 'lane-1',
       status: 'busy',
       transcript: [],
-      toolCalls: new Map(),
+      toolViews: new Map(),
       toolTranscriptIds: new Map(),
-      codexAgentNames: new Map(),
       activeToolCount: 0,
     } as unknown as HarnessLane;
     const target: Record<string, unknown> = viewDouble({
@@ -681,16 +690,13 @@ describe('lane event region scheduling (spec 301)', () => {
       observeFileTouch: (): void => {},
     });
 
-    onLaneEvent.call(target, lane, {
-      type: 'tool_call', call: { toolCallId: 't1', status: 'pending' },
-    });
+    const tools = toolEventSource();
+    onLaneEvent.call(target, lane, tools.call({ toolCallId: 't1', status: 'pending' }));
     expect(regions).toEqual(['transcript']);
     expect(target.pendingToolHud).toBe(true);
 
     target.pendingToolHud = false;
-    onLaneEvent.call(target, lane, {
-      type: 'tool_call_update', update: { toolCallId: 't1', status: 'in_progress' },
-    });
+    onLaneEvent.call(target, lane, tools.update({ toolCallId: 't1', status: 'in_progress' }));
     expect(regions).toEqual(['transcript', 'transcript']);
     expect(target.pendingToolHud).toBe(true);
   });
@@ -716,7 +722,7 @@ describe('composer git branch refresh', () => {
     refreshGitBranch(): Promise<void>;
     setLaneStatus(lane: HarnessLane, next: string): void;
     initializeHarnessMemory(): Promise<void>;
-    renderTool(lane: HarnessLane, call: unknown, updateOnly: boolean): void;
+    renderTool(lane: HarnessLane, event: unknown): void;
   };
   const proto = AcpHarnessView.prototype as unknown as GitBranchHost;
 
@@ -772,26 +778,22 @@ describe('composer git branch refresh', () => {
     const lane = {
       id: 'lane-1',
       transcript: [item],
-      toolCalls: new Map(),
+      toolViews: new Map(),
       toolTranscriptIds: new Map(),
-      codexAgentNames: new Map(),
       activeToolCount: 0,
     } as unknown as HarnessLane;
     const target = {
       appendTranscript: (): HarnessTranscriptItem => item,
-      matchArtifactWrite: (): null => null,
+      findArtifactForWrite: (): null => null,
       scheduleGitBranchRefresh: (): void => { scheduled.push('branch'); },
       updateToolTick: (): void => {},
     };
 
-    proto.renderTool.call(
-      target, lane, { toolCallId: 't1', status: 'in_progress', title: 'dotnet test' }, false,
-    );
+    const tools = toolEventSource();
+    proto.renderTool.call(target, lane, tools.call({ toolCallId: 't1', status: 'in_progress', title: 'dotnet test' }));
     expect(scheduled).toEqual([]);
 
-    proto.renderTool.call(
-      target, lane, { toolCallId: 't1', status: 'completed', title: 'dotnet test' }, true,
-    );
+    proto.renderTool.call(target, lane, tools.update({ toolCallId: 't1', status: 'completed', title: 'dotnet test' }));
     expect(scheduled).toEqual(['branch']);
   });
 
@@ -799,28 +801,29 @@ describe('composer git branch refresh', () => {
     const item = { id: 'guardian-1', kind: 'tool', text: '' } as HarnessTranscriptItem;
     const lane = {
       id: 'lane-1', backendId: 'codex', transcript: [item],
-      toolCalls: new Map(), toolTranscriptIds: new Map(), codexAgentNames: new Map(),
+      toolViews: new Map(), toolTranscriptIds: new Map(),
       activeToolCount: 0,
     } as unknown as HarnessLane;
     const target = {
       appendTranscript: (): HarnessTranscriptItem => item,
-      matchArtifactWrite: (): null => null,
+      findArtifactForWrite: (): null => null,
       scheduleGitBranchRefresh: (): void => {},
       updateToolTick: (): void => {},
     };
-    proto.renderTool.call(target, lane, {
+    const tools = toolEventSource('codex');
+    proto.renderTool.call(target, lane, tools.call({
       toolCallId: 'guardian_assessment:g1', kind: 'think', title: 'Guardian Review',
       status: 'in_progress',
       content: [{ type: 'content', content: { type: 'text', text: 'Status: In progress\nAction: MCP lesson_record' } }],
       rawInput: { review: { status: 'inProgress' } },
-    }, false);
+    }));
     expect(item.tool?.guardianReview?.outcome).toBe('reviewing');
 
-    proto.renderTool.call(target, lane, {
+    proto.renderTool.call(target, lane, tools.update({
       toolCallId: 'guardian_assessment:g1', status: 'completed',
       content: [{ type: 'content', content: { type: 'text', text: 'Status: Denied\nAction: MCP lesson_record\nRisk: high\nAuthorization: low\nRationale: Request not authorized.' } }],
       rawOutput: { review: { status: 'denied', riskLevel: 'high', userAuthorization: 'low', rationale: 'Request not authorized.' } },
-    }, true);
+    }));
     expect(lane.transcript).toHaveLength(1);
     expect(item.tool?.guardianReview).toMatchObject({
       outcome: 'denied', action: 'MCP lesson_record', risk: 'high',
@@ -1685,14 +1688,17 @@ describe('ACP harness auto-allow permission detection', () => {
     }))).toBe('handoff_set');
   });
 
-  it('accepts built-in memory endpoint markers with plain tool names', () => {
+  // A built-in endpoint is identity only as adapter metadata; in rawInput it is
+  // argument text the agent writes, so the same name and URL there must prompt.
+  it('accepts a plain tool name paired with built-in endpoint metadata, not with argument text', () => {
+    const serverUrl = 'http://127.0.0.1:34123/mcp/harness/H1/lane/Codex-1';
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'handoff_set', serverUrl,
+    } as Partial<ToolCall>))).toBe('handoff_set');
     expect(harnessAutoAllowToolName(permissionFor({
       title: 'handoff_set',
-      rawInput: {
-        name: 'handoff_set',
-        serverUrl: 'http://127.0.0.1:34123/mcp/harness/H1/lane/Codex-1',
-      },
-    }))).toBe('handoff_set');
+      rawInput: { name: 'handoff_set', serverUrl },
+    }))).toBeNull();
   });
 
   it('accepts rendered ACP memory tool labels from permission content', () => {
@@ -1732,6 +1738,32 @@ describe('ACP harness auto-allow permission detection', () => {
     }))).toBeNull();
   });
 
+  // 2026-11-10 bypass: a built-in server name and tool name anywhere in the
+  // call used to auto-allow it, including a shell command that mentions both.
+  it('never auto-allows a shell command or a foreign tool that only mentions built-in names', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'rg peer_send ~/x/krypton-harness-memory',
+      kind: 'execute',
+      rawInput: { command: 'rg peer_send ~/x/krypton-harness-memory' },
+    }))).toBeNull();
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'mcp__krypton_harness_bus__peer_send',
+      kind: 'execute',
+    }))).toBeNull();
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'mcp__evil__peer_send',
+      rawInput: { note: 'krypton-harness-bus' },
+    }))).toBeNull();
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'Run peer_send for krypton-harness-bus',
+      rawInput: { tool: 'peer_send' },
+    }))).toBeNull();
+    expect(harnessAutoAllowToolName(permissionFor(
+      { title: 'Send note', rawInput: { message: 'peer_send' } },
+      [{ optionId: 'a', name: 'Allow krypton-harness-bus peer_send', kind: 'allow_once' }],
+    ))).toBeNull();
+  });
+
   it('accepts Codex-style underscored bus namespace for peer_send', () => {
     expect(harnessAutoAllowToolName(permissionFor({
       title: 'mcp__krypton_harness_bus__peer_send',
@@ -1742,14 +1774,14 @@ describe('ACP harness auto-allow permission detection', () => {
     }))).toBe('peer_send');
   });
 
-  it('accepts peer_list under the hyphenated bus marker', () => {
+  it('accepts peer_list with the hyphenated bus server as metadata, not as an argument', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'peer_list', server: 'krypton-harness-bus',
+    } as Partial<ToolCall>))).toBe('peer_list');
     expect(harnessAutoAllowToolName(permissionFor({
       title: 'peer_list',
-      rawInput: {
-        name: 'peer_list',
-        server: 'krypton-harness-bus',
-      },
-    }))).toBe('peer_list');
+      rawInput: { name: 'peer_list', server: 'krypton-harness-bus' },
+    }))).toBeNull();
   });
 
   it('accepts peer_send detected via fallback regex on content text', () => {
@@ -1789,14 +1821,14 @@ describe('ACP harness auto-allow permission detection', () => {
     }))).toBe('attention_flag');
   });
 
-  it('accepts attention_resolve under the hyphenated bus marker', () => {
+  it('accepts attention_resolve with the hyphenated bus server as metadata, not as an argument', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'attention_resolve', server: 'krypton-harness-bus',
+    } as Partial<ToolCall>))).toBe('attention_resolve');
     expect(harnessAutoAllowToolName(permissionFor({
       title: 'attention_resolve',
-      rawInput: {
-        name: 'attention_resolve',
-        server: 'krypton-harness-bus',
-      },
-    }))).toBe('attention_resolve');
+      rawInput: { name: 'attention_resolve', server: 'krypton-harness-bus' },
+    }))).toBeNull();
   });
 
   it('accepts attention_flag detected via fallback regex on content text', () => {
@@ -1827,14 +1859,14 @@ describe('ACP harness auto-allow permission detection', () => {
     }))).toBe('review_outcome');
   });
 
-  it('accepts review_outcome under the hyphenated bus marker', () => {
+  it('accepts review_outcome with the hyphenated bus server as metadata, not as an argument', () => {
+    expect(harnessAutoAllowToolName(permissionFor({
+      title: 'review_outcome', server: 'krypton-harness-bus',
+    } as Partial<ToolCall>))).toBe('review_outcome');
     expect(harnessAutoAllowToolName(permissionFor({
       title: 'review_outcome',
-      rawInput: {
-        name: 'review_outcome',
-        server: 'krypton-harness-bus',
-      },
-    }))).toBe('review_outcome');
+      rawInput: { name: 'review_outcome', server: 'krypton-harness-bus' },
+    }))).toBeNull();
   });
 
   it('rejects review_outcome without a built-in bus marker', () => {
@@ -1910,7 +1942,7 @@ describe('ACP harness auto-allow permission detection', () => {
 
 describe('Timeline permission execution without human gates', () => {
   type PermissionView = {
-    addPermission(lane: HarnessLane, requestId: number, toolCall: ToolCall, options: PermissionOption[]): void;
+    addPermission(lane: HarnessLane, request: PermissionRequest): void;
   };
   // Exercise the private production path with explicit collaborator doubles.
   const prototype = AcpHarnessView.prototype as unknown as PermissionView;
@@ -1941,7 +1973,7 @@ describe('Timeline permission execution without human gates', () => {
       const permission = permissionFor({ title: `mcp__krypton_harness_bus__${name}` }, [
         { optionId: 'once', kind: 'allow_once', name: 'Allow' },
       ]);
-      addPermission.call(target, lane, 7, permission.toolCall, permission.options);
+      addPermission.call(target, lane, decodedPermission(permission, 7));
       await Promise.resolve();
       expect(respondPermission).toHaveBeenCalledWith(7, 'once');
       expect(lane.pendingPermissions).toEqual([]);
@@ -1960,7 +1992,7 @@ describe('Timeline permission execution without human gates', () => {
         { optionId: 'once', kind: 'allow_once', name: 'Yes' },
         { optionId: 'always', kind: 'allow_always', name: `Always allow ("krypton-harness-memory:${name}")` },
       ]);
-      addPermission.call(target, lane, 10, permission.toolCall, permission.options);
+      addPermission.call(target, lane, decodedPermission(permission, 10));
       await Promise.resolve();
       expect(respondPermission).toHaveBeenCalledWith(10, 'once');
       expect(lane.pendingPermissions).toEqual([]);
@@ -1977,7 +2009,7 @@ describe('Timeline permission execution without human gates', () => {
         { optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' },
         { optionId: 'reject_once', kind: 'reject_once', name: 'Reject' },
       ]);
-      addPermission.call(target, lane, 11, permission.toolCall, permission.options);
+      addPermission.call(target, lane, decodedPermission(permission, 11));
       await Promise.resolve();
       expect(respondPermission).toHaveBeenCalledWith(11, 'allow_once');
       expect(lane.pendingPermissions).toEqual([]);
@@ -1992,7 +2024,7 @@ describe('Timeline permission execution without human gates', () => {
       kind: 'other',
       content: [{ type: 'content', content: { type: 'text', text: 'krypton-harness-memory__timeline_record' } }],
     }, [{ optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' }]);
-    addPermission.call(target, lane, 12, permission.toolCall, permission.options);
+    addPermission.call(target, lane, decodedPermission(permission, 12));
     await Promise.resolve();
     expect(respondPermission).not.toHaveBeenCalled();
     expect(lane.pendingPermissions).toHaveLength(1);
@@ -2005,7 +2037,7 @@ describe('Timeline permission execution without human gates', () => {
       const permission = permissionFor({ title: `mcp__krypton_harness_bus__${name}` }, [
         { optionId: 'reject', kind: 'reject_once', name: 'Reject' },
       ]);
-      addPermission.call(target, lane, 8, permission.toolCall, permission.options);
+      addPermission.call(target, lane, decodedPermission(permission, 8));
       await Promise.resolve();
       expect(respondPermission).toHaveBeenCalledWith(8, null);
       expect(lane.pendingPermissions).toEqual([]);
@@ -2025,7 +2057,7 @@ describe('Timeline permission execution without human gates', () => {
         title: 'timeline_merge', content: [{ type: 'content' }],
         rawInput: { name: 'timeline_merge', server, arguments: { note: 'krypton-harness-memory' } },
       }, [{ optionId: 'once', kind: 'allow_once', name: 'Allow' }]);
-      addPermission.call(target, lane, 9, permission.toolCall, permission.options);
+      addPermission.call(target, lane, decodedPermission(permission, 9));
       expect(respondPermission).not.toHaveBeenCalled();
       expect(lane.pendingPermissions).toHaveLength(1);
       expect(target.setLaneStatus).toHaveBeenCalledWith(lane, 'needs_permission');
@@ -5209,8 +5241,32 @@ describe('live voice delegation routing (spec 280)', () => {
     expect(lane.queuedPrompts).toHaveLength(10);
   });
 
+  // Spec 380 phase 2b: acceptEdits trusts the kind the agent declared, never
+  // a kind Krypton inferred from the title.
+  it('auto-accepts in acceptEdits only a request the agent declared as an edit', () => {
+    type PermHost = { addPermission(lane: object, request: PermissionRequest): void };
+    const addPermission = (AcpHarnessView.prototype as unknown as PermHost).addPermission;
+    const accepted: string[] = [];
+    const host = {
+      describePermission: () => ({}),
+      appendPermissionTranscript: () => ({}),
+      matchArtifactWriteForGrant: () => null,
+      matchReviewWriteForGrant: () => null,
+      setLaneStatus: () => {},
+      refreshOrchestratorConsole: () => {},
+      resolvePermission: async (_lane: object, _action: string, _auto: boolean, reason: string) => { accepted.push(reason); },
+      liveVoiceCtl: { onPermissionRequested: () => {} },
+    };
+    const options = [{ optionId: 'a', kind: 'allow_once' as const, name: 'Allow' }];
+    const lane = () => ({ pendingPermissions: [], permissionMode: 'acceptEdits', activeTelegramTurn: null });
+    addPermission.call(host, lane(), decodedPermission({ toolCall: { toolCallId: 'i', title: 'Edit src/a.ts' }, options }, 1));
+    expect(accepted).toEqual([]);
+    addPermission.call(host, lane(), decodedPermission({ toolCall: { toolCallId: 'd', title: 'Edit src/a.ts', kind: 'edit' }, options }, 2));
+    expect(accepted).toEqual(['mode:acceptEdits']);
+  });
+
   it('tells the voice session only about permissions that wait for the human', () => {
-    type PermHost = { addPermission(lane: object, requestId: number, toolCall: object, options: object[]): void };
+    type PermHost = { addPermission(lane: object, request: PermissionRequest): void };
     const addPermission = (AcpHarnessView.prototype as unknown as PermHost).addPermission;
     for (const [permissionMode, expected] of [['bypass', []], ['normal', [7]]] as const) {
       const announced: number[] = [];
@@ -5225,9 +5281,10 @@ describe('live voice delegation routing (spec 280)', () => {
         liveVoiceCtl: { onPermissionRequested: (_l: object, id: number) => announced.push(id) },
       };
       const lane = { pendingPermissions: [], permissionMode, activeTelegramTurn: null };
-      addPermission.call(host, lane, 7, { title: 'Bash', kind: 'execute' }, [
-        { optionId: 'a', kind: 'allow_once', name: 'Allow' },
-      ]);
+      addPermission.call(host, lane, decodedPermission({
+        toolCall: { toolCallId: 'bash', title: 'Bash', kind: 'execute' },
+        options: [{ optionId: 'a', kind: 'allow_once', name: 'Allow' }],
+      }, 7));
       expect(announced).toEqual(expected);
     }
   });
@@ -5270,7 +5327,7 @@ describe('mcpServersForLane bridge policy', () => {
   type McpHost = {
     mcpServersForLane(
       lane: HarnessLane,
-      caps: unknown,
+      init: LaneInit,
     ): Promise<Array<{ name: string }> | undefined>;
   };
   const mcpServersForLane = (AcpHarnessView.prototype as unknown as McpHost).mcpServersForLane;
@@ -5285,7 +5342,7 @@ describe('mcpServersForLane bridge policy', () => {
     projectMcpMock.mockResolvedValueOnce([{ name: 'omp', command: 'omp', args: [] }]);
 
     const servers = await mcpServersForLane.call(
-      target, { id: 'lane-1', backendId: 'omp' } as unknown as HarnessLane, null,
+      target, { id: 'lane-1', backendId: 'omp' } as unknown as HarnessLane, decodeInit({}),
     );
 
     expect(projectMcpMock).toHaveBeenCalledWith('/repo', null);
@@ -5296,10 +5353,10 @@ describe('mcpServersForLane bridge policy', () => {
     projectMcpMock.mockClear();
 
     expect(await mcpServersForLane.call(
-      target, { id: 'lane-1', backendId: 'claude' } as unknown as HarnessLane, null,
+      target, { id: 'lane-1', backendId: 'claude' } as unknown as HarnessLane, decodeInit({}),
     )).toEqual([]);
     expect(await mcpServersForLane.call(
-      target, { id: 'lane-1', backendId: 'cursor' } as unknown as HarnessLane, null,
+      target, { id: 'lane-1', backendId: 'cursor' } as unknown as HarnessLane, decodeInit({}),
     )).toEqual([]);
 
     expect(projectMcpMock).not.toHaveBeenCalled();
@@ -5314,11 +5371,83 @@ describe('mcpServersForLane bridge policy', () => {
     const servers = await mcpServersForLane.call(
       { ...target, memoryServerForLane: () => [memory] },
       { id: 'lane-1', backendId: 'fx' } as unknown as HarnessLane,
-      { mcpCapabilities: { http: true, sse: false } },
+      decodeInit({ agent_capabilities: { mcpCapabilities: { http: true, sse: false } } }),
     );
 
     expect(servers).toEqual([memory]);
     expect(projectMcpMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('lane state from decoded init and session (spec 380)', () => {
+  type LaneInfoHost = {
+    configureLaneFromInfo(lane: HarnessLane, init: LaneInit, session: LaneSession | null): void;
+    applyRestoredSession(lane: HarnessLane, init: LaneInit, session: LaneSession): void;
+  };
+  const proto = AcpHarnessView.prototype as unknown as LaneInfoHost;
+  const init = decodeInit({
+    agent_capabilities: {
+      promptCapabilities: { image: true },
+      availableModes: [{ id: 'legacy', name: 'Legacy' }],
+    },
+    steering_supported: true,
+  });
+  const session = decodeSession({
+    session_id: 'ses-1',
+    available_models: [{ model_id: 'opus', name: 'Opus', description: null }],
+    current_model_id: 'opus',
+    modes: {
+      currentModeId: 'acceptEdits',
+      availableModes: [{ id: 'default', name: 'Default' }, { id: 'acceptEdits', name: 'Accept edits' }],
+    },
+  });
+
+  function freshLane(): HarnessLane {
+    return {
+      backendId: 'claude', modesById: new Map(), currentMode: null, modelName: null,
+      availableModels: [], currentModelId: null, modelApplyFailed: false,
+      supportsImages: false, supportsEmbeddedContext: false, supportsSteering: false,
+    } as unknown as HarnessLane;
+  }
+
+  it('takes mode names and the starting mode from the session', () => {
+    const lane = freshLane();
+    proto.configureLaneFromInfo.call(viewDouble({ laneModels: {} }), lane, init, session);
+
+    expect([...lane.modesById.keys()]).toEqual(['default', 'acceptEdits']);
+    expect(lane.currentMode).toEqual({ id: 'acceptEdits', name: 'Accept edits', description: undefined });
+    expect(lane.modelName).toBe('opus');
+    expect(lane.availableModels.map((model) => model.model_id)).toEqual(['opus']);
+    expect(lane.supportsImages).toBe(true);
+    expect(lane.supportsSteering).toBe(true);
+  });
+
+  it('falls back to the capability mode list and leaves the mode unset without a session', () => {
+    const lane = freshLane();
+    proto.configureLaneFromInfo.call(viewDouble({ laneModels: {} }), lane, init, null);
+
+    expect([...lane.modesById.keys()]).toEqual(['legacy']);
+    expect(lane.currentMode).toBeNull();
+    expect(lane.modelName).toBeNull();
+  });
+
+  it('names an unlisted starting mode by its id', () => {
+    const lane = freshLane();
+    const odd = decodeSession({ session_id: 's', modes: { currentModeId: 'yolo', availableModes: [] } });
+    proto.configureLaneFromInfo.call(viewDouble({ laneModels: {} }), lane, init, odd);
+
+    expect(lane.currentMode).toEqual({ id: 'yolo', name: 'yolo' });
+  });
+
+  it('applies a restored session without changing the init-only model name', () => {
+    const lane = freshLane();
+    const view = viewDouble({ laneModels: {} });
+    proto.configureLaneFromInfo.call(view, lane, init, null);
+    proto.applyRestoredSession.call(view, lane, init, session);
+
+    expect(lane.modelName).toBeNull();
+    expect(lane.currentModelId).toBe('opus');
+    expect(lane.currentMode?.id).toBe('acceptEdits');
   });
 });
 

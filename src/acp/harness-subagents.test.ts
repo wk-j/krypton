@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import { claudeParentToolUseId } from './adapters/claude';
 import {
   absorbChildToolCall,
   appendChildOutput,
   applyOmpJobs,
-  claudeParentToolUseId,
   jobsSummary,
   markLastReported,
   parseOmpJobs,

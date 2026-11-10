@@ -8,7 +8,6 @@ import {
   GROK_RAW_OUTPUT_TYPES,
   boundedOutputLines,
   mergeToolCall,
-  buildToolPayload,
   extractGrepQuery,
   extractToolExit,
   extractToolExitCode,
@@ -179,47 +178,6 @@ describe('toolSectionTone', () => {
     expect(toolSectionTone('text')).toBe('output');
     expect(toolSectionTone('content')).toBe('output');
     expect(toolSectionTone('stderr')).toBe('error');
-  });
-});
-
-describe('terminal-only ACP tool content', () => {
-  it('does not show an opaque terminal handle as command output', () => {
-    const tool = buildToolPayload({
-      toolCallId: 'call-1',
-      kind: 'execute',
-      title: 'Execute rg -n modal src',
-      content: [{ type: 'terminal', terminalId: 'exec-415bef9a-7d5c-44ad-85e7-e7112f1873ce' }],
-    }, 'completed');
-
-    expect(tool.sections).toEqual([]);
-    expect(tool.result).toBe('');
-  });
-
-  it('keeps real stdout when a terminal handle accompanies it', () => {
-    const tool = buildToolPayload({
-      toolCallId: 'call-2',
-      kind: 'execute',
-      title: 'Execute rg -n modal src',
-      content: [{ type: 'terminal', terminalId: 'exec-opaque' }],
-      rawOutput: { stdout: 'src/modal.ts:7:modal' },
-    }, 'completed');
-
-    expect(tool.sections).toEqual([{ label: 'stdout', text: 'src/modal.ts:7:modal' }]);
-    expect(tool.result).toBe('');
-  });
-
-  it('keeps a diff without adding a result label', () => {
-    const tool = buildToolPayload({
-      toolCallId: 'call-3',
-      kind: 'edit',
-      content: [
-        { type: 'terminal', terminalId: 'exec-opaque' },
-        { type: 'diff', path: 'src/a.ts', oldText: 'old', newText: 'new' },
-      ],
-    }, 'completed');
-
-    expect(tool.diffs).toHaveLength(1);
-    expect(tool.result).toBe('');
   });
 });
 
@@ -511,34 +469,6 @@ describe('execute exit badge (spec 235)', () => {
     expect(shouldRenderExecuteExit({ kind: 'execute', exitCode: null })).toBe(false);
   });
 
-  it('buildToolPayload seeds a braille spinner for in-flight statuses, never · or ⟳', () => {
-    const call = { toolCallId: 'g1', title: 'execute', rawInput: { command: 'ls' } };
-    expect(buildToolPayload(call, 'pending').glyph).toBe('⠋');
-    expect(buildToolPayload(call, 'in_progress').glyph).toBe('⠋');
-    expect(buildToolPayload(call, 'completed').glyph).toBe('✓');
-    expect(buildToolPayload(call, 'failed').glyph).toBe('✗');
-  });
-
-  it('buildToolPayload peels Grok Bash output_for_prompt before the line cap', () => {
-    const tool = buildToolPayload({
-      toolCallId: 'b1',
-      title: 'git commit',
-      kind: 'execute',
-      rawInput: { command: 'git commit -m x' },
-      rawOutput: {
-        type: 'Bash',
-        exit_code: 0,
-        output_for_prompt:
-          'exit: 0\n[master 599d8d8] feat(palette): navigate results with Ctrl+N/P\n' +
-          ' 3 files changed, 20 insertions(+), 5 deletions(-)\n',
-      },
-    }, 'completed');
-    expect(tool.exitCode).toBe(0);
-    expect(tool.result).toBe('');
-    expect(tool.sections[0]?.text).toContain('[master 599d8d8]');
-    expect(tool.sections[0]?.text).not.toContain('exit: 0');
-  });
-
   it('does not frame the number as a kind chip; fail keeps error color', () => {
     const css = readFileSync(
       join(dirname(fileURLToPath(import.meta.url)), 'components/tool-row/tool-row.css'),
@@ -597,40 +527,6 @@ describe('grep line gutter (spec 235)', () => {
     expect(pathRow).toMatch(/minmax\(8ch,\s*32ch\)/);
     expect(pathRow).toMatch(/minmax\(4ch,\s*max-content\)/);
     expect(linenoRow).toMatch(/minmax\(4ch,\s*max-content\)/);
-  });
-});
-
-describe('buildToolPayload Grok dumps', () => {
-  it('unwraps search XML before the 6-line cap so the close tag is not required', () => {
-    const lines = Array.from({ length: 20 }, (_, i) => `/Users/wk/Source/krypton/src/f${i}.ts\n${i}:  hit`);
-    const tool = buildToolPayload({
-      toolCallId: 't1',
-      title: 'SEARCH',
-      kind: 'search',
-      rawOutput: {
-        stdout:
-          '<workspace_result workspace_path="/Users/wk/Source/krypton">\n' +
-          'Found at least 67 matching lines\n' +
-          lines.join('\n') +
-          '\n</workspace_result>',
-      },
-    }, 'completed');
-    expect(tool.sections[0]?.text).not.toContain('workspace_result');
-    expect(tool.sections[0]?.text).toContain('src/f0.ts');
-    expect(tool.sections[0]?.text.split('\n').length).toBeLessThanOrEqual(6);
-  });
-
-  it('strips read_file line anchors before paint', () => {
-    const tool = buildToolPayload({
-      toolCallId: 't2',
-      title: 'READ',
-      kind: 'read',
-      content: [{
-        type: 'content',
-        content: { type: 'text', text: '1→---\nname: karpathy-guidelines' },
-      }],
-    }, 'completed');
-    expect(tool.sections[0]?.text).toBe('---\nname: karpathy-guidelines');
   });
 });
 
@@ -755,36 +651,6 @@ describe('grokRawOutputSections — every rawOutput.type', () => {
       type: 'SearchTool',
       content: '{ "results": [] }',
     })?.[0]?.text).toBe('{ "results": [] }');
-  });
-
-  it('buildToolPayload paints structured grep without XML and strips read anchors', () => {
-    const grep = buildToolPayload({
-      toolCallId: 'g1',
-      title: 'grep',
-      kind: 'search',
-      rawOutput: {
-        type: 'GrepSearch',
-        stdout: xmlBytes,
-        file_matches: [{
-          path: '/Users/wk/Source/krypton/src/a.ts',
-          matches: [{ line_number: 10, content: 'hit' }],
-        }],
-      },
-    }, 'completed');
-    expect(grep.sections[0]?.text).toContain('src/a.ts');
-    expect(grep.sections[0]?.text).toContain('10:hit');
-    expect(grep.sections[0]?.text).not.toContain('workspace_result');
-
-    const read = buildToolPayload({
-      toolCallId: 'r1',
-      title: 'READ',
-      kind: 'read',
-      rawOutput: {
-        type: 'ReadFile',
-        FileContent: { content: '1→---\nname: skill' },
-      },
-    }, 'completed');
-    expect(read.sections[0]?.text).toBe('---\nname: skill');
   });
 });
 

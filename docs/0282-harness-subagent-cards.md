@@ -6,7 +6,7 @@
 
 ## Implementation Deviations
 
-- **Where the payload is attached.** `subagents` is set in `AcpHarnessView.renderTool`, right after `mergeToolPayloadForUpdate`, by calling `parseSubagentPayload(merged, status, previous, codexAgentNames)`. That call also carries the previous card forward. `mergeToolPayloadForUpdate` is unchanged. The view sets the kind chip to `agents` and the subject to the intent title.
+- **Where the payload is attached.** Since spec 380, the OMP, Claude and Codex lane adapters call `parseSubagentPayload(merged, status, previous, agentNames)` while decoding the update (`adapters/tool.ts` `applySubagentCard`); the view's `renderTool` passes the card on. Originally this ran in `renderTool` right after `mergeToolPayloadForUpdate`. That call also carries the previous card forward. `mergeToolPayloadForUpdate` is unchanged. The view sets the kind chip to `agents` and the subject to the intent title.
 - **Terminal settlement.** When a foreground (non-background) spawn ends, any agent still marked `running` takes the parent's terminal status (`completed` / `failed` / `cancelled`), not `cancelled` every time. An agent still `pending` never started, so a `failed` or cancelled parent settles it as `cancelled` (`–`), never `failed` (`✗`).
 - **Rejected spawns.** If the parent fails while every agent is still `pending` (the adapter rejected the call before anything started, e.g. invalid input), `parseSubagentPayload` returns `undefined`. The row falls back to a plain failed tool row that shows the adapter's error text. A card would hide that text and show every agent as failed.
 - **OMP status-only or results-only updates** build on the previous card instead of re-reading `rawInput.tasks`. Compaction can drop `rawInput`, and re-reading would reset every agent to pending.
@@ -80,8 +80,8 @@ This stage needs no Rust change and no new ACP capability.
 |------|--------|
 | `src/acp/harness-subagents.ts` (new) | `parseSubagentPayload(call, previous)` for OMP, Claude, and Codex; status mapping; bounds. |
 | `src/acp/harness-view-types.ts` | `SubagentPayload`, `SubagentEntry`; `ToolPayload.subagents?`; `HarnessTranscriptItem.subagentExpanded?`; `HarnessLane.subagentChildren`, `codexAgentNames`. |
-| `src/acp/types.ts` | `ToolCall`/`ToolCallUpdate` gain `_meta?: unknown`. The `message_chunk`/`thought_chunk` events gain `parentToolUseId?: string`. |
-| `src/acp/client.ts` | Read `update._meta.claudeCode.parentToolUseId` into chunk events. |
+| `src/acp/types.ts` | `ToolCall`/`ToolCallUpdate` gain `_meta?: unknown`. The `message_chunk`/`thought_chunk` events gain `parentToolId?: string` (named `parentToolUseId` before spec 380). |
+| `src/acp/adapters/claude.ts` (was `src/acp/client.ts`) | The Claude adapter reads `update._meta.claudeCode.parentToolUseId` into the chunk events' `parentToolId`, on Claude lanes only (spec 380). |
 | `src/acp/harness-tool-render.ts` | `buildToolPayload` attaches `subagents`; `renderToolBody` draws the card; `patchStreamingToolBody` patches the agent block. |
 | `src/acp/harness-tool-retention.ts` | `mergeToolPayloadForUpdate` keeps the previous `subagents` when an update lacks output and carries hint labels over by entry id. |
 | `src/acp/harness-transcript-render.ts` | The signature includes the structural subagent fields. |
@@ -118,7 +118,7 @@ export interface SubagentPayload {
 // ToolPayload.subagents?: SubagentPayload
 // HarnessTranscriptItem.subagentExpanded?: string[]      (entry ids, survives payload rebuilds)
 // HarnessLane.subagentChildren: Map<childToolCallId, parentToolCallId>   (Claude)
-// HarnessLane.codexAgentNames: Map<threadId, name>                       (Codex)
+// lane decoder agentNames: Map<threadId, name>   (Codex; was HarnessLane.codexAgentNames before spec 380)
 ```
 
 ### Detection (`parseSubagentPayload`)
@@ -128,8 +128,8 @@ Detection is shape-based; titles are never used.
 - **OMP:** `rawOutput.details.progress[]` entries carry a string `id`, a string `status`, and an array `recentTools`. Before any progress arrives, `rawInput.tasks[]` entries with a string `task` produce `pending` entries named `name ?? "task N"`. At the end, `details.results[]` is merged by `id` (`exitCode !== 0` or `error` → `failed`; output text → `output`).
   - Status mapping: `pending → pending`, `running → running`, `completed → completed`, `failed|error|aborted → failed`, `cancelled → cancelled`, anything else → `running`.
 - **Claude:** `_meta.claudeCode.toolName ∈ {Task, Agent}` gives one entry: `id = description || "agent"`, `agent = subagent_type`, `task = prompt`, `status` from the tool status, and `output` = the final text content.
-- **Codex:** `_meta.codex.collaboration.tool === 'spawnAgent'` gives one entry per `receiverThreadIds[i]`. Its name comes from `lane.codexAgentNames.get(threadId)`, otherwise `agent-<last 6 chars of threadId>`. Its status comes from `agentsStates[threadId].status` (`pendingInit|running → running`, `completed → completed`, `errored → failed`, `shutdown|interrupted → cancelled`). The `prompt` becomes `task`.
-  - Every `_meta.codex.subagent` activity row records `threadId → last segment of path` in `codexAgentNames`. Those rows themselves render unchanged.
+- **Codex:** `_meta.codex.collaboration.tool === 'spawnAgent'` gives one entry per `receiverThreadIds[i]`. Its name comes from the lane decoder's `agentNames.get(threadId)`, otherwise `agent-<last 6 chars of threadId>`. Its status comes from `agentsStates[threadId].status` (`pendingInit|running → running`, `completed → completed`, `errored → failed`, `shutdown|interrupted → cancelled`). The `prompt` becomes `task`.
+  - Every `_meta.codex.subagent` activity row records `threadId → last segment of path` in the decoder's `agentNames`. Those rows themselves render unchanged.
 - **Bounds:** at most 16 agents per card (`overflow` counts the rest). Text is trimmed to the limits listed in the types. `_meta` is read only here, before compaction.
 
 ### Claude child routing (`acp-harness-view.ts`)
@@ -139,10 +139,10 @@ Detection is shape-based; titles are never used.
    - push `cleanToolTitle(child)` onto the entry's `recentTools` (keep 3), set it as the entry's `activity`, and increase `toolCount`;
    - create **no** transcript row.
 2. A `tool_call_update` whose id is in `subagentChildren` only marks the parent row dirty. No row is created or changed.
-3. A `message_chunk` with `parentToolUseId = P` (a card exists) appends to the entry's `output` (keeping the last 4 KB) instead of the main assistant row. A `thought_chunk` with `parentToolUseId` sets `activity = 'thinking'` and its text is dropped.
+3. A `message_chunk` with `parentToolId = P` (a card exists) appends to the entry's `output` (keeping the last 4 KB) instead of the main assistant row. A `thought_chunk` with `parentToolId` sets `activity = 'thinking'` and its text is dropped.
 4. If no card is found for `P` (evicted, or the adapter did not stamp the call), the update falls back to today's flat rendering.
 5. Permission requests for child tools are unchanged, because they come through `session/request_permission`.
-6. `subagentChildren` and `codexAgentNames` are cleared wherever `clearToolTranscriptRetention` runs. A `subagentChildren` entry is deleted when its parent row is evicted.
+6. `subagentChildren` is cleared wherever `clearToolTranscriptRetention` runs; the decoder's `agentNames` resets with each new session (spec 380). A `subagentChildren` entry is deleted when its parent row is evicted.
 
 ### Rendering
 
@@ -187,7 +187,7 @@ None.
 ## Edge Cases
 
 - **Updates after a background spawn** (OMP `async.state: running`): spec 370 governs them. The row keeps its terminal status, the card stays live and takes each update until its agents settle, and `wait` snapshots are folded in by agent id.
-- **An update without `rawOutput`** (status only): `mergeToolPayloadForUpdate` keeps the previous `subagents`.
+- **An update without `rawOutput`** (status only): the parser builds on the previous `subagents`, which the decoder keeps as the prior view's card.
 - **Hint labels during updates:** labels and expanded state carry over by entry `id`. An entry that disappears drops its label.
 - **Two agents with the same `id`:** the second becomes `id#2`.
 - **More than 16 agents:** the card adds a `+N more` row.

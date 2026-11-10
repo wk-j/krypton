@@ -13,6 +13,7 @@ vi.mock('../../profiler/ipc', () => ({ invoke: vi.fn(async () => []) }));
 import { AcpHarnessView } from '../acp-harness-view';
 import type { HarnessLane } from '../harness-view-types';
 import type { ToolCall, ToolCallUpdate } from '../types';
+import { toolEventSource, type ToolEventSource } from '../adapters/test-utils';
 import { ExecutionDialog } from './execution-dialog';
 
 let view: AcpHarnessView;
@@ -37,6 +38,18 @@ function key(name: string, init: KeyboardEventInit = {}): KeyboardEvent {
   return event;
 }
 
+/** Spec 380: one real lane decoder per lane and backend, as `AcpClient` holds. */
+const sources = new Map<string, ToolEventSource>();
+function tools(target: HarnessLane): ToolEventSource {
+  const key = `${target.id}:${target.backendId}`;
+  let source = sources.get(key);
+  if (!source) {
+    source = toolEventSource(target.backendId);
+    sources.set(key, source);
+  }
+  return source;
+}
+
 function start(id: string, title = 'Read fixture'): void {
   const input: ToolCall = {
     toolCallId: id, kind: 'execute', status: 'pending',
@@ -44,7 +57,7 @@ function start(id: string, title = 'Read fixture'): void {
     rawInput: { language: 'py', title, code: 'print("fixture")' },
     content: [{ type: 'content', content: { type: 'text', text: 'print("fixture")' } }],
   };
-  call('onLaneEvent', lane, { type: 'tool_call', call: input });
+  call('onLaneEvent', lane, tools(lane).call(input));
 }
 
 function output(id: string, text: string, terminal = false): void {
@@ -60,7 +73,7 @@ function output(id: string, text: string, terminal = false): void {
       }] },
     },
   };
-  call('onLaneEvent', lane, { type: 'tool_call_update', update });
+  call('onLaneEvent', lane, tools(lane).update(update));
   call('renderActiveTranscript', lane);
 }
 
@@ -72,6 +85,7 @@ function row(id: string): HTMLElement {
 }
 
 beforeEach(() => {
+  sources.clear();
   vi.useFakeTimers();
   document.body.replaceChildren();
   view = new AcpHarnessView('/tmp/execution-integration');
@@ -123,7 +137,7 @@ describe('execution inspector dialog in the Harness', () => {
     expect(inspector.textContent).toContain('first result\nsecond result');
     expect(inspector.textContent?.split('second result')).toHaveLength(2);
 
-    call('onLaneEvent', lane, { type: 'tool_call_update', update: { toolCallId: 'cell', status: 'completed' } });
+    call('onLaneEvent', lane, tools(lane).update({ toolCallId: 'cell', status: 'completed' }));
     call('renderActiveTranscript', lane);
     expect(inspector.textContent).toContain('first result\nsecond result');
     expect(inspector.textContent).toContain('Done');

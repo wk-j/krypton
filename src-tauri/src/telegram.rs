@@ -678,19 +678,12 @@ impl TelegramService {
                 }
             }
             "tool_call" | "tool_call_update" => {
-                let payload = event
-                    .payload
-                    .get("call")
-                    .or_else(|| event.payload.get("update"))
-                    .unwrap_or(&event.payload);
-                let tool_call_id = payload
-                    .get("toolCallId")
-                    .and_then(Value::as_str)
-                    .unwrap_or("unknown");
-                let title = payload.get("title").and_then(Value::as_str);
-                let kind = payload.get("kind").and_then(Value::as_str);
-                let label = telegram_tool_label(title, kind, payload.get("rawInput"));
-                let status = payload
+                // Spec 380: the payload is the lane decoder's canonical event;
+                // `view` is the same snapshot the harness row paints.
+                let view = event.payload.get("view").unwrap_or(&event.payload);
+                let tool_call_id = view.get("id").and_then(Value::as_str).unwrap_or("unknown");
+                let label = telegram_tool_label(view);
+                let status = view
                     .get("status")
                     .and_then(Value::as_str)
                     .unwrap_or("in_progress");
@@ -2681,26 +2674,28 @@ impl ToolStatusDraft {
     }
 }
 
-fn telegram_tool_label(
-    title: Option<&str>,
-    kind: Option<&str>,
-    raw_input: Option<&Value>,
-) -> String {
-    if let Some(raw_input) = raw_input.and_then(Value::as_object) {
+/// A short label for a decoded tool view (spec 380). A shell command is never
+/// echoed: an `execute` call reads "execute command".
+fn telegram_tool_label(view: &Value) -> String {
+    if let Some(mcp) = view.get("mcp").and_then(Value::as_object) {
         if let (Some(server), Some(tool)) = (
-            raw_input.get("server").and_then(Value::as_str),
-            raw_input.get("tool").and_then(Value::as_str),
+            mcp.get("server").and_then(Value::as_str),
+            mcp.get("tool").and_then(Value::as_str),
         ) {
             return bounded_line(&format!("{server} · {tool}"), 96);
         }
-        for key in ["name", "toolName", "tool_name", "tool"] {
-            if let Some(name) = raw_input.get(key).and_then(Value::as_str) {
-                return bounded_line(&friendly_tool_name(name), 96);
-            }
-        }
     }
-    let kind = kind.unwrap_or("other");
-    let title = title
+    if let Some(name) = view
+        .get("toolName")
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty())
+    {
+        return bounded_line(&friendly_tool_name(name), 96);
+    }
+    let kind = view.get("kind").and_then(Value::as_str).unwrap_or("other");
+    let title = view
+        .get("title")
+        .and_then(Value::as_str)
         .map(str::trim)
         .filter(|title| !title.is_empty() && !title.eq_ignore_ascii_case("tool"));
     if kind == "execute" {
@@ -2709,7 +2704,7 @@ fn telegram_tool_label(
     title
         .map(|title| bounded_line(title, 96))
         .unwrap_or_else(|| {
-            if kind == "other" {
+            if kind == "other" || kind == "tool" {
                 "tool".to_string()
             } else {
                 kind.to_string()
@@ -3662,28 +3657,28 @@ mod tests {
     #[test]
     fn telegram_tool_labels_are_useful_without_exposing_shell_commands() {
         assert_eq!(
-            telegram_tool_label(
-                Some("tool"),
-                Some("other"),
-                Some(&json!({"name": "web__run"}))
-            ),
+            telegram_tool_label(&json!({"title": "tool", "kind": "other", "toolName": "web__run"})),
             "web.run"
         );
         assert_eq!(
-            telegram_tool_label(
-                Some("rm -rf sensitive-path"),
-                Some("execute"),
-                Some(&json!({"command": "rm -rf sensitive-path"}))
-            ),
+            telegram_tool_label(&json!({
+                "title": "rm -rf sensitive-path",
+                "kind": "execute",
+                "commandLine": "rm -rf sensitive-path"
+            })),
             "execute command"
         );
         assert_eq!(
-            telegram_tool_label(
-                Some("tool"),
-                Some("other"),
-                Some(&json!({"server": "krypton-harness-memory", "tool": "attention_flag"}))
-            ),
+            telegram_tool_label(&json!({
+                "title": "mcp__krypton-harness-memory__attention_flag",
+                "kind": "other",
+                "mcp": {"server": "krypton-harness-memory", "tool": "attention_flag"}
+            })),
             "krypton-harness-memory · attention_flag"
+        );
+        assert_eq!(
+            telegram_tool_label(&json!({"title": "", "kind": "read"})),
+            "read"
         );
     }
 }
