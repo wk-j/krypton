@@ -10,7 +10,7 @@ Before this change, tool names were flat ink while the composer’s `BYPASS` lab
 
 ## Solution
 
-Apply the existing BYPASS readout material and compact typography to every existing standalone tool-name/operation label. Keep the tool’s identity, existing kind colors, status meaning, subject, output, timing and interactions intact. This changes the label only, never the whole row or output well.
+Apply the existing BYPASS readout material and compact typography to every existing standalone tool-name/operation label, code-cell language label and Guardian outcome label. Keep identity, existing kind colors, status meaning, subject, output, timing and interactions intact. This changes the label only, never the whole row or output well.
 
 ## Research
 
@@ -20,7 +20,7 @@ Apply the existing BYPASS readout material and compact typography to every exist
 - `PermissionHead` has a standalone `.acp-harness__perm-tool` only when the tool name differs from its subject. Its decision label is not a tool name.
 - Before implementation, the embedded `AgentView` had `.agent-view__tool-name`, a separate header LED, and a spinner/result glyph updated by existing selectors. The name now owns the readout and LED; those status-update selectors remain intact.
 - Live Assist projects a source label plus plain transcript text; it has no separate tool-name element to restyle. Tool references and command prose are not execution labels.
-- DESIGN.md previously required flat transcript labels and forbade gradients/shadows on repeated rows. This spec introduces a named exception for the small tool-name readout only; rows, subjects, output lines and all other transcript labels remain flat.
+- DESIGN.md previously required flat transcript labels and forbade gradients/shadows on repeated rows. This spec introduces a named exception for small tool-name, code-cell language and Guardian outcome readouts only; rows, subjects, output lines and all other transcript labels remain flat.
 
 ## Prior Art
 
@@ -35,9 +35,11 @@ The requested reference is Krypton’s existing BYPASS readout, not a new extern
 | Gated write review | `.acp-harness__fs-review-verb` | Recessed `WRITE` with a 6px LED inside instead of the pencil emoji; keep diff and resolution/actions untouched |
 | Permission request | `.acp-harness__perm-tool` | Same readout material and typography when this existing tool tag is present; keep duplicate-name suppression and decision labels intact |
 | Embedded Agent view | `.agent-view__tool-name` | Same readout material and typography; move the existing header LED into the name readout via its pseudo-element; preserve name text and all status-update selectors |
+| Code cell | `.acp-execution-card__language` | Same readout around Python/JavaScript and the existing status LED; title, execution state, timing and Inspector stay unchanged |
+| Guardian review | `.acp-harness__guardian-outcome` | Same readout for all outcomes, retaining existing neutral/warning/fault ink and LED presence; action and rationale stay flat |
 | Harness gallery | Production rows above | No gallery-only rendering fork; existing examples inherit production changes |
 
-Generic execution-card language names, Guardian outcomes, permission decisions and source-gutter labels (`TOOL`, `WRITE`, `GUARD`, etc.) are not tool names and do not acquire a readout. The user’s `write` arrow targets the inner operation label, not the source gutter.
+Permission decisions and source-gutter labels (`TOOL`, `WRITE`, `GUARD`, etc.) do not acquire a readout. Code-cell language labels and Guardian outcomes use the same readout following the 2026-11-11 consistency updates. The user’s `write` arrow targets the inner operation label, not the source gutter.
 
 ## Design
 
@@ -75,8 +77,10 @@ A permission tool name can itself contain a path (for example, `Edit src/...`). 
 - Write review uses its existing `resolved`: pending amber, accepted success without bloom, rejected fault. A label-local state attribute is written during the existing paint; `resolved` is already a row dependency. Do not mutate a sealed row externally or recompute its diff to update the label.
 - Permission requests do not gain another status indicator. When a real tool tag exists on a pending request, move its existing pending LED inside that tag. When the tool tag is suppressed, retain the existing pending head LED. Resolved decision LEDs stay with their decision labels; a separate tool-name readout does not duplicate them.
 - Embedded Agent view retains its current running/done/error LED semantics. Move the LED recipe from the header pseudo-element to the name pseudo-element. The existing spinner/✓/✗ text node and selectors remain for updates and accessibility, but its visual cell is clipped so it does not add a second visible status mark beside the readout.
+- Code-cell language readouts contain the existing `Spinner` node in a fixed 6px cell. Keep pending/running/complete/error LED mappings and update the language text node without replacing the LED. Execution-state words remain flat.
+- Guardian outcomes retain the existing amber reviewing LED and fault LED for denied/timed-out/failed reviews. Approved/aborted/unavailable stay neutral with no LED. A bounded wrapper and ellipsizing text span keep long labels inside narrow columns without removing their full DOM text.
 
-No new animation, timer, observer or backend state is introduced. At most one small inset readout is added per existing tool-name label; no whole-row or per-output-line effects.
+No new animation, timer, observer or backend state is introduced. At most one small inset readout is added per existing tool-name, code-cell language or Guardian outcome label; no whole-row or per-output-line effects.
 
 ### Contract Amendment
 
@@ -91,6 +95,8 @@ Update DESIGN.md’s repeated-row prohibition, Chips/Readouts parts and Harness 
 | `src/acp/components/fs-write-review-row/{index.ts,fs-write-review-row.css}` | Write readout and resolved-state LED without changing diff ownership |
 | `src/acp/components/permission-row/{index.ts,permission-row.css}` | Tool-tag readout and conditional placement of the existing pending LED |
 | `src/styles/agent.css` | Name readout; relocate existing LED and clip redundant visible glyph cell |
+| `src/acp/components/execution-card/{index.ts,execution-card.css}` | Code-cell language readout with the existing LED inside; retain summary updates and Inspector behavior |
+| `src/acp/components/guardian-review-row/{index.ts,guardian-review-row.css}` | Compact outcome readout; preserve state colors, LED presence and sealed-row behavior |
 | Existing tests for affected rows, only if needed | Keep behavioral/state/diff-identity assertions; delete obsolete wording or source-style pins rather than repinning them |
 | `DESIGN.md`, `docs/{0072,0235,0302,0366}-*.md` | Named visual exception and current tool-label contract |
 | `docs/README.md` | Index this spec |
@@ -111,13 +117,24 @@ Use the actual production gallery and embedded Agent tool-row rendering in a bro
 - Targeted row, gallery and style-ownership tests passed; the final permission/style-ownership follow-up passed after the narrow-layout adjustment. `npm run check`, final permission-row LSP diagnostics and `DESIGN.md` lint passed. Obsolete emoji/markup snapshot assertions were removed instead of repinned.
 - Verification used browser rendering and production methods, not a relaunched native Tauri window, live provider turn or live theme endpoint.
 
+### Code-cell label consistency update (2026-11-11)
+
+- Python and JavaScript labels use the same readout recipe, with their existing status LED inside.
+- Browser smoke compared six production cards (running/complete/error in both languages) against the production tool-name CSS in dark/light material schemes at 14px/24px body sizes. Material, padding, radius, gap and typography matched. Narrow 320px previews kept the readout intact; metadata wrapped.
+- Updating titles retained the LED node; identical updates produced no DOM mutations. Execution-card and style-ownership suites passed (13 tests). Verification used browser-mounted production components, not a relaunched native app.
+
+### Guardian label consistency update (2026-11-11)
+
+- All seven outcomes use the production tool-name material, padding, radius, gap and typography. Browser smoke covered dark/light material schemes, 14px/24px body sizes and 320px/1000px columns.
+- Existing LED presence and 6px geometry stayed intact; long outcome labels fit the narrow column and identical row updates produced no mutations. Guardian-row and style-ownership suites passed (10 tests). Verification used browser-mounted production rows, not a native app relaunch.
+
 ## Open Questions
 
 None. Matching BYPASS means its readout material, geometry and compact typography, not replacing each tool’s identity/status colors with permission-warning amber.
 
 ## Out of Scope
 
-- Restyling source gutters, permission decisions, Guardian outcomes, execution-language labels, subjects or output bodies.
+- Restyling source gutters, permission decisions, subjects or output bodies.
 - Parsing Live Assist’s plain transcript text into new tool-name nodes or changing its projection payload.
 - Changing BYPASS itself, tool execution, permission behavior, adapters, keybindings or shortcut caps.
 - Introducing a shared badge framework, new theme tokens or animation.

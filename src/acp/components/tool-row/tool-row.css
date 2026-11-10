@@ -252,7 +252,6 @@
   .acp-harness__tool-rich {
     display: grid;
     gap: 3px;
-    max-width: 96ch;
     padding: 4px 8px;
     border-radius: var(--krypton-border-radius, 8px);
     background: var(--mat-well-fill);

@@ -11,7 +11,7 @@ In a Codex lane, an automatic Guardian assessment appears as a generic `TOOL · 
 
 ## Solution
 
-Recognize the adapter's Guardian tool-call identity and derive a bounded, typed display payload before generic output trimming. Render it in a dedicated flat transcript row: a status legend and action on the first line, risk and authorization as small readouts, and the rationale as wrapping text. Keep the same ACP call and its updates; this is presentation only, with no change to approval routing or decisions.
+Recognize the adapter's Guardian tool-call identity and derive a bounded, typed display payload before generic output trimming. Render it in a dedicated transcript row: a compact outcome readout (spec 383) and flat action on the first line, risk and authorization as small readouts, and the rationale as wrapping text. Keep the same ACP call and its updates; this is presentation only, with no change to approval routing or decisions.
 
 ## Research
 
@@ -19,7 +19,7 @@ Recognize the adapter's Guardian tool-call identity and derive a bounded, typed 
 - ACP `tool_call_update` may omit every field except `toolCallId`. Krypton's `mergeToolCall()` carries earlier fields forward. `renderTool()` builds a display payload before `compactToolCallForRetention()`, so it is the right place to extract the assessment. A completion can report `status: completed` while the review itself says `denied`; the row must read the review outcome, not infer approval from tool completion.
 - Today `buildToolPayload()` limits a non-execute section to six lines and `ToolRow` paints it as an output `<pre>`. A generic tool's title becomes its subject, creating the `THINK Guardian Review` line in the screenshot.
 - The component kernel maps one keyed transcript item to one row instance. An initial Guardian payload is needed even before an outcome arrives so the row class does not change mid-call. Terminal rows seal through `LiveComponent.seal()` and never repaint afterward.
-- DESIGN.md requires flat ink in transcript rows, a status LED before its legend, and no shadow, gradient, or box fill on a repeated row. ADR-0017 reserves strong colour for a fault or a demand for human action.
+- DESIGN.md keeps transcript content flat, with a named small-readout exception for the Guardian outcome (spec 383). The status LED remains inside its label. ADR-0017 reserves strong colour for a fault or a demand for human action.
 - Alternative: parse the displayed `<pre>` in `ToolRow`. This leaves the generic title and output layout in place, loses rationale lines after the six-line limit, and makes a second presentation path within a generic row. A dedicated row gives the assessment one bounded data contract.
 
 ## Prior Art
@@ -89,7 +89,7 @@ guardianReview?: GuardianReviewPayload;
         The requested path is outside the authorized workspace.
 ```
 
-- Shared transcript chrome remains: the first `GUARD` label in a consecutive run uses theme magenta; later Guardian rows show a connector in the same magenta inside the label gutter (spec 379). The body stays aligned with every other row. The label distinguishes this source from amber `AGENT` and blue `TOOL`; it does not encode the review result. The first line shows a flat outcome legend followed by the action and wraps at narrow widths without clipping. A steady amber LED marks an active review; a fault LED marks `denied`, `timed_out`, or `failed`. `approved`, `aborted`, and `unavailable` use neutral ink without an LED. No card, output well, coloured outline, or animated pulse.
+- Shared transcript chrome remains: the first `GUARD` label in a consecutive run uses theme magenta; later Guardian rows show a connector in the same magenta inside the label gutter (spec 379). The body stays aligned with every other row. The label distinguishes this source from amber `AGENT` and blue `TOOL`; it does not encode the review result. The first line shows a compact BYPASS-style outcome readout (spec 383) followed by the flat action and wraps at narrow widths. A steady amber LED marks an active review; a fault LED marks `denied`, `timed_out`, or `failed`. `approved`, `aborted`, and `unavailable` use neutral ink without an LED. Long outcome labels ellipsize inside the available width while retaining full DOM text. No whole-row card, output well, coloured outline, or animated pulse.
 - The second line appears only for fields actually reported. Risk and authorization are small, legible readouts; `unknown` is shown only when Codex sent that value.
 - The rationale is a wrapping text line under the action, never a `<pre>` or a one-line ellipsis. `unavailable` says `Review outcome unavailable`; it does not invent a rationale. Long text is bounded with `… truncated`.
 - No new keybinding: this row is read-only and has no control. Existing transcript navigation and scrolling reach all of its content.
@@ -116,6 +116,7 @@ None.
 
 - `npm run check` and `npm run build` passed. Focused Harness/view/component tests passed (366), as did the tool-retention/render tests (84).
 - Native dark/light layout was not inspected in this run; the implementation was verified through source, DOM tests, CSS ownership tests, and the frontend build.
+- 2026-11-11 outcome-readout update: browser smoke covered all seven outcomes in dark/light materials, 14px/24px body sizes and 320px/1000px columns. Labels matched the production tool-name recipe, existing LED mappings stayed intact, and unchanged updates wrote no DOM. Guardian-row and style-ownership suites passed (10 tests); no native relaunch was performed.
 
 ## Resources
 

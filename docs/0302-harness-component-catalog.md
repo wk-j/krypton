@@ -689,7 +689,7 @@ guard  ● DENIED  exec outside workspace
 ```
 
 **Emits** `.acp-harness__guardian > -head > -outcome + -action`, then optional
-`-meta` and `-rationale`. Its transcript label and outcome are flat ink; only
+`-meta` and `-rationale`. Its transcript label stays flat; the outcome is a compact recessed readout (spec 383) with an ellipsizing `-outcome-text` span. Only
 reviewing, denied, timed out, and failed states have a status LED. It has no
 permission control. The same row updates while the ACP call is live and seals
 on its terminal status; later reports do not repaint a sealed row. A malformed

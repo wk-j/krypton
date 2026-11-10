@@ -46,7 +46,8 @@ export function paintExecutionTiming(timer: HTMLElement, source: HTMLElement, ti
 /** Owns the whole execution summary, not a second generic tool header. */
 export class ExecutionCard extends Component<ExecutionCardProps> {
   private readonly glyph = new Spinner();
-  private readonly language = el('span', { class: 'acp-execution-card__language' });
+  private readonly languageText = document.createTextNode('');
+  private readonly language = el('span', { class: 'acp-execution-card__language' }, this.glyph.el, this.languageText);
   private readonly title = el('span', { class: 'acp-execution-card__title' });
   private readonly state = el('span', { class: 'acp-execution-card__state' });
   private readonly timer = el('span', { class: 'acp-execution-card__timer acp-harness__tool-timer' });
@@ -61,7 +62,7 @@ export class ExecutionCard extends Component<ExecutionCardProps> {
   constructor() {
     super(el('div', { class: 'acp-execution-card' }));
     this.el.append(
-      el('div', { class: 'acp-execution-card__head' }, this.glyph.el, this.language, this.title,
+      el('div', { class: 'acp-execution-card__head' }, this.language, this.title,
         el('span', { class: 'acp-execution-card__meta' }, this.state, this.timer, this.timingSource, this.inspector)),
       this.activity,
     );
@@ -86,7 +87,7 @@ export class ExecutionCard extends Component<ExecutionCardProps> {
     this.syncClasses(next);
     this.glyph.update({ running: isExecutionLive(payload, state), terminalGlyph: state === 'complete' ? '✓' : state === 'error' ? '✗' : '·' });
     this.glyph.el.classList.add('acp-execution-card__glyph');
-    setText(this.language, payload.language === 'py' ? 'Python' : 'JavaScript');
+    setText(this.languageText, payload.language === 'py' ? 'Python' : 'JavaScript');
     setText(this.title, payload.title);
     setText(this.state, `${EXECUTION_STATE_LABEL[state]}${state === 'running' && !payload.output ? ' · no output yet' : ''}`);
     this.setHint(next.hintLabel);

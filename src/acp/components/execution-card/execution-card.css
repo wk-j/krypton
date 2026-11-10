@@ -16,11 +16,8 @@
   }
   .acp-execution-card [hidden] { display: none; }
   .acp-execution-card[data-state='error'] { --exec-lamp-rgb: var(--krypton-danger-rgb, 255, 58, 92); }
-  /* One type size across the head: language, title, state, timer, provenance
-     and the Inspector action all read at the row's font size, so their
-     centred boxes share one baseline. Ink colour, not a smaller size, carries
-     the hierarchy — the reduced 0.78em/0.82em meta read as a second, misaligned
-     row next to a full-size `Done`. */
+  /* The language uses the compact tool-name readout (spec 383); title, state,
+     timer, provenance and Inspector retain the row's body size. */
   .acp-execution-card__head {
     display: flex;
     flex-wrap: wrap;
@@ -34,9 +31,9 @@
   .acp-execution-card__glyph {
     position: relative;
     display: inline-flex;
-    flex: 0 0 1.4ch;
+    flex: 0 0 6px;
     justify-content: center;
-    width: 1.4ch;
+    width: 6px;
     height: 1em;
     overflow: hidden;
     line-height: 1;
@@ -73,7 +70,20 @@
     box-shadow: 0 0 4px rgba(var(--exec-lamp-rgb), 0.9), 0 0 10px rgba(var(--exec-lamp-rgb), 0.4);
   }
   .acp-execution-card__language {
+    display: inline-flex;
     flex: none;
+    align-items: center;
+    gap: 6px;
+    padding: 1px 7px;
+    border: 0;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    font-size: calc(var(--krypton-font-size, 13px) * 0.72);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-shadow: none;
+    white-space: nowrap;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.6));
   }
   .acp-execution-card__title { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
@@ -92,7 +102,7 @@
     margin-left: auto;
   }
   /* The state label: flat ink like every transcript label, lit only while
-     running or on a fault. The LED before the title carries the lamp. */
+     running or on a fault. The LED inside the language readout carries the lamp. */
   .acp-execution-card__state {
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb), 0.62));
     line-height: 1.3;

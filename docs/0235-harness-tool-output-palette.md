@@ -132,6 +132,8 @@ Each span is filled with `textContent`. No `innerHTML` of the dump.
 
 Grep rows are a five-column grid (path · sep · line · sep · text). The line track is `minmax(4ch, max-content)`, `tabular-nums`, right-aligned, so `75` and `160` form a gutter (same trick as git-stat's 5ch count column). Line-only dumps (`grep -n` with no path) use the three-column `--lineno` template and the same gutter.
 
+Rich output wells (grep, diffstat and short git status) fill the same available width as plain output wells. They have no separate character-width cap; token columns and existing truncation still apply inside the well.
+
 ### Exit status
 
 Grok Bash wraps every dump as `exit: N\n<body>` and also sends `rawOutput.exit_code`. Structured `exit_code` wins; the prefix is stripped **before** the 12-line cap so it does not steal a content line.

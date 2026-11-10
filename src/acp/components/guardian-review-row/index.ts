@@ -24,7 +24,8 @@ function setText(node: HTMLElement, value: string): void {
 
 export class GuardianReviewRow extends TranscriptRow {
   private readonly head = el('div', { class: 'acp-harness__guardian-head' });
-  private readonly outcome = el('span', { class: 'acp-harness__guardian-outcome' });
+  private readonly outcomeText = el('span', { class: 'acp-harness__guardian-outcome-text' });
+  private readonly outcome = el('span', { class: 'acp-harness__guardian-outcome' }, this.outcomeText);
   private readonly action = el('span', { class: 'acp-harness__guardian-action' });
   private readonly meta = el('div', { class: 'acp-harness__guardian-meta' });
   private readonly rationale = el('div', { class: 'acp-harness__guardian-rationale' });
@@ -72,7 +73,7 @@ export class GuardianReviewRow extends TranscriptRow {
     if (this.head.parentElement !== body) body.append(this.head, this.meta, this.rationale);
 
     this.outcome.className = `acp-harness__guardian-outcome acp-harness__guardian-outcome--${review.outcome}`;
-    setText(this.outcome, OUTCOME_LABEL[review.outcome]);
+    setText(this.outcomeText, OUTCOME_LABEL[review.outcome]);
     setText(this.action, review.action);
 
     const meta = [

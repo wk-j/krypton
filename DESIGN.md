@@ -58,7 +58,7 @@ forbidden:
   - "infinite or decorative animation: pulses, sweeps, shimmers, orbits, scanlines, vignettes"
   - "glow on anything but a lamp, an LED lens or the terminal progress ring's arc: legends, labels and titles never glow (the one exception is the composer bloom's one-shot afterimage flash)"
   - "coloured outlines or frame glows on status labels, tags and badges; state colour belongs to their ink, tint and LED, never their border"
-  - "box-shadow, text-shadow or gradient on a repeated row (transcript row, diff line, list row), except the small tool-name readout defined in spec 383"
+  - "box-shadow, text-shadow or gradient on a repeated row (transcript row, diff line, list row), except the compact label readouts defined in spec 383"
   - "a button taller than one line: a key's state badge sits beside its label or is dropped"
   - "left-edge accent rails for selection (ADR-0027)"
   - "L-shaped corner brackets or screw-head ornaments"
@@ -190,18 +190,18 @@ comment.
 - **Chips.** Verdicts and kinds outside the transcript are embossed labels on a key face, tinted by
   their colour, with the status LED first on the key face, 5px before the legend. Transcript labels
   (permission and question decision, execution state, provider-error meta, notice action) stay flat ink:
-  no key face, capsule, border, or shadow; an existing LED sits before the legend. Tool-name readouts
-  are the narrow exception below. Rails run-history verdicts remain flat ink with their existing glyph
+  no key face, capsule, border, or shadow; an existing LED sits before the legend. The readouts
+  below are the narrow exceptions. Rails run-history verdicts remain flat ink with their existing glyph
   and state colour: no background, border, padding or shadow.
 - **Readouts.** A small well holding a tabular-nums figure, with its label engraved beside or under it.
   The workspace footer's Git branch is a neutral-ink well readout, not a green success label:
   `--mat-well` + `--mat-well-shadow`, 8px radius, 2px × 6px padding, chrome-size type with the
   ref's original case. Its dirty dot stays warning amber. In detail density, an 8px gap replaces the
   separator before this well so no groove is painted inside it; the footer remains 28px tall.
-  Tool names (spec 383) use the composer's BYPASS readout recipe: `--mat-well` +
+  Tool names, code-cell languages and Guardian outcomes (spec 383) use the composer's BYPASS readout recipe: `--mat-well` +
   `--mat-well-shadow`, 8px radius, 1px × 7px padding, 6px LED gap, body-size × 0.72,
   uppercase at 0.08em tracking, and no border or text-shadow. This includes generic tool kinds,
-  filesystem verbs, permission tool tags and embedded Agent tool names. Existing identity ink
+  filesystem verbs, permission tool tags, embedded Agent tool names and code-cell language labels. Existing identity ink
   and LED meanings stay; the material belongs only to the small name label, never its row,
   subject or output. A permission decision keeps its own LED rather than duplicating it.
 - **Scrim.** Behind a modal plate: `background: var(--mat-scrim)`. Never blur.
