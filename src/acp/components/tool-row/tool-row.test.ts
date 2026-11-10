@@ -160,41 +160,6 @@ describe('ToolRow head', () => {
 });
 
 describe('ToolRow output', () => {
-  it('paints no label for a plain output section and sets the exit above its well', () => {
-    const tool = payload({ exitCode: 0, sections: [{ label: 'content', text: '> tsc --noEmit' }] });
-    const row = new ToolRow(props(tool));
-    row.update(props(tool));
-
-    const output = row.el.querySelector('.acp-harness__tool-output');
-    const [exit, section] = Array.from(output?.children ?? []);
-    expect(exit?.getAttribute('class')).toBe('acp-harness__tool-exit');
-    expect(exit?.getAttribute('data-status')).toBe('ok');
-    expect(Array.from(exit?.children ?? []).map((node) => node.textContent)).toEqual(['exit', '0']);
-    expect(section?.getAttribute('class')).toBe(
-      'acp-harness__tool-section acp-harness__tool-section--output',
-    );
-    expect(section?.querySelector('.acp-harness__tool-section-label')).toBeNull();
-    expect(section?.children.length).toBe(1);
-    expect(section?.firstElementChild?.getAttribute('class')).toBe('acp-harness__tool-section-text');
-    expect(section?.firstElementChild?.textContent).toBe('> tsc --noEmit');
-  });
-
-  it('keeps a label that says something and rides the exit on it', () => {
-    const tool = payload({
-      exitCode: 1,
-      sections: [{ label: 'stderr', text: 'error TS2304' }, { label: 'stdout', text: 'done' }],
-    });
-    const row = new ToolRow(props(tool));
-    row.update(props(tool));
-
-    const [stderr, stdout] = Array.from(row.el.querySelector('.acp-harness__tool-output')?.children ?? []);
-    const label = stderr?.querySelector('.acp-harness__tool-section-label');
-    expect(label?.firstChild?.textContent).toBe('stderr');
-    expect(label?.querySelector('.acp-harness__tool-exit')?.getAttribute('data-status')).toBe('fail');
-    expect(stdout?.querySelector('.acp-harness__tool-section-label')).toBeNull();
-    expect(row.el.querySelectorAll('.acp-harness__tool-exit').length).toBe(1);
-  });
-
   it('lays a column-laid-out section on the cell grid and leaves plain output as text (spec 326)', () => {
     const frame = ['╭────╮', '│ กำ │', '╰────╯'].join('\n');
     const tool = payload({ sections: [{ label: 'stdout', text: frame }, { label: 'stderr', text: 'warn: x' }] });
@@ -224,16 +189,6 @@ describe('ToolRow output', () => {
     expect(records(host, () => row.update(done)).length).toBe(0);
   });
 
-  it('emits a lone exit row for an execute call with no printable output', () => {
-    const tool = payload({ exitCode: 2, sections: [] });
-    const row = new ToolRow(props(tool));
-    row.update(props(tool));
-
-    const output = row.el.querySelector('.acp-harness__tool-output');
-    expect(output?.children.length).toBe(1);
-    expect(output?.firstElementChild?.getAttribute('data-status')).toBe('fail');
-  });
-
   it('renders a 500-line section verbatim — the cap lives in the lane decoder', () => {
     const text = Array.from({ length: 500 }, (_, i) => `line ${i + 1}`).join('\n');
     const tool = payload({ kind: 'read', command: '', subject: 'src/ui/list.ts', sections: [{ label: 'content', text }] });
@@ -242,8 +197,6 @@ describe('ToolRow output', () => {
 
     const pre = row.el.querySelector('.acp-harness__tool-section-text');
     expect(pre?.textContent?.split('\n').length).toBe(500);
-    // No exit badge: `toolChipKind('read')` is not `execute`.
-    expect(row.el.querySelector('.acp-harness__tool-exit')).toBeNull();
   });
 
   it('renders the git diff --stat bar through Meter', () => {
@@ -309,7 +262,7 @@ describe('ToolRow output', () => {
     );
   });
 
-  it('hands a grep-like dump to the structured grep renderer with the exit above it', () => {
+  it('hands a grep-like dump to the structured grep renderer', () => {
     const tool = payload({
       command: 'rg --line-number reconcile src/ui',
       subject: 'rg reconcile',
@@ -319,8 +272,7 @@ describe('ToolRow output', () => {
     const row = new ToolRow(props(tool));
     row.update(props(tool));
 
-    const [exit, section] = Array.from(row.el.querySelector('.acp-harness__tool-output')?.children ?? []);
-    expect(exit?.getAttribute('class')).toBe('acp-harness__tool-exit');
+    const section = row.el.querySelector('.acp-harness__tool-output')?.firstElementChild;
     expect(section?.getAttribute('class')).toBe(
       'acp-harness__tool-section acp-harness__tool-section--output',
     );
@@ -328,7 +280,6 @@ describe('ToolRow output', () => {
     const rows = Array.from(section?.querySelectorAll('.acp-harness__grep-row') ?? []);
     expect(rows.length).toBe(2);
     expect(rows[0].querySelector('.acp-harness__tok-path')?.textContent).toBe('src/ui/list.ts');
-    expect(row.el.querySelectorAll('.acp-harness__tool-exit').length).toBe(1);
   });
 
   it('caps a paired diff at 24 rows with the "… N more lines" tail', () => {

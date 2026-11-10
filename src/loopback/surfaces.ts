@@ -13,6 +13,7 @@ export type SurfaceId =
   | 'commands'
   | 'tools'
   | 'genui'
+  | 'harness'
   | 'termctrl'
   | 'acp-wire'
   | 'hurl'
@@ -231,6 +232,15 @@ export const SURFACES: readonly SurfaceDef[] = [
     scope: 'global',
     access: 'open',
     href: () => '/genui-gallery',
+  },
+  {
+    id: 'harness',
+    title: 'Harness components',
+    summary: 'Every harness row that paints agent output, in all its states',
+    group: 'reference',
+    scope: 'global',
+    access: 'open',
+    href: () => '/harness-gallery',
   },
 ];
 

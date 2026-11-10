@@ -152,7 +152,7 @@ Surfaces own only what is theirs (dashboard sparklines, termctrl cell grid, hurl
 
 ### Home (`GET /` → `AppPage { entry: "home", scheme: Dark }`)
 
-A stat bar (projects, lanes busy/total, live artifacts), then three groups of tiles — **Monitor** (Lane monitor, Terminal Control, ACP wire), **Project** (Docs, Journal, Timeline, Analyses, Reviews, Artifacts, Hurl, E2E), **Reference** (Commands, MCP tools, GenUI components). A tile shows title, summary and, where the directory has it, a count chip. An unavailable tile stays in place, muted, with its reason: "no open project" or "open Krypton Home from Krypton (`#home`) to enable". Home refetches on focus and does not poll.
+A stat bar (projects, lanes busy/total, live artifacts), then three groups of tiles — **Monitor** (Lane monitor, Terminal Control, ACP wire), **Project** (Docs, Journal, Timeline, Analyses, Reviews, Artifacts, Hurl, E2E), **Reference** (Commands, MCP tools, GenUI components, Harness components — spec 381). A tile shows title, summary and, where the directory has it, a count chip. An unavailable tile stays in place, muted, with its reason: "no open project" or "open Krypton Home from Krypton (`#home`) to enable". Home refetches on focus and does not poll.
 
 ### Shell
 

@@ -64,7 +64,6 @@ import {
   parseGitStatusShort,
   renderArtifactRedaction,
   renderGrepSection,
-  shouldRenderExecuteExit,
   gitStatusTone,
   toolChipKind,
   toolSectionTone,
@@ -85,28 +84,17 @@ function setText(node: Node, value: string): void {
   if (node.textContent !== value) node.textContent = value;
 }
 
-/** `harness-tool-render.ts:776-789`. */
-function toolExit(code: number): HTMLElement {
-  return el(
-    'div',
-    { class: `${PREFIX}__tool-exit`, data: { status: code === 0 ? 'ok' : 'fail' } },
-    el('span', { class: `${PREFIX}__tool-exit-label`, text: 'exit' }),
-    el('span', { class: `${PREFIX}__tool-exit-code`, text: String(code) }),
-  );
-}
-
 /** `harness-tool-render.ts:843-860`. A label that only names the payload slot
  *  (`content`, `output`, `stdout`, `text` — the `output` tone) says nothing the
  *  well does not, so it paints no label line. Any other label (stderr, error,
- *  summary, diff, terminal, …) stays, and the exit readout rides it.
+ *  summary, diff, terminal, …) stays.
  *  Output laid out by columns (a frame, a table around Thai) sits on the cell
  *  grid (spec 326); it is built inside the deps-gated rebuild, so it adds no deps. */
-function plainSection(section: ToolSection, exitCode: number | null): HTMLElement {
+function plainSection(section: ToolSection): HTMLElement {
   const tone = toolSectionTone(section.label);
   let label: HTMLElement | null = null;
   if (tone !== 'output') {
     label = el('div', { class: `${PREFIX}__tool-section-label`, text: section.label });
-    if (exitCode !== null) label.appendChild(toolExit(exitCode));
   }
   const text = el('pre', { class: `${PREFIX}__tool-section-text`, text: section.text });
   gridifyText(text);
@@ -205,7 +193,7 @@ export class ToolRow extends TranscriptRow {
     return [imageStripSignature(next.item), next.streaming, ...this.bodyDeps(next)];
   }
 
-  /** The ten of spec 302 §3.4, plus spec 370's `jobs`. */
+  /** Spec 302 §3.4, including spec 370's `jobs`. */
   protected bodyDeps(next: RowProps): readonly unknown[] {
     const tool = next.item.tool;
     if (tool?.execution && !tool.artifactRedaction && !tool.subagents) {
@@ -226,7 +214,6 @@ export class ToolRow extends TranscriptRow {
       tool?.subject,
       tool?.command,
       tool?.result,
-      tool?.exitCode ?? null,
       tool?.sections,
       tool?.diffs,
       tool?.subagents,
@@ -302,7 +289,7 @@ export class ToolRow extends TranscriptRow {
       this.dropCard();
       this.dropJobList();
       this.paintOutput(tool);
-      if (tool.sections.length > 0 || shouldRenderExecuteExit(tool)) children.push(this.output);
+      if (tool.sections.length > 0) children.push(this.output);
     }
 
     if (tool.diffs.length > 0) {
@@ -403,7 +390,7 @@ export class ToolRow extends TranscriptRow {
 
   /** `harness-tool-render.ts:791-836`, deduped on the deps the block reads. */
   private paintOutput(tool: ToolPayload): void {
-    const deps = [tool.sections, tool.exitCode ?? null, tool.kind, tool.command, tool.subject];
+    const deps = [tool.sections, tool.kind, tool.command, tool.subject];
     if (this.outputDeps && sameDeps(this.outputDeps, deps)) return;
     this.outputDeps = deps;
     setChildren(this.output, this.outputNodes(tool));
@@ -413,30 +400,19 @@ export class ToolRow extends TranscriptRow {
     this.statCursor = 0;
     // Spec 380: sections arrive decoded — backend wrappers (Grok's `exit: N`,
     // `<workspace_result>`, read anchors) were removed by the lane adapter.
-    const exitCode = tool.exitCode ?? null;
     const painted: ToolSection[] = tool.sections.filter((section) => section.text.trim());
 
     const nodes: HTMLElement[] = [];
-    let pendingExit = exitCode !== null && toolChipKind(tool.kind) === 'execute' ? exitCode : null;
     for (const section of painted) {
       const rich =
         (tool.kind === 'execute' ? this.richExecuteSection(tool, section) : null) ??
         (isGrepLikeOutput(tool, section) ? renderGrepSection(tool, section) : null);
-      // Only a labelled plain section can carry the exit readout; ahead of a
-      // git, grep or unlabelled output well it is a row of its own.
-      const carriesExit = rich === null && toolSectionTone(section.label) !== 'output';
-      if (pendingExit !== null && !carriesExit) {
-        nodes.push(toolExit(pendingExit));
-        pendingExit = null;
-      }
       if (rich) {
         nodes.push(rich);
         continue;
       }
-      nodes.push(plainSection(section, pendingExit));
-      pendingExit = null;
+      nodes.push(plainSection(section));
     }
-    if (pendingExit !== null) nodes.push(toolExit(pendingExit));
     return nodes;
   }
 
@@ -580,9 +556,6 @@ export const def: ComponentDef = {
     'acp-harness__tool-result',
     'acp-harness__tool-timer',
     'acp-harness__tool-output',
-    'acp-harness__tool-exit',
-    'acp-harness__tool-exit-label',
-    'acp-harness__tool-exit-code',
     'acp-harness__tool-section',
     'acp-harness__tool-section-label',
     'acp-harness__tool-section-text',

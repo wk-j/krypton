@@ -1,8 +1,10 @@
-// Spec 313 rev 3 — paint the stage with the running app's own theme.
+// Spec 313 rev 3 / 381 — paint a gallery stage with the running app's own
+// theme. Shared by the GenUI and harness component galleries; each serves the
+// same payload at its own `theme.json` route.
 
 import { themeCssProperties, themeScheme } from '../../../theme';
 import type { FullTheme } from '../../../theme';
-import { fetchJson } from '../../kit';
+import { fetchJson } from './fetch-json';
 
 /** `theme.json` from the loopback server: the app's resolved theme and its font. */
 interface GalleryThemePayload {
@@ -10,15 +12,13 @@ interface GalleryThemePayload {
   readonly font: { readonly family: readonly string[] | string; readonly size: number; readonly line_height: number };
 }
 
-const THEME_URL = '/genui-gallery/theme.json';
-
 /**
  * Apply the app's tokens — the same `themeCssProperties()` the window applies,
  * plus the `[font]` properties `Compositor.applyConfig` sets — so a preview is
  * the component as Krypton draws it. Returns the label the rail shows.
  */
-export async function applyKryptonTheme(): Promise<string> {
-  const payload = await fetchJson<GalleryThemePayload>(THEME_URL);
+export async function applyKryptonTheme(url: string): Promise<string> {
+  const payload = await fetchJson<GalleryThemePayload>(url);
   const root = document.documentElement;
   for (const [name, value] of Object.entries(themeCssProperties(payload.theme))) {
     root.style.setProperty(name, value);

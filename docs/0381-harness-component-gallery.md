@@ -1,6 +1,6 @@
 # Harness Component Gallery (Loopback Page) — Implementation Spec
 
-> Status: Approved (2026-11-10)
+> Status: Approved (2026-11-10) — phase 1 implemented (2026-11-11); phases 2 and 3 open
 > Date: 2026-11-10
 > Milestone: ACP Harness — one rendering for every lane
 > Builds on: [380](./0380-acp-lane-adapters.md) (lane adapters), [313](./0313-genui-component-gallery.md) (GenUI gallery), [341](./0341-loopback-app.md)/[361](./0361-loopback-app-react.md) (loopback app), [301](./0301-harness-ui-components.md)/[302](./0302-harness-component-catalog.md) (components), [379](./0379-connected-transcript-sources.md) (connected sources)
@@ -12,7 +12,7 @@ Spec 380 sends every lane's output through one canonical model, but nothing show
 ## Solution
 
 Add a loopback surface, **Harness components** (`/harness-gallery`), built on the GenUI gallery's shell, keys and theme path:
-- **Layout:** an index rail, and one entry at a time on a Krypton-window stage painted with the app's live theme.
+- **Layout:** an index rail, and one entry at a time with a separate Krypton-window preview per state, painted with the app's live theme. Each state title sits above and outside its preview.
 - **Organization:** entries follow the canonical data that feeds them (spec 380 `LaneEvent` / `LaneSession`). Each entry stacks all its named states.
 - **Previews:** every preview is the production component fed by the production item builder, so the gallery shows exactly what a lane shows.
 - **Backends view:** shows one scenario decoded from each backend's captured wire fixture through its adapter, side by side, so any difference between lanes is visible on one screen.
@@ -107,7 +107,9 @@ Only components that paint agent-originated data are in scope. Components that r
 
 ### Stage
 
-`stage.ts` mounts each state into its own block. A block is a caption line in chrome-label typography, then a `.acp-harness` root holding one `.acp-harness__lane-body` whose direct children are the state's rows. Every row is built with `createTranscriptRow({ item, isNew: false, streaming, lane: null, projectDir: null, resolveLocalImages: false })`. Lane chrome uses `LaneHead` / `LaneStats` over `laneFixture()`, and `PlanPanel` uses `{entries, collapsed}`. Switching entry disposes every component through `dispose()`. The stage is `.krypton-window` by value over the desktop stand-in, with the GenUI rev 4 reset scoped to `.lb-harness__stage`.
+`stage.ts` mounts each state into its own block. A block is a caption in loopback gallery typography, then a `.lb-harness__stage` preview wrapping a `.acp-harness` root holding one `.acp-harness__lane-body` whose direct children are the state's rows. The caption and optional source JSON are siblings outside the preview bezel, never part of its themed contents. Every row is built with `createTranscriptRow({ item, isNew: false, streaming, lane: null, projectDir: null, resolveLocalImages: false })`. Lane chrome uses `LaneHead` / `LaneStats` over `laneFixture()`, and `PlanPanel` uses `{entries, collapsed}`. Switching entry disposes every component through `dispose()`. Each preview is `.krypton-window` by value over the desktop stand-in, with the GenUI rev 4 reset scoped to `.lb-harness__stage`.
+
+The stage-scoped margin/padding reset lives in `lb.reset`, below both the gallery's `lb.surface` spacing and every production `krypton.*` rule, so it cannot override the preview inset. State titles, separation and source margins use loopback styles outside that reset.
 
 ### Backends view
 
@@ -156,6 +158,29 @@ Every id in `components` must exist in `HARNESS_COMPONENTS`. `harness.test.tsx` 
 1. Page, stage, theme, and the Messages, Tools, Requests, Files and Turn entries. Lands after spec 380 phase 2, which ships `ToolView` and the shared item builders.
 2. Session entries, after `laneFixture()` replaces the five test-local lane builders.
 3. The Backends view. Lands after spec 380 phase 4, which ships the fixtures and the supply matrix.
+
+### Phase 1 — Implemented (2026-11-11)
+
+- **Page:** `GET /harness-gallery` → `AppPage::new("harness", "Harness components", Scheme::Dark)`. The surface is in the `reference` group. `/harness-gallery/theme.json` is served by the GenUI theme handler, renamed `handle_component_gallery_theme`. The CSP is `COMPONENT_GALLERY_CSP{,_DEV}` through `component_gallery_csp()`. A route test checks both galleries' entry and CSP.
+- **Theme:** `src/loopback/kit/lib/krypton-theme.ts` `applyKryptonTheme(url)`, shared with GenUI. It is imported directly, not through the kit barrel: it reaches `src/theme.ts`, which no other page needs.
+- **Shared builders:** `harness-transcript-items.ts` gains `toolItemText` and `permissionItemText`. They are the rows' text lines, moved out of `renderTool` and the permission path, and the view calls them too. `build.ts` turns each input into an item through these builders, `toolPayloadFromView`, `permissionPayloadFromRequest`, `payloadFromCard` / `createAskUserCardState` and `parseElicitationForm`.
+- **Images:** decoded by the production `imageBytesSource` / `createBytesImage`. The Blob URL is then swapped for a `data:` URL, because the CSP allows only `data:` images.
+- **Stage:** `stage.ts` mounts each state as a caption outside its own `.lb-harness__stage` preview, followed by optional source JSON outside the preview. Inside each preview, a `.acp-harness` root and its `.acp-harness__lane-body` hold the rows as direct siblings. `harness.css` resets the preview inside `lb.reset`, below gallery spacing and production component rules. In `krypton.base`, with higher specificity, it lets the root and lane body grow to their rows instead of filling a lane box. It also copies the `kbd` key-cap rule (spec 369), scoped to the stage, because `src/styles/kbd.css` styles bare `kbd` and would restyle every loopback page in the merged `app.css`.
+- **Entries:** 26 entries with 83 states in five groups.
+  - Beyond the Entries table: Command `pending` and `canceled`, because the coverage guard needs all five statuses. Also Edit, Search and the other file kinds `running`/`failed`, Permission `high-risk command`, Question `answered`, and Usage `recording off`, which is the notice row.
+  - Assistant and user images are image strips (`imageBlocks`).
+- **Coverage guard:**
+  - `examples.test.ts` checks row kinds against the newly exported `ROW_KINDS`.
+  - A "tool kind" is the ACP `ToolKind` plus `agents` and `wait`. A type-level check fails the build when `ToolKind` or `ToolState` gains a member that has no example.
+  - The fixture-scenario check reads `src/acp/adapters/fixtures/` and passes trivially until spec 380 phase 4b adds fixtures.
+- **Page test:** `harness.test.tsx` mocks `invoke` to throw and asserts it was never called after rendering every entry. It also covers the keys (`/`, `[`/`]`, ↑/↓, Enter, Esc, `s`), hash routing and the source toggle.
+- **Deviations from the design:**
+  - `GalleryGroup` has no `session`, and `GalleryInput` has no `plan` or `lane` member. Both land with phase 2.
+  - `GalleryEntry` gains `summary`.
+  - Permission and question inputs carry an optional `resolved`, the decision the view records on the row.
+  - Tool inputs carry `images` (`ToolImageUpdate`).
+  - `b` is not bound until phase 3.
+- **Verified:** `npm run check`, `npm run build`, the full `npx vitest run`, `cargo fmt -- --check`, `cargo clippy`, `cargo test` and `git diff --check`. The page has not yet been opened in a browser against a running Krypton (it needs `npx tauri dev`, or `make install` and a relaunch).
 
 ### Configuration
 

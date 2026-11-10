@@ -3,7 +3,7 @@
 
      2165-2270  .acp-harness__tool … __tool-result--failed   (head family)
      2408-2429  the flex/nowrap comment + __tool-timer family
-     2431-2775  __tool-output, __tool-exit*, __tool-section*, __tok-*,
+     2431-2775  __tool-output, __tool-section*, __tok-*,
                 __grep-row*, __tool-stat-*, __tool-rich*, __tool-diff-*,
                 __tool-status-*, the __tool-section--* tone map
      5916-5992  the spec-89 diff preview block: __tool-diffs, __tool-diff,
@@ -204,41 +204,6 @@
     font-size: var(--krypton-font-size, 13px);
   }
 
-  /* spec 235 — Grok `exit: N` prefix becomes a quiet readout, not dump text.
-     Rides the first labelled section (stderr, terminal, …) when one comes
-     first; ahead of a plain output well, a git or a grep block it is a row of
-     its own. */
-  .acp-harness__tool-exit {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-  }
-
-  .acp-harness__tool-exit-label {
-    font-size: 0.7em;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
-  }
-
-  .acp-harness__tool-exit-code {
-    flex: none;
-    font-size: 0.78em;
-    font-weight: 400;
-    line-height: 1.35;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: 0.04em;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.42));
-  }
-
-  .acp-harness__tool-exit[data-status="fail"] .acp-harness__tool-exit-label {
-    color: color-mix(in srgb, var(--agent-error, #ff6b8b) 62%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.48));
-  }
-
-  .acp-harness__tool-exit[data-status="fail"] .acp-harness__tool-exit-code {
-    color: var(--agent-error, #ff6b8b);
-  }
-
   .acp-harness__tool-section {
     display: flex;
     flex-direction: column;
@@ -261,16 +226,6 @@
 
   .acp-harness__tool-section--error .acp-harness__tool-section-label {
     color: var(--agent-error, #ff6b8b);
-  }
-
-  .acp-harness__tool-section-label .acp-harness__tool-exit {
-    flex: none;
-  }
-
-  .acp-harness__tool-section-label .acp-harness__tool-exit-label,
-  .acp-harness__tool-section-label .acp-harness__tool-exit-code {
-    font-size: 1em;
-    letter-spacing: inherit;
   }
 
   /* One well per output block: the section text, a grep / diffstat /

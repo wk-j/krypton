@@ -154,7 +154,12 @@ import {
 } from './ask-user-question';
 import type { LaneEvent, LaneInit, LaneSession, PermissionRequest, ToolImageUpdate, ToolView } from './adapters/types';
 import { permissionSubject } from './adapters/permission';
-import { permissionPayloadFromRequest, toolPayloadFromView } from './harness-transcript-items';
+import {
+  permissionItemText,
+  permissionPayloadFromRequest,
+  toolItemText,
+  toolPayloadFromView,
+} from './harness-transcript-items';
 import { parseElicitationForm } from './elicitation';
 import type {
   AcpBackendDescriptor,
@@ -10648,8 +10653,7 @@ export class AcpHarnessView implements ContentView {
     permission: HarnessPermission,
     payload: PermissionPayload,
   ): HarnessTranscriptItem {
-    const text = payload.suffix ? `${payload.kind} ${payload.subject} ${payload.suffix}` : `${payload.kind} ${payload.subject}`;
-    const item = this.appendTranscript(lane, 'permission', text);
+    const item = this.appendTranscript(lane, 'permission', permissionItemText(payload));
     item.permission = payload;
     permission.transcriptItem = item;
     return item;
@@ -15180,10 +15184,7 @@ export class AcpHarnessView implements ContentView {
     } else {
       delete target.executionTarget;
     }
-    const text = tool.guardianReview
-      ? `Guardian review: ${tool.guardianReview.outcome} — ${tool.guardianReview.action}`
-      : tool.subject ? `${tool.glyph} ${tool.kind} ${tool.subject}` : `${tool.glyph} ${tool.kind}`;
-    target.text = text;
+    target.text = toolItemText(tool);
     target.status = status;
     target.tool = tool;
     if (!existing) lane.toolTranscriptIds.set(view.id, target.id);

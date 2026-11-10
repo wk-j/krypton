@@ -115,10 +115,6 @@ export function renderArtifactRedaction(r: NonNullable<ToolPayload['artifactReda
   return wrap;
 }
 
-export function shouldRenderExecuteExit(tool: Pick<ToolPayload, 'kind' | 'exitCode'>): boolean {
-  return tool.exitCode != null && toolChipKind(tool.kind) === 'execute';
-}
-
 export function isGitDiffCommand(command: string): boolean {
   return /\bgit\s+diff\b/.test(command);
 }
@@ -400,8 +396,7 @@ function tok(kind: string, value: string): HTMLElement {
 }
 
 /** A grep dump is always an output-slot section (`stdout` / `output` /
- *  `content` / `text`), so it paints no label line: the well is the output.
- *  The caller places an exit readout above it. */
+ *  `content` / `text`), so it paints no label line: the well is the output. */
 export function renderGrepSection(
   tool: Pick<ToolPayload, 'command' | 'subject'>,
   section: { label: string; text: string },

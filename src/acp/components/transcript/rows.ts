@@ -23,23 +23,27 @@ import { UserRow } from '../user-row';
 import type { TranscriptRow, RowProps } from '../transcript-row';
 import type { HarnessTranscriptItem } from '../../harness-view-types';
 
-type RowKind =
-  | 'assistant'
-  | 'tool'
-  | 'guardianReview'
-  | 'permission'
-  | 'question'
-  | 'fsActivity'
-  | 'fsWriteReview'
-  | 'providerError'
-  | 'interLane'
-  | 'usage'
-  | 'notice'
-  | 'docCard'
-  | 'directiveDiff'
-  | 'thought'
-  | 'user'
-  | 'text';
+/** Every row kind `rowKindFor` returns; the spec 381 gallery's coverage test reads this. */
+export const ROW_KINDS = [
+  'assistant',
+  'tool',
+  'guardianReview',
+  'permission',
+  'question',
+  'fsActivity',
+  'fsWriteReview',
+  'providerError',
+  'interLane',
+  'usage',
+  'notice',
+  'docCard',
+  'directiveDiff',
+  'thought',
+  'user',
+  'text',
+] as const;
+
+export type RowKind = (typeof ROW_KINDS)[number];
 
 /** The branch `renderTranscriptItem` would have taken, in its original order. */
 export function rowKindFor(item: HarnessTranscriptItem): RowKind {

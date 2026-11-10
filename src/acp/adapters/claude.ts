@@ -95,7 +95,7 @@ export const claudeAdapter: LaneAdapter = {
   // No `turnState` hook: Krypton reads thread state from codex-acp only.
   supplies: { ...UNVERIFIED_SUPPLIES, turnState: 'no' },
   // A failed Bash call's output starts with `Exit code N`, in the terminal
-  // output or in `content` text. The EXIT readout already shows N.
+  // output or in `content` text. The head result already shows N.
   exitLine: /^Exit code (-?\d+)[ \t]*(?:\r?\n|$)/,
   chunkParent: claudeParentToolUseId,
   tool(step: ToolStep): void {

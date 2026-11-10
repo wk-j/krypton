@@ -907,10 +907,10 @@ Packs are bundled as Tauri resources (declared in `tauri.conf.json`) and loaded 
 `src-tauri/src/hook_server.rs` is the one `127.0.0.1` HTTP host, started once in
 `lib.rs::setup`. It serves the harness memory MCP endpoint
 (`/mcp/harness/{id}/lane/{label}`), the browser surfaces of the loopback app
-(Home `/`, `/dashboard`, `/gallery`, `/genui-gallery`, `/timeline`, `/docs`,
+(Home `/`, `/dashboard`, `/gallery`, `/genui-gallery`, `/harness-gallery`, `/timeline`, `/docs`,
 `/journal`, `/doc`, `/reviews`, `/review`, `/analyses`, `/analysis`,
 `/commands`, `/tools`), their JSON feeds (`/telemetry`, `/artifacts`,
-`/genui-gallery/theme.json`, `/timeline.json`, `/commands.json`, `/tools.json`,
+`/genui-gallery/theme.json`, `/harness-gallery/theme.json`, `/timeline.json`, `/commands.json`, `/tools.json`,
 `/app/api/directory`), the token-gated viewers (`/termctrl`, `/acp-wire`,
 `/hurl`, `/e2e`), artifact and doc feedback POSTs, and the Claude Code `/hook`
 endpoint.

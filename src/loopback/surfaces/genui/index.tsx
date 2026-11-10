@@ -17,9 +17,10 @@ import { COMPONENTS, GROUP_ORDER } from '../../../acp/genui/catalog';
 import type { ComponentSpec, ParamSpec } from '../../../acp/genui/catalog';
 import { FOCUSABLE_ATTR } from '../../../acp/components/genui-catalog/renderer';
 import { Button, Island, KbdHints, SearchFilter, useKeymap, useLatest, useShell } from '../../kit';
+// Not through the kit barrel: it reaches src/theme.ts, which no other page needs.
+import { applyKryptonTheme } from '../../kit/lib/krypton-theme';
 import { EXAMPLES } from './examples';
 import { GalleryPreview } from './preview';
-import { applyKryptonTheme } from './theme';
 
 import './genui.css';
 
@@ -31,6 +32,7 @@ interface Entry {
 
 const SURFACE_TITLE = 'GenUI components';
 const THEME_FALLBACK = 'krypton-dark (built-in) · app theme unavailable';
+const THEME_URL = '/genui-gallery/theme.json';
 const EXAMPLE_BY_NAME = new Map(EXAMPLES.map((example) => [example.component, example]));
 
 const GROUPS: readonly { readonly group: string; readonly entries: readonly Entry[] }[] = (() => {
@@ -233,7 +235,7 @@ export function GenuiPage(): JSX.Element {
     let live = true;
     // The catalog's scheme rules read this before theme.json lands, as the old page's markup set it.
     document.documentElement.dataset.themeScheme ??= 'dark';
-    void applyKryptonTheme()
+    void applyKryptonTheme(THEME_URL)
       .catch(() => THEME_FALLBACK)
       .then((text) => {
         if (!live) return;
@@ -262,7 +264,7 @@ export function GenuiPage(): JSX.Element {
     // is looked at; the custom properties repaint the mounted preview with no rebuild.
     let live = true;
     const onFocus = (): void => {
-      void applyKryptonTheme()
+      void applyKryptonTheme(THEME_URL)
         .then((text) => {
           if (live) setThemeLabel(text);
         })

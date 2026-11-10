@@ -30,7 +30,8 @@ export interface TranscriptProps {
   readonly resolveLocalImages: boolean;
 }
 
-export { rowKindFor } from './rows';
+export { ROW_KINDS, rowKindFor } from './rows';
+export type { RowKind } from './rows';
 
 /** The rows that render for a lane: the tail window, plus the indicator. */
 export function tailWindow(lane: HarnessLane): {

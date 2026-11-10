@@ -3795,27 +3795,45 @@ async fn handle_gallery() -> Response {
     app_page_response(AppPage::new("gallery", "Artifacts", Scheme::Dark))
 }
 
-/// The gallery's own CSP (spec 313): self-hosted script, inline styles for the
-/// catalog renderers, same-origin fetch for `theme.json`. Debug builds load the
-/// entry and its imports from the Vite dev server and keep its HMR socket.
-const GENUI_GALLERY_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'";
-const GENUI_GALLERY_DEV_CSP: &str = "default-src 'none'; script-src 'self' http://localhost:1420; style-src 'self' 'unsafe-inline' http://localhost:1420; img-src 'self' data: http://localhost:1420; font-src 'self' data: http://localhost:1420; connect-src 'self' http://localhost:1420 ws://localhost:1420; object-src 'none'; base-uri 'none'";
+/// The component galleries' CSP (specs 313, 381): self-hosted script, inline
+/// styles for the catalog renderers and the transcript rows, `data:` images,
+/// same-origin fetch for `theme.json`. Debug builds load the entry and its
+/// imports from the Vite dev server and keep its HMR socket.
+const COMPONENT_GALLERY_CSP: &str = "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'";
+const COMPONENT_GALLERY_CSP_DEV: &str = "default-src 'none'; script-src 'self' http://localhost:1420; style-src 'self' 'unsafe-inline' http://localhost:1420; img-src 'self' data: http://localhost:1420; font-src 'self' data: http://localhost:1420; connect-src 'self' http://localhost:1420 ws://localhost:1420; object-src 'none'; base-uri 'none'";
+
+fn component_gallery_csp() -> &'static str {
+    if cfg!(debug_assertions) {
+        COMPONENT_GALLERY_CSP_DEV
+    } else {
+        COMPONENT_GALLERY_CSP
+    }
+}
 
 /// GET /genui-gallery — every GenUI component, live, through the app's own
 /// compiler and renderer (spec 313; a loopback app page since spec 341).
 async fn handle_genui_gallery() -> Response {
-    let csp = if cfg!(debug_assertions) {
-        GENUI_GALLERY_DEV_CSP
-    } else {
-        GENUI_GALLERY_CSP
-    };
-    app_page_response(AppPage::new("genui", "GenUI components", Scheme::Dark).with_csp(csp))
+    app_page_response(
+        AppPage::new("genui", "GenUI components", Scheme::Dark).with_csp(component_gallery_csp()),
+    )
 }
 
-/// GET /genui-gallery/theme.json — the app's resolved theme plus the configured
-/// font, so the browser gallery paints the catalog with exactly the tokens the
-/// Krypton window uses (spec 313 rev 3). Read-only; no lane or project data.
-async fn handle_genui_gallery_theme(AxumState(state): AxumState<Arc<HookServerState>>) -> Response {
+/// GET /harness-gallery — every harness row that paints agent output, in all
+/// its named states, through the production item builders (spec 381).
+async fn handle_harness_gallery() -> Response {
+    app_page_response(
+        AppPage::new("harness", "Harness components", Scheme::Dark)
+            .with_csp(component_gallery_csp()),
+    )
+}
+
+/// GET /genui-gallery/theme.json and /harness-gallery/theme.json — the app's
+/// resolved theme plus the configured font, so a browser gallery paints with
+/// exactly the tokens the Krypton window uses (spec 313 rev 3, spec 381).
+/// Read-only; no lane or project data.
+async fn handle_component_gallery_theme(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+) -> Response {
     let app = &state.app_handle;
     let config = app.state::<Arc<std::sync::RwLock<crate::config::KryptonConfig>>>();
     let engine = app.state::<Arc<crate::theme::ThemeEngine>>();
@@ -10349,7 +10367,12 @@ pub fn start(
                 .route("/genui-gallery", get(handle_genui_gallery))
                 .route(
                     "/genui-gallery/theme.json",
-                    get(handle_genui_gallery_theme),
+                    get(handle_component_gallery_theme),
+                )
+                .route("/harness-gallery", get(handle_harness_gallery))
+                .route(
+                    "/harness-gallery/theme.json",
+                    get(handle_component_gallery_theme),
                 )
                 .route("/artifacts", get(handle_artifacts))
                 .route("/timeline", get(handle_timeline))
@@ -11497,6 +11520,35 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    #[tokio::test]
+    async fn component_galleries_serve_their_entry_under_the_gallery_csp() {
+        for (response, entry) in [
+            (handle_genui_gallery().await, "genui"),
+            (handle_harness_gallery().await, "harness"),
+        ] {
+            assert_eq!(response.status(), StatusCode::OK, "{entry}");
+            assert_eq!(
+                response
+                    .headers()
+                    .get(header::CONTENT_SECURITY_POLICY)
+                    .and_then(|v| v.to_str().ok()),
+                Some(component_gallery_csp()),
+                "{entry}"
+            );
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .expect("page body should read");
+            let html = String::from_utf8(bytes.to_vec()).expect("page is utf-8");
+            assert!(
+                html.contains(&format!("data-surface=\"{entry}\"")),
+                "{entry}"
+            );
+            assert!(html.contains(&format!("/app/assets/{entry}.js")), "{entry}");
+        }
+        // Rows paint `data:` images only; the gallery never loads remote media.
+        assert!(COMPONENT_GALLERY_CSP.contains("img-src 'self' data:;"));
+    }
+
     #[test]
     fn artifact_routes_do_not_conflict() {
         // axum/matchit panics at `.route()` time on a path conflict. The three
@@ -11523,6 +11575,8 @@ mod tests {
             .route("/gallery", get(ok))
             .route("/genui-gallery", get(ok))
             .route("/genui-gallery/theme.json", get(ok))
+            .route("/harness-gallery", get(ok))
+            .route("/harness-gallery/theme.json", get(ok))
             .route("/artifacts", get(ok))
             .route("/timeline", get(ok))
             .route("/timeline.json", get(ok))

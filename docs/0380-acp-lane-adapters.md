@@ -66,7 +66,7 @@ Add one adapter stage at the point every lane already passes through: `AcpClient
 | `src/acp/adapters/{claude,codex,grok,omp,fx}.ts` (new) | Vendor overrides moved from the modules listed in Research |
 | `src/acp/adapters/registry.ts` (new) | backend id → adapter; unknown ids get `generic` |
 | `src/acp/adapters/fixtures/<backend>/*.jsonl`, `adapters.contract.test.ts`, `wire-boundary.test.ts` (new) | Captured wire, the cross-backend contract, the boundary guard |
-| `src/acp/harness-transcript-items.ts` (new) | Pure item builders `toolPayloadFromView` and `permissionPayloadFromRequest`, moved out of `AcpHarnessView` (`buildToolPayload`, `describePermission`) and shared with the spec 381 gallery. Question rows already use the pure `createAskUserCardState` / `payloadFromCard` (`ask-user-question.ts`) |
+| `src/acp/harness-transcript-items.ts` (new) | Pure item builders `toolPayloadFromView` and `permissionPayloadFromRequest` (plus the rows' text lines `toolItemText` / `permissionItemText`, spec 381), moved out of `AcpHarnessView` (`buildToolPayload`, `describePermission`) and shared with the spec 381 gallery. Question rows already use the pure `createAskUserCardState` / `payloadFromCard` (`ask-user-question.ts`) |
 | `src/acp/client.ts` | `handleRaw` and the init/session/prompt methods go through the decoder; `onEvent` emits `LaneEvent` |
 | `src/acp/types.ts` | `AcpEvent` replaced by `LaneEvent`; wire types (`ToolCall`, `ToolCallUpdate`, `ToolCallContent`) imported only by adapters |
 | `src/acp/harness-tool-render.ts`, `harness-tool-retention.ts`, `harness-subagents.ts`, `harness-execution.ts`, `harness-guardian-review.ts`, `harness-background-tasks.ts`, `harness-images.ts`, `harness-permission-scan.ts`, `ask-user-question.ts`, `acp-harness-memory.ts`, `lane-peek.ts`, `harness-lane-chrome.ts` | Wire readers move into adapters; what remains takes `ToolView` / `LaneSession` |
@@ -342,9 +342,10 @@ Plain harness tool names that carry their server only in `rawInput` now prompt. 
 - **Follow-up (2026-11-11): Claude's `Exit code N` line.**
   - `LaneAdapter.exitLine` is a pattern for a first output line that restates the exit code. The Claude adapter sets it to `Exit code N`.
   - `generic.ts` `dropExitLine` removes that line from every section, terminal output or `content` text, when N is the exit the row shows. It runs before the line cap, so the well still shows its full line count.
-  - The line stays while the exit is unknown, and when it names another code, because the well is then the only place that code appears. A `false` whose output was only that line shows an empty well, as on Codex.
+  - The line stays while the exit is unknown, and when it names another code, because the well is then the only place that code appears. A `false` whose output was only that line has no printable output.
   - Tests in `adapters/tool.test.ts` cover terminal output, `content` text, the unknown and mismatched exits, a later line, a Codex lane, and the kept `sections` reference.
   - Seen in a `tauri dev` build on a Claude lane: `echo boom; exit 3` shows `EXIT 3` with only `boom` in the well.
+  - **Display update:** exit status now appears only in the tool head: success uses the LED without `exit 0` text, and failure keeps `exit N`. The body no longer repeats an exit readout; the captures above describe the earlier presentation.
 
 ### Phase 4a — Implemented (2026-11-11)
 

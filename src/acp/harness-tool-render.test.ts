@@ -24,7 +24,6 @@ import {
   parseGrepDump,
   parseGrepLine,
   renderGrepSection,
-  shouldRenderExecuteExit,
   stripGrokReadLineAnchors,
   toolChipKind,
   toolSectionTone,
@@ -462,33 +461,6 @@ describe('peelExitPrefix / extractToolExitCode', () => {
     expect(extractToolExitCode({ output: 'x' })).toBeNull();
     expect(extractToolExit({ exit_code: 0 })).toBe('');
     expect(extractToolExit({ exit_code: 2 })).toBe('exit 2');
-  });
-});
-
-describe('execute exit badge (spec 235)', () => {
-  it('leaves a non-execute dump unbadged even when it carries an exit code', () => {
-    expect(shouldRenderExecuteExit({ kind: 'search', exitCode: 1 })).toBe(false);
-    expect(shouldRenderExecuteExit({ kind: 'read', exitCode: 0 })).toBe(false);
-    expect(shouldRenderExecuteExit({ kind: 'execute', exitCode: 1 })).toBe(true);
-    expect(shouldRenderExecuteExit({ kind: 'execute', exitCode: null })).toBe(false);
-  });
-
-  it('does not frame the number as a kind chip; fail keeps error color', () => {
-    const css = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), 'components/tool-row/tool-row.css'),
-      'utf8',
-    );
-    const code = css.match(/\.acp-harness__tool-exit-code\s*\{[^}]*\}/)?.[0] ?? '';
-    const fail = css.match(
-      /\.acp-harness__tool-exit\[data-status="fail"\] \.acp-harness__tool-exit-code\s*\{[^}]*\}/,
-    )?.[0] ?? '';
-    const sectionLabel = css.match(/\.acp-harness__tool-section-label\s*\{[^}]*\}/)?.[0] ?? '';
-    expect(code).not.toMatch(/border:/);
-    expect(code).not.toMatch(/font-weight:\s*700/);
-    expect(code).toMatch(/font-variant-numeric:\s*tabular-nums/);
-    expect(code).not.toMatch(/--agent-accent/);
-    expect(fail).toMatch(/--agent-error/);
-    expect(sectionLabel).toMatch(/display:\s*flex/);
   });
 });
 

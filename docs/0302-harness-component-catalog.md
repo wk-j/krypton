@@ -13,6 +13,10 @@
 > `ReviewThreadDialog` / **Start Review** is a separate feature and remains.
 > Rendered sheets preserve the original migration illustrations, not the current registry;
 > the Layer 7 sheet's TimelineCapture illustration is retired.
+>
+> **Live previews:** the transcript rows that paint agent output are on the loopback page
+> `/harness-gallery` ([381](./0381-harness-component-gallery.md)), each in all its named states,
+> built from canonical lane data through the production item builders.
 
 ## How to read an entry
 
@@ -581,7 +585,7 @@ user · voice   open the model picker
 
 ## 3.4 `ToolRow` L
 
-**Props** the shared `RowProps` (`{ item, … }`, no tool-only field — every caller that holds a `TranscriptRow` may pass the same props, including late image/Git patches and seals) · Generic **Deps** `[statusBucket, kind, subject, command, result, exitCode, sections, diffs, subagents, expandedKey, jobs]`, where `expandedKey` is read from `item.subagentExpanded` and `jobs` is spec 370's `wait` snapshot.
+**Props** the shared `RowProps` (`{ item, … }`, no tool-only field — every caller that holds a `TranscriptRow` may pass the same props, including late image/Git patches and seals) · Generic **Deps** `[statusBucket, kind, subject, command, result, sections, diffs, subagents, expandedKey, jobs]`, where `expandedKey` is read from `item.subagentExpanded` and `jobs` is spec 370's `wait` snapshot.
 Spec-315 execution rows instead compare `[statusBucket, title, language, cellStatus, durationMs, detached, diffs]`;
 both include the image-strip signature and streaming flag. Output and Inspector presentation state are not structural row deps.
 
@@ -589,7 +593,6 @@ both include the image-strip signature and streaming flag. Output and Inspector 
 
 ```
 tool  ⠙  execute  npm run check                                    1.4s
-         exit  0
          ╭────────────────────────────────────────────────────╮
          │ stdout                                             │
          │ > tsc --noEmit                                     │
@@ -598,8 +601,9 @@ tool  ✓  edit     src/acp/list.ts                     +42 −8    0.3s
 ```
 
 **Emits** `.acp-harness__tool-head > -glyph(Spinner) + -kind[data-kind] + -subject + -result + -timer`,
-then `.acp-harness__tool-output > -section > -label + <pre> -text`, `.acp-harness__tool-exit[data-status]`,
+then `.acp-harness__tool-output > -section > -label + <pre> -text`,
 `.acp-harness__tool-diffs` (`DiffBlock`), `.acp-harness__tool-rich--diffstat|--unidiff|--gitstatus`.
+Exit status appears only in the head: success uses the status LED with no `exit 0` text, and non-zero codes keep the compact `exit N` result. No exit readout is repeated in the output body.
 
 **Live contract** — generic `appendChunk()` updates only `.acp-harness__tool-output`; recognized executions update their owning `ExecutionCard`. Render precedence is artifact redaction → subagent card → execution → job list (spec 370) → generic. Diffs and the base row's image strip remain available. A subagent card whose agents still run in the background (spec 370) stays live after the row seals and is sealed by the row once it settles or turns `last reported`.
 **Replaces** `harness-tool-render.ts:551-673,776-860,862-1060` and `patchStreamingToolBody` `:635-664`

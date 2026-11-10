@@ -1,0 +1,162 @@
+/* Spec 381 — the harness component gallery surface. The rail, search, detail
+ * and pager are loopback chrome (tokens from base.css), as in the GenUI
+ * gallery (spec 313). The stage is the one exception on the page: it
+ * reproduces the Krypton window a transcript row lives in, painted with the
+ * app's own theme. */
+
+/* The rows are authored against the app's global reset (src/styles/base.css):
+ * border-box, no UA margins or padding. The loopback reset ranks below every
+ * `krypton.*` layer and does not zero margins or padding, so the same markup
+ * would measure differently here (GenUI gallery rev 4). Scoped to the stage,
+ * in `lb.reset` so gallery spacing in `lb.surface` and the production
+ * component rules both rank above it. */
+@layer lb.reset {
+  .lb-harness__stage, .lb-harness__stage *, .lb-harness__stage *::before,
+  .lb-harness__stage *::after { margin: 0; padding: 0; box-sizing: border-box; }
+}
+
+/* The shell rules in harness-shared.css size `.acp-harness` and its lane body
+ * to a lane box that scrolls (height 100%, a flex-filling body). A block on the
+ * stage is as tall as its rows instead. Same layer, higher specificity. */
+@layer krypton.base {
+  .lb-harness__stage .acp-harness { height: auto; overflow: visible; background: none; }
+  .lb-harness__stage .acp-harness__lane-body { flex: none; overflow: visible; padding: 6px 12px 10px;
+    box-shadow: none; }
+
+  /* The key cap rule from src/styles/kbd.css (spec 369), scoped: that sheet
+   * styles bare `kbd`, which would restyle every loopback page's keys in the
+   * merged app.css. Keep the two in step. */
+  .lb-harness__stage kbd {
+    display: inline-block;
+    padding: 0 4px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 4px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--mat-lit);
+    font: inherit;
+    font-size: 0.92em;
+    font-style: normal;
+    line-height: 1.1;
+    letter-spacing: normal;
+    text-transform: none;
+    text-shadow: var(--mat-print);
+    white-space: nowrap;
+  }
+  .lb-harness__stage .krypton-key-hint { white-space: nowrap; }
+}
+
+@layer lb.surface {
+  /* Fallback only. `applyKryptonTheme('/harness-gallery/theme.json')` writes
+   * the app's real `themeCssProperties()` onto :root inline, which wins over
+   * these. They are the built-in krypton-dark values and agent.css's :root
+   * palette, so a page that cannot reach the route still paints in Krypton's
+   * default palette. Scoped to this surface: release builds merge every
+   * surface's sheet into one `app.css`. */
+  html[data-surface='harness'] {
+    --krypton-fg: #b0c4d8;
+    --krypton-fg-rgb: 176, 196, 216;
+    --krypton-bg: rgba(10, 10, 15, 0.5);
+    --krypton-accent: #0cf;
+    --krypton-accent-rgb: 0, 204, 255;
+    --krypton-window-accent: #0cf;
+    --krypton-window-accent-rgb: 0, 204, 255;
+    --krypton-success-rgb: 51, 221, 255;
+    --krypton-warning-rgb: 232, 197, 71;
+    --krypton-danger-rgb: 255, 58, 92;
+    --krypton-info-rgb: 74, 158, 255;
+    --krypton-special-rgb: 199, 125, 255;
+    --krypton-border-width: 1px;
+    --krypton-border-radius: 8px;
+    --krypton-backdrop-color: rgba(6, 10, 18, 0.5);
+    --krypton-font-family: 'Mononoki Nerd Font Mono', 'Fira Code', 'Cascadia Code', monospace;
+    --krypton-font-size: 14px;
+    --krypton-chrome-font-size: 11px;
+    --krypton-line-height: 1.2;
+    --krypton-content-line-height: 1.2;
+    --agent-font: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
+    --agent-text: #e8cfa4;
+    --agent-surface-solid: rgba(8, 12, 22, 0.96);
+    --agent-bright: #ffd880;
+    --agent-green: #8bc34a;
+    --agent-green-rgb: 139, 195, 74;
+    --agent-red: #ff6e40;
+    --agent-red-rgb: 255, 110, 64;
+    --agent-magenta: #e091c0;
+    --agent-gold: #ffd54f;
+    --agent-gold-rgb: 255, 213, 79;
+    --agent-cyan: #4dd0e1;
+    --agent-cyan-rgb: 77, 208, 225;
+    --agent-blue: #64b5f6;
+  }
+
+  .lb-harness__layout { --lb-rail: 240px; flex: 1 1 auto; grid-template-rows: minmax(0, 1fr); }
+
+  /* ── index rail ───────────────────────────────────────────────────────── */
+  .lb-harness__side { display: flex; flex-direction: column; min-height: 0; padding-top: 6px;
+    border-right: 1px solid var(--border); }
+  .lb-harness__theme { padding: 0 12px 8px 0; color: var(--muted); font-family: var(--mono);
+    font-size: 11px; overflow-wrap: anywhere; }
+  .lb-harness__search { padding: 0 12px 12px 0; }
+  .lb-harness__nav { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 10px 14px 0; }
+  .lb-harness__nav-group + .lb-harness__nav-group { margin-top: 14px; }
+  .lb-harness__nav-heading { position: sticky; top: 0; z-index: 1; margin: 0 0 4px; padding: 4px 6px 5px;
+    border-bottom: 1px solid var(--border); background: var(--bg); color: var(--muted);
+    font-family: var(--mono); font-size: 11px; font-weight: 600; }
+  .lb-harness__nav-item { display: block; padding: 4px 8px; border-radius: 6px; color: var(--fg);
+    font-family: var(--mono); font-size: 12px; text-decoration: none; scroll-margin: 30px 0 14px; }
+  .lb-harness__nav-item:hover { background: var(--tint); color: var(--accent); }
+  .lb-harness__nav-item--current { background: var(--tint); color: var(--accent); font-weight: 700; }
+  .lb-harness__empty { margin: 0; padding: 0 12px 10px 0; color: var(--muted); font-size: 12px; }
+  .lb-harness__side .lb-hints { margin-top: 0; padding: 9px 12px 0 0; font-size: 10px; }
+
+  /* ── one entry ────────────────────────────────────────────────────────── */
+  .lb-harness__main { min-width: 0; min-height: 0; overflow: auto; }
+  .lb-harness__detail, .lb-harness__pager, .lb-harness__foot { max-width: 920px; margin: 0 auto;
+    padding-inline: 12px; }
+  .lb-harness__view { padding: 10px 0 4px; }
+  .lb-harness__crumb { color: var(--muted); font-family: var(--mono); font-size: 11px; }
+  .lb-harness__view-title { display: flex; align-items: baseline; gap: 14px; margin-top: 5px; }
+  .lb-harness__view-name { margin: 0; font: 700 20px/1.3 var(--mono); color: var(--fg); }
+  .lb-harness__view-actions { display: flex; gap: 6px; margin-left: auto; }
+  .lb-harness__view-summary { margin: 6px 0 0; color: var(--text); font-size: 13px; }
+  .lb-harness__components { margin: 6px 0 0; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+  .lb-harness__label { margin: 22px 0 10px; padding-bottom: 5px; border-bottom: 1px solid var(--border); }
+  /* The Krypton window a row lives in (DESIGN.md "Terminal window", spec 366):
+   * the screen fill inside a 1px key-edge bezel, the bevel on its lit top edge
+   * and the one cast shadow. The opaque base under the translucent screen
+   * stands in for the user's desktop, which no browser page can see. The
+   * typography and aliases are the ones `.acp-harness` declares in-app. */
+  .lb-harness__stage { padding: 6px 4px 10px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: linear-gradient(var(--mat-screen, rgba(6, 10, 18, .5)),
+      var(--mat-screen, rgba(6, 10, 18, .5))), #0b0d12;
+    box-shadow: inset 0 1px 0 var(--mat-bevel-hi), var(--mat-cast); }
+  .lb-harness__block + .lb-harness__block { margin-top: 18px; }
+  /* State titles belong to the loopback gallery, not the Krypton preview. */
+  .lb-harness__caption { margin: 0 0 6px; color: var(--accent);
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    letter-spacing: 0.04em; text-transform: uppercase; }
+  .lb-harness__source { max-height: 300px; margin: 6px 0 0; font-size: 11px; line-height: 1.6; }
+  .lb-harness__pager { display: flex; gap: 10px; margin-top: 26px; padding-top: 12px;
+    border-top: 1px solid var(--border); }
+  .lb-harness__pager:empty { display: none; }
+  .lb-harness__pager-link { display: flex; flex-direction: column; gap: 2px; flex: 0 1 auto;
+    padding: 7px 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--card);
+    color: var(--fg); text-decoration: none; }
+  .lb-harness__pager-link--next { margin-left: auto; text-align: right; }
+  .lb-harness__pager-link:hover { border-color: var(--accent); color: var(--accent); }
+  .lb-harness__pager-dir { color: var(--muted); font-family: var(--mono); font-size: 10px; }
+  .lb-harness__pager-name { font: 700 12px/1.3 var(--mono); }
+  .lb-harness__foot { padding-block: 16px 26px; color: var(--muted); font-family: var(--mono); font-size: 10px; }
+
+  @media (max-width: 760px) {
+    .lb-harness { height: auto; overflow: visible; }
+    .lb-harness__side { border-right: 0; border-bottom: 1px solid var(--border); }
+    .lb-harness__nav { max-height: 220px; }
+    .lb-harness__side .lb-hints { display: none; }
+    .lb-harness__view-title { flex-wrap: wrap; }
+    .lb-harness__view-actions { margin-left: 0; }
+  }
+}

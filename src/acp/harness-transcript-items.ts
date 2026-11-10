@@ -47,6 +47,12 @@ export function toolPayloadFromView(
   };
 }
 
+/** The tool row's portable text line (Live Assist, peek); the row itself paints the payload. */
+export function toolItemText(tool: ToolPayload): string {
+  if (tool.guardianReview) return `Guardian review: ${tool.guardianReview.outcome} — ${tool.guardianReview.action}`;
+  return tool.subject ? `${tool.glyph} ${tool.kind} ${tool.subject}` : `${tool.glyph} ${tool.kind}`;
+}
+
 export interface PermissionExtras {
   /** `· also <lane> <age> ago` when another lane touched the subject recently. */
   readonly suffix?: string;
@@ -77,4 +83,9 @@ export function permissionPayloadFromRequest(
     })),
     decision: 'pending',
   };
+}
+
+/** The permission row's portable text line. */
+export function permissionItemText(payload: PermissionPayload): string {
+  return payload.suffix ? `${payload.kind} ${payload.subject} ${payload.suffix}` : `${payload.kind} ${payload.subject}`;
 }
