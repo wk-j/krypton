@@ -66,7 +66,7 @@ Add one adapter stage at the point every lane already passes through: `AcpClient
 | `src/acp/adapters/{claude,codex,grok,omp,fx}.ts` (new) | Vendor overrides moved from the modules listed in Research |
 | `src/acp/adapters/registry.ts` (new) | backend id → adapter; unknown ids get `generic` |
 | `src/acp/adapters/fixtures/<backend>/*.jsonl`, `adapters.contract.test.ts`, `wire-boundary.test.ts` (new) | Captured wire, the cross-backend contract, the boundary guard |
-| `src/acp/harness-transcript-items.ts` (new) | Pure item builders `toolPayloadFromView`, `permissionItemFromEvent`, `questionItemFromEvent`, moved out of `AcpHarnessView` (`buildToolPayload`, `describePermission`, `addAskUser`) and shared with the spec 381 gallery |
+| `src/acp/harness-transcript-items.ts` (new) | Pure item builders `toolPayloadFromView` and `permissionPayloadFromRequest`, moved out of `AcpHarnessView` (`buildToolPayload`, `describePermission`) and shared with the spec 381 gallery. Question rows already use the pure `createAskUserCardState` / `payloadFromCard` (`ask-user-question.ts`) |
 | `src/acp/client.ts` | `handleRaw` and the init/session/prompt methods go through the decoder; `onEvent` emits `LaneEvent` |
 | `src/acp/types.ts` | `AcpEvent` replaced by `LaneEvent`; wire types (`ToolCall`, `ToolCallUpdate`, `ToolCallContent`) imported only by adapters |
 | `src/acp/harness-tool-render.ts`, `harness-tool-retention.ts`, `harness-subagents.ts`, `harness-execution.ts`, `harness-guardian-review.ts`, `harness-background-tasks.ts`, `harness-images.ts`, `harness-permission-scan.ts`, `ask-user-question.ts`, `acp-harness-memory.ts`, `lane-peek.ts`, `harness-lane-chrome.ts` | Wire readers move into adapters; what remains takes `ToolView` / `LaneSession` |
@@ -202,9 +202,11 @@ export function createLaneDecoder(backendId: string): LaneDecoder;
 4. Each listener gets the LaneEvent: AcpHarnessView.onLaneEvent, inline AI,
    commit explainer, assist, headless fence.
 5. onLaneEvent → renderTool(lane, view) builds the row payload with the pure
-   toolPayloadFromView(view, timing); permission and question rows use the pure
-   permissionItemFromEvent / questionItemFromEvent. Spec 381's gallery calls the
-   same functions, so it shows exactly what a lane shows.
+   toolPayloadFromView(view, timing); permission rows use the pure
+   permissionPayloadFromRequest(request, extras), and question rows the pure
+   payloadFromCard(requestId, questions, createAskUserCardState(questions), wire).
+   Spec 381's gallery calls the same functions, so it shows exactly what a lane
+   shows.
    publishStream sends the same LaneEvent to control SSE under its existing
    kind (`tool_call` / `tool_call_update` from `phase`), and Telegram reads `view`.
 6. initialize / session/new|load|resume / prompt results go through
