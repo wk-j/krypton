@@ -515,8 +515,8 @@ perm     <body>
 `.acp-harness__msg-label` + `.acp-harness__msg-body` + optional image strip.
 
 Spec 379 adds `data-source-connector` (`tool`, `guard`, `agent`, `user`, or `fs`) on eligible rows.
-The first row in a consecutive same-source run keeps its label. CSS makes later labels transparent
-and draws a neutral 1px line in their existing label gutter; label text and row nodes remain intact.
+The first row in a consecutive same-source run keeps its label and starts an etched groove beneath it when a matching row follows. CSS makes later labels transparent
+and connects their gutter segments using `--mat-groove-lo/hi` (1px dark cut + 1px light lip, at 65% opacity); source label ink, label text and row nodes remain intact.
 Thought, permission, question, lane-mail, failed file activity, provider-error and other special rows
 break a run. At a clipped tail boundary the first visible row shows its label without repainting it.
 

@@ -121,24 +121,21 @@
   margin-top: 0;
 }
 
-/* The key glyph is a key cap. 6px corners: a cap one text line tall reads as
-   a capsule at 8px (DESIGN.md "Parts", deviation noted). */
+/* The key glyph is a flat keyboard label printed on the plate, not a key cap:
+   nothing in the popup is pressable, so no raised key face may suggest a
+   button (DESIGN.md "Surfaces"). It is set at the label's size, so a lone
+   `-` or `=` stays findable without a cap around it, and in brighter ink
+   (`--krypton-ink-2` over the label's `-3`) so it stays the column the eye
+   scans. 700 only shows where the font has a bold face; the ink does the
+   work. No border, fill, shadow or text-shadow. */
 .krypton-whichkey__key {
-  box-sizing: border-box;
-  min-width: 28px;
-  padding: 1px 6px;
-  border: 1px solid var(--mat-key-edge);
-  border-radius: 6px;
-  background: var(--mat-key);
-  box-shadow: var(--mat-key-raise);
   font-family: var(--krypton-font-family, 'Mononoki Nerd Font Mono', 'JetBrains Mono', monospace);
-  font-size: var(--krypton-chrome-font-size, 11px);
-  font-weight: 600;
+  font-size: var(--krypton-font-size, 13px);
+  font-weight: 700;
   letter-spacing: 0.04em;
   line-height: 1.4;
   color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
-  text-shadow: var(--mat-print);
-  text-align: center;
+  text-align: left;
   white-space: nowrap;
 }
 
@@ -164,8 +161,8 @@
   color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.66));
 }
 
-/* An important entry is backlit: its cap legend and label take the lit
-   amber. No row tint or gradient — the cap carries it. */
+/* An important entry is lit: its key label and label take the lit amber.
+   No row tint or gradient — the ink carries it. */
 .krypton-whichkey__entry--important .krypton-whichkey__key {
   color: var(--mat-lit);
 }

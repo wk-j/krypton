@@ -4,8 +4,8 @@
 > Date: 2026-08-24
 > Milestone: visual chrome
 > Related: [121](./0121-workspace-status-bar.md), [235](./0235-harness-tool-output-palette.md)
-> Spec 350 (2026-11-01): the footer hint is removed, with its `<kbd>` markup, `parseHint` / `fillHint` and the `__hint` CSS. The other colours stand.
-> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): footer is a plate strip; segment glows removed.
+> Spec 350 (2026-11-01): the footer hint is removed, with its `<kbd>` markup, `parseHint` / `fillHint` and the `__hint` CSS.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md (Krypton Console): footer is a plate strip; segment glows removed. DESIGN.md 2.3.6 replaces the footer's green Git text with a neutral-ink recessed readout. Composer-meta styling is unchanged by this footer-only amendment.
 
 ## Problem
 
@@ -23,11 +23,13 @@ Keep chrome receding. Stop using cyan as body text.
 1. **Default type is phosphor** (`--krypton-fg` / `--krypton-fg-rgb`).
    Priority still uses opacity (P0 0.88, P1 0.72, P2 0.52, P3 0.40).
 2. **Hue is kind, not priority.** Cyan is reserved for non-normal mode and
-   live throughput. Git is success. Dirty stays the warning dot. Music flags
-   stay warning. Hint keys wrap in `<kbd>`.
-3. **Composer-meta branch follows git** so the two git voices stay one color.
+   live throughput. The footer Git ref uses neutral ink; dirty stays the warning dot.
+   Music flags stay warning. Hint keys were removed by spec 350.
+3. **Material carries role.** The footer branch is data in a small well, not a success lamp.
+   Composer-meta is a separate surface; this footer amendment does not change it.
 
-No new tokens. No pills on cwd/git. No side-stripe. No slab behind the rail.
+No new tokens. The branch uses one `--mat-well` / `--mat-well-shadow` readout with 8px radius
+and 2px × 6px padding. CWD stays flat. No side-stripe or extra slab behind the rail.
 
 ## Research
 
@@ -51,8 +53,7 @@ No new tokens. No pills on cwd/git. No side-stripe. No slab behind the rail.
   "boring blue."
 - *A different neon per segment* — spectacle; PRODUCT.md chrome recedes;
   colorize product register is Restrained.
-- *Filled chips on cwd/git* — nested containers; mode already has the one chip.
-- *Leave composer branch cyan* — two git voices after the footer change.
+- *Nested chips around cwd/git* — cwd stays flat; git gets one well, not another wrapper or status chip.
 
 ## Prior Art
 
@@ -90,7 +91,7 @@ stays the mode instrument, not the alphabet.
 | Mode other | accent | Existing chip; the one cyan instrument |
 | Role / title | fg 0.88 | Identity, not status |
 | CWD | fg 0.72 | Location |
-| Git ref | success rgb 0.92 | Clean branch |
+| Git ref | `--krypton-ink-2` | Recessed well; original ref case, not a success state |
 | Git dirty dot | warning rgb | Unchanged |
 | Counts / process | fg 0.52 | P2 |
 | Throughput | accent 0.70 | Live data; cyan earned |
@@ -117,20 +118,24 @@ Removed by spec 350.
   color: rgba(var(--krypton-fg-rgb), 0.88);
 }
 .krypton-workspace-footer__segment--git {
-  color: rgb(var(--krypton-success-rgb, 57, 255, 127));
-  text-shadow: none;
+  color: var(--krypton-ink-2);
+  padding: 2px 6px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  line-height: 1.4;
 }
 ```
 
-Light scheme deletes the accent-mix rules for default / p0 / p2 / p3 / git
-so dark kind colors flow. Keep ink as the footer `color` fallback.
+Light and dark schemes use the same readout recipe through shared ink and material tokens.
+In detail density an 8px gap replaces the separator before git, keeping grooves outside the well.
 
 ## Edge Cases
 
-- `--krypton-success-rgb` on krypton-light / legacy-radiance: same token,
-  different hue; do not hardcode `#39ff7f`.
+- Git uses shared ink and well tokens on krypton-light, krypton-dark and custom themes;
+  do not hardcode a green branch colour.
 - Reduced motion: none. This is static color.
-- Dirty git: green ref + gold dot. Color is not the only signal (glyph +
+- Dirty git: neutral ref + amber dot. Color is not the only signal (glyph +
   `aria-label` already say uncommitted).
 - Compact density / music-on: same colors; hiding rules unchanged.
 

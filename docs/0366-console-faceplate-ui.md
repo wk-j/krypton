@@ -134,7 +134,7 @@ same element. The light set is the dock's aluminium set with the plate stops at 
 | Plate | `--mat-brush` + `--mat-plate`, 1px `--mat-key-edge`, inner `--mat-bevel-hi` | Titlebar, tab bar, footers, panel heads, sidebars, overlay panels, composer |
 | Engraving | `--mat-silk` or ink + `--mat-engrave` text-shadow, uppercase chrome size | Titles, section and column headings, key legends on the plate |
 | Well | `--mat-well` / `--mat-well-fill` + `--mat-well-shadow` | Terminal and lane screens, inputs, lists, readouts, code blocks in chrome |
-| Key | `--mat-key` + `--mat-key-raise`; `:active` / latched `--mat-key-down` + `--mat-key-sunk` | Buttons, view toggles, which-key and hint caps, tabs (selector keys) |
+| Key | `--mat-key` + `--mat-key-raise`; `:active` / latched `--mat-key-down` + `--mat-key-sunk` | Buttons, view toggles, hint caps, tabs (selector keys); which-key keys are flat printed labels, not keys (DESIGN.md 2.3.7) |
 | Lamp | LED (`--mat-lens-*`), or a borderless lamp window (LED before its legend, tinted glass when lit; DESIGN.md 2.3.2). Only the LED glows; label borders stay transparent and wrappers have no shadow | Status dots, status words, verdicts, mode / attention chips, live indicators |
 
 - **Terminal window.** The titlebar, tab bar and footer are plate strips. The body is the screen
@@ -156,8 +156,8 @@ same element. The light set is the dock's aluminium set with the plate stops at 
   a lamp; zen rail = plate column of selector keys with LEDs; composer = plate with the draft line in
   a well; transcript rows are flat text in the lane well with engraved labels; status legends
   (tool kind, permission and question decision, execution state) are flat ink with their status LED
-  before the legend. Adjacent passive rows of the same source show one source label and a neutral
-  connector in later label gutters (spec 379); tool rows add an output well; permission and question
+  before the legend. Adjacent passive rows of the same source show one source label and a neutral etched
+  connector (1px `--mat-groove-lo` cut + 1px `--mat-groove-hi` lip, at 65% opacity), from beneath that label through later gutters (spec 379); tool rows add an output well; permission and question
   options are keys; floating lane cards
   (peek, queue, plan, thought, grammar, heat) are small plates. The right dock column and the shown
   lane's head strip are one plate as well: the column holds its top stop for the strip's height, and

@@ -169,8 +169,8 @@
   color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.4));
 }
 
-/* The track clock is a readout: the figure in a small well. (Center-deck
-   figures stay plain ink: the groove before each would land inside a well.) */
+/* Figures on their own sit in small wells (DESIGN.md "Readouts"). Other
+   center-deck figures stay plain ink so their separators remain outside wells. */
 .krypton-workspace-footer__segment--music-time {
   padding: 2px 5px;
   border-radius: var(--krypton-border-radius, 8px);
@@ -183,10 +183,25 @@
   color: var(--mat-silk);
 }
 
-/* git ref — success phosphor so a branch is a repo state, not more cyan.
-   Dirty stays the warning-tier dot. Matches composer-meta branch (spec 236). */
+/* A branch is a readout, not a success state: neutral ink in a recessed well,
+   with its original case and the warning-tier dirty dot. */
 .krypton-workspace-footer__segment--git {
-  color: rgba(var(--krypton-success-rgb, 57, 255, 127), 0.92);
+  padding: 2px 6px;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: var(--mat-well);
+  box-shadow: var(--mat-well-shadow);
+  color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 176, 196, 216), 0.88));
+  line-height: 1.4;
+}
+
+/* In detail density the well itself separates git from cwd; a groove here
+   would be painted inside the readout. Compact git keeps its original inset. */
+.krypton-workspace-footer__center > .krypton-workspace-footer__segment--git:not(:first-child) {
+  margin-left: 8px;
+}
+
+.krypton-workspace-footer__center > .krypton-workspace-footer__segment--git:not(:first-child)::before {
+  content: none;
 }
 
 /* Telemetry icons — monoline SVGs sized to the text cell and baseline-tuned so

@@ -321,7 +321,7 @@ blur = 0                             # Workspace-level vibrancy blur (px)
 
 ### `[ui]` — UI Element Styles
 
-Styles for overlay UI elements: search bar, mode indicator, and the Quick Terminal. The command palette, which-key popup and hint labels are Krypton Console plates and key caps (`DESIGN.md`); since spec 366 they take no theme keys, and `[ui.command_palette]`, `[ui.which_key]` and `[ui.hints]` in an older theme file are ignored.
+Styles for overlay UI elements: search bar, mode indicator, and the Quick Terminal. The command palette, which-key popup and hint labels are Krypton Console plates, flat printed key labels (which-key) and key caps (`DESIGN.md`); since spec 366 they take no theme keys, and `[ui.command_palette]`, `[ui.which_key]` and `[ui.hints]` in an older theme file are ignored.
 
 #### `[ui.search]`
 

@@ -77,7 +77,7 @@ detail   MODE  cwd · git · title · counts · process · io · % · state · p
                                                               attention  ▲✕✓  RAILS any  ⇄ any+latency  ◷ reviews  ▤ priority  ♪ music
 ```
 
-- **Left zone**: the mode chip. **Center zone**: context segments with the existing middot separators — the git ref alone in compact; in detail cwd and git first, then the rest.
+- **Left zone**: the mode chip. **Center zone**: context segments separated by etched grooves — the git ref alone in compact; in detail cwd and git first, then the rest. DESIGN.md 2.3.6 makes git a neutral-ink recessed well; an 8px gap replaces its preceding separator so no groove sits inside the readout. Branch case, amber dirty dot and the 28px rail height are unchanged.
 - **Right zone order**: attention, program-status, rails, link, reviews, priority, music — demand first, inspect-only last.
 - Density gating is done in JS (builders return `null`, components set `hidden`), not CSS, so a hidden segment never leaves a stray separator. The `--detail` CSS rule is deleted.
 

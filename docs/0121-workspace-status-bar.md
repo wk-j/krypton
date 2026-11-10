@@ -4,7 +4,7 @@
 > Date: 2026-05-26
 > Milestone: M8 — Polish
 > Spec 350 (2026-11-01): compact density is now the git ref, a mode chip only outside Normal, and the right-zone exceptions (attention, program status, Rails findings/faults, backend-link faults, music). Mode `NORMAL`, role/title, cwd, counts, process and activity, a healthy link, quiet Rails states and the review gauges show in detail density only. The contextual hint is removed. Sections below are updated where they describe current behavior.
-> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): footer is a plate strip; sweeps, shimmer and glows removed.
+> Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md (Krypton Console): footer is a plate strip; sweeps, shimmer and glows removed. DESIGN.md 2.3.6 gives the Git branch a neutral-ink recessed well with its existing amber dirty marker.
 
 ## Problem
 
@@ -231,7 +231,7 @@ CSS constraints:
 
 - Reuse the existing footer footprint: `position: fixed; left: 0; right: 0; bottom: 0; height: 28px;`.
 - Does not reserve layout space; it overlays the transparent workspace and uses `pointer-events: none`.
-- Background is `transparent` (same as window titlebar / footer chrome). No overlay-tier slab.
+- Background is the shared plate (`--mat-brush` + `--mat-plate`), with a top seam and inner bevel. No overlay-tier slab.
 - No `backdrop-filter`.
 - Uses BEM classes and existing theme variables.
 - Text is single-line with priority hiding, `min-width: 0`, and `text-overflow: ellipsis`.
@@ -240,7 +240,7 @@ CSS constraints:
 - The footer remains `pointer-events: none` in v1; no click targets are introduced.
 - Segment classes carry priority modifiers such as `.krypton-workspace-footer__segment--p0` through `--p3` so CSS can hide lower-priority content at breakpoints without JS measuring text.
 
-Kind color (spec 236): default type is phosphor (`--krypton-fg-rgb`) at the priority opacity ladder (P0 0.88, P1 0.72, P2 0.52, P3 0.40). Hue is kind, not priority: cyan only for non-normal mode and live throughput; git is `--krypton-success-rgb`; dirty stays the warning dot. Composer-meta branch uses the same git green.
+Kind color (spec 236, amended by DESIGN.md 2.3.6): default type follows the shared ink tiers. The workspace Git branch is neutral `--krypton-ink-2` in a recessed `--mat-well` / `--mat-well-shadow` readout, with 8px radius, 2px × 6px padding and chrome-size type. Preserve ref case and the warning-coloured dirty dot. In detail density its preceding separator is replaced by an 8px gap, outside the well; compact git retains the normal footer inset. Neither density changes the 28px rail height. This footer-only treatment does not change composer-meta branch styling.
 
 ### Motion
 

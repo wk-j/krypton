@@ -1389,17 +1389,35 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
   color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.8));
 }
 
-/* Spec 379 — repeated passive sources share one visible label. Only the new
-   continuation row changes: the earlier sealed row is never repainted. The
-   hairline sits inside the label gutter, not on the row edge. */
-:is(
-  .acp-harness__msg[data-source-connector='tool'] + .acp-harness__msg[data-source-connector='tool'],
-  .acp-harness__msg[data-source-connector='guard'] + .acp-harness__msg[data-source-connector='guard'],
-  .acp-harness__msg[data-source-connector='agent'] + .acp-harness__msg[data-source-connector='agent'],
-  .acp-harness__msg[data-source-connector='user'] + .acp-harness__msg[data-source-connector='user'],
-  .acp-harness__msg[data-source-connector='fs'] + .acp-harness__msg[data-source-connector='fs']
-) {
+/* Spec 379 — repeated passive sources share one visible label. CSS adjacency
+   connects the first label to later rows without changing sealed row DOM.
+   The gutter connector uses the faceplate's etched groove, not source ink. */
+
+.acp-harness__msg[data-source-connector] {
   position: relative;
+}
+
+.acp-harness__msg[data-source-connector]::before {
+  position: absolute;
+  top: calc(5px + 1.36em); /* clear the label strut and the tool head's baseline offset */
+  bottom: 0;
+  left: calc(6px + 5.25ch);
+  width: 0;
+  border-left: 1px solid var(--mat-groove-lo);
+  border-right: 1px solid var(--mat-groove-hi);
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+/* A run starts beneath its visible label, not beneath its first output well. */
+:is(
+  .acp-harness__msg[data-source-connector='tool']:has(+ .acp-harness__msg[data-source-connector='tool']),
+  .acp-harness__msg[data-source-connector='guard']:has(+ .acp-harness__msg[data-source-connector='guard']),
+  .acp-harness__msg[data-source-connector='agent']:has(+ .acp-harness__msg[data-source-connector='agent']),
+  .acp-harness__msg[data-source-connector='user']:has(+ .acp-harness__msg[data-source-connector='user']),
+  .acp-harness__msg[data-source-connector='fs']:has(+ .acp-harness__msg[data-source-connector='fs'])
+)::before {
+  content: '';
 }
 
 :is(
@@ -1420,13 +1438,7 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
   .acp-harness__msg[data-source-connector='fs'] + .acp-harness__msg[data-source-connector='fs']
 )::before {
   content: '';
-  position: absolute;
   top: -3px; /* bridge the lane body's 3px row gap */
-  bottom: 0;
-  left: calc(6px + 5.25ch);
-  width: 1px;
-  background: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
-  pointer-events: none;
 }
 
 /* ═══════════════════════════════════════════════════════════════

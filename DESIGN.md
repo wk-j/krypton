@@ -1,6 +1,6 @@
 ---
 name: Krypton Console
-version: 2.3.4
+version: 2.3.7
 description: Skeuomorphic instrument faceplate — brushed graphite (aluminium in the light scheme) with engraved labels, recessed display wells, raised keys and lit lamps, over a transparent desktop
 appliesTo: "Every surface in the Tauri webview and the live-assist webview. Materials: src/styles/materials.css (--mat-*)."
 colors:
@@ -62,7 +62,7 @@ forbidden:
   - "a button taller than one line: a key's state badge sits beside its label or is dropped"
   - "left-edge accent rails for selection (ADR-0027)"
   - "L-shaped corner brackets or screw-head ornaments"
-  - "a keyboard shortcut written as text (`[a] accept`, `esc close`) where a key cap can be drawn"
+  - "a keyboard shortcut written as text (`[a] accept`, `esc close`) where a key cap can be drawn (the which-key legend chart prints its keys flat: nothing in it is pressable)"
   - "colouring model findings as pass/fail (ADR-0004)"
   - "declaring --mat-* anywhere but src/styles/materials.css"
   - "raster textures; the brush is a CSS gradient"
@@ -191,6 +191,10 @@ comment.
   before the legend. Rails run-history verdicts are also flat ink: their existing glyph and state
   colour remain, with no background, border, padding or shadow.
 - **Readouts.** A small well holding a tabular-nums figure, with its label engraved beside or under it.
+  The workspace footer's Git branch is a neutral-ink well readout, not a green success label:
+  `--mat-well` + `--mat-well-shadow`, 8px radius, 2px × 6px padding, chrome-size type with the
+  ref's original case. Its dirty dot stays warning amber. In detail density, an 8px gap replaces the
+  separator before this well so no groove is painted inside it; the footer remains 28px tall.
 - **Scrim.** Behind a modal plate: `background: var(--mat-scrim)`. Never blur.
 
 ## Surfaces
@@ -210,8 +214,12 @@ comment.
   toasts, harness pickers and dialogs; the prompt dialog is the paper sheet below): one floating
   plate over `--mat-scrim`; modal plates are centred in the active terminal window; engraved
   head; input well; the result list is one well with grooves and a full-row `--mat-select` tint;
-  actions are keys; the key-hint foot prints each key as a key cap and its action as legend. Which-key
-  and hint labels are key caps.
+  actions are keys; the key-hint foot prints each key as a key cap and its action as legend. Hint
+  labels are key caps. Which-key is a legend chart, not a keypad: nothing in it is pressable, so its
+  keys are flat keyboard labels printed on the plate — at the label's size (`--krypton-font-size`)
+  in `--krypton-ink-2` over the label's `--krypton-ink-3`, 700 where the font has a bold face,
+  left-aligned in their track, with no border, fill, shadow or text-shadow; an effect colour goes on
+  that ink.
 - **Prompt dialog sheet** (spec 373) — the one paper surface in the app. The whole Smart Prompt
   Dialog is a typewriter sheet floating over `--mat-scrim` (cream paper edge to edge, ink in the
   configured `[font] family`, margin rule, steel rail and a carriage with three LEDs riding under the
@@ -233,7 +241,7 @@ comment.
   rows are a flat kind label with the status LED before it and an output well aligned with the label (a
   plain output well has no label; only a label that says something, like `stderr`, is engraved);
   consecutive TOOL, GUARD, AGENT, plain USER, or successful FS rows show their source label once,
-  then a neutral 1px connector inside the label gutter for each later row of the same source;
+  then a continuous etched groove (1px dark cut + 1px light lip from `--mat-groove-lo/hi`, at 65% opacity), starting below the first label and spanning each later row's label gutter;
   a different source or an action row starts a new label, and every action remains visible;
   resolved permission and question rows carry their LED before a flat decision label; a decision
   composer's `PERM` / `ASK` label is a readout like the composer's mode readout, at the same 0.72em,
@@ -270,7 +278,7 @@ comment.
 ## Typography
 
 Monospace everywhere. Labels are uppercase engraving (11px, 600, `0.13em`); key legends 11px at
-`0.09em`; tab titles keep their natural case (a path or a command). Body is mixed case at normal
+`0.09em` (which-key's flat key labels, which have no cap, take their row label's size); tab titles keep their natural case (a path or a command). Body is mixed case at normal
 spacing. Every digit that changes — timers, counts, gauges, sizes, percentages — uses
 `font-variant-numeric: tabular-nums`, and sits in a readout when it is a figure on its own.
 
@@ -425,8 +433,15 @@ selector, and nothing in it bleeds out of that selector.
 
 ## Changelog
 
+- **2.3.7** — Which-key keys become flat keyboard labels printed on the plate instead of raised
+  key caps: the popup is a legend chart and nothing in it is pressable. Without a cap they take the
+  row label's size and keep the brighter ink. Hint labels stay key caps.
+- **2.3.6** — Workspace Git branch becomes a recessed, neutral-ink readout on the footer plate.
+  Original ref case and amber dirty marker remain; compact/detail layout and the 28px rail stay fixed.
+- **2.3.5** — Transcript source connectors use the faceplate's neutral etched groove: a dark cut
+  beside a light lip, at 65% opacity. Source identity stays in label ink; no glow, gradient or shadow.
 - **2.3.4** — Adjacent transcript rows from the same passive source share one visible source label.
-  Later rows carry a neutral hairline in the label gutter; each row stays independently navigable.
+  The connector runs from beneath the first label through later gutters; each row stays independently navigable.
 - **2.3.3** — Harness transcript source labels use a small identity palette: user cyan, agent and
   action prompts amber, machine work blue, Guardian magenta, and system provenance secondary ink.
   Their typography and flat row treatment stay shared; outcomes keep separate state ink.
