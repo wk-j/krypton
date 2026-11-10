@@ -320,6 +320,12 @@ export interface LaneAdapter {
   cleanOutput?(text: string, kind: string): string;
   /** `stdout`/`output` sections whose first line is `exit: N` carry the exit code. */
   readonly exitPrefix?: boolean;
+  /**
+   * A first output line in which the backend restates the exit code; group 1
+   * is the code. The line is dropped from any section when that code is the
+   * exit the row shows, so the code is not painted twice. Unknown exit: kept.
+   */
+  readonly exitLine?: RegExp;
   /** The status to show for a wire status (OMP keeps a settled card settled). */
   toolStatus?(step: ToolStep, wire: ToolState): ToolState;
   /** Refine the generic view: parent, identity, cards, background launch. */

@@ -468,4 +468,63 @@ describe('tool decoding — terminal convention', () => {
     const shot = send(decoder, 'tool_call_update', { toolCallId: 'c1', ...output('saved /tmp/shot.png\n') });
     expect(shot?.images.scanned).toEqual(['/tmp/shot.png']);
   });
+
+  describe("Claude's `Exit code N` line", () => {
+    const failedText = (text: string): Partial<ToolCall> => ({
+      content: [{ type: 'content', content: { type: 'text', text } }],
+    });
+
+    it('is dropped from terminal output once terminal_exit reports the same code', () => {
+      const view = decode('claude', claudeCommand, output('Exit code 3\nboom\n'), claudeEnd(3, 'failed'));
+      expect(view.sections).toEqual([{ label: 'output', text: 'boom' }]);
+      expect(view.exit).toBe(3);
+      expect(toolPayloadFromView(view, {}, undefined).result).toBe('exit 3');
+    });
+
+    it('leaves an empty well when the line was the whole output (`false`)', () => {
+      const view = decode('claude', claudeCommand, output('Exit code 1'), claudeEnd(1, 'failed'));
+      expect(view.sections).toEqual([]);
+      expect(view.exit).toBe(1);
+    });
+
+    it('is dropped from content text the same way', () => {
+      const view = decode('claude', claudeCommand, {
+        ...claudeEnd(3, 'failed'),
+        content: [{ type: 'content', content: { type: 'text', text: 'Exit code 3\nboom' } }],
+      });
+      expect(view.sections).toEqual([{ label: 'content', text: 'boom' }]);
+    });
+
+    it('stays while the exit is unknown, or when it names another code', () => {
+      const decoder = createLaneDecoder('claude');
+      send(decoder, 'tool_call', { toolCallId: 'c1', ...claudeCommand });
+      const early = send(decoder, 'tool_call_update', { toolCallId: 'c1', ...output('Exit code 3\nboom\n') });
+      expect(early?.view.exit).toBeNull();
+      expect(early?.view.sections).toEqual([{ label: 'output', text: 'Exit code 3\nboom' }]);
+      const other = decode('claude', claudeCommand, output('Exit code 3\nboom\n'), claudeEnd(2, 'failed'));
+      expect(other.sections).toEqual([{ label: 'output', text: 'Exit code 3\nboom' }]);
+      const noExit = decode('claude', claudeCommand, { status: 'failed', ...failedText('Exit code 3\nboom') });
+      expect(noExit.sections).toEqual([{ label: 'content', text: 'Exit code 3\nboom' }]);
+    });
+
+    it('is only a first line, and only on Claude lanes', () => {
+      const later = decode('claude', claudeCommand, output('boom\nExit code 3\n'), claudeEnd(3, 'failed'));
+      expect(later.sections).toEqual([{ label: 'output', text: 'boom\nExit code 3' }]);
+      const codex = decode('codex', { kind: 'execute', title: 'x', status: 'in_progress' }, {
+        status: 'failed',
+        _meta: { terminal_output: { terminal_id: 'c1', data: 'Exit code 3\nboom' }, terminal_exit: { terminal_id: 'c1', exit_code: 3, signal: null } },
+      });
+      expect(codex.sections).toEqual([{ label: 'output', text: 'Exit code 3\nboom' }]);
+    });
+
+    it('keeps the output array when a later update moves nothing', () => {
+      const decoder = createLaneDecoder('claude');
+      send(decoder, 'tool_call', { toolCallId: 'c1', ...claudeCommand });
+      send(decoder, 'tool_call_update', { toolCallId: 'c1', ...output('Exit code 3\nboom\n') });
+      const ended = send(decoder, 'tool_call_update', { toolCallId: 'c1', ...claudeEnd(3, 'failed') });
+      const again = send(decoder, 'tool_call_update', { toolCallId: 'c1', status: 'failed' });
+      expect(ended?.view.sections).toEqual([{ label: 'output', text: 'boom' }]);
+      expect(again?.view.sections).toBe(ended?.view.sections);
+    });
+  });
 });

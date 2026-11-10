@@ -183,7 +183,7 @@ export function createLaneDecoder(backendId: string): LaneDecoder;
 | Adapter | Overrides (moved from) |
 |---------|------------------------|
 | generic | ACP fields; `_meta.terminal_info/output/exit` (Claude and Codex follow it); `rawOutput` `exit_code`/`exitCode`/`code`; generic section keys; byte-array decode; title cleanup; tool-kind inference (including shell-like titles); the exact `mcp__<server>__<tool>` identity; the image walk; ACP `modes`; Rust's parsed model list; ask-user question parsing; prompt usage at the top level or under `_meta.usage` |
-| claude | `_meta.claudeCode.parentToolUseId` on chunks and tools; Task/Agent subagents; background-launch text; `mcp__s__t` and `claudeCode.mcpServer` identity; drops the Bash `description` display copy if terminal meta is absent |
+| claude | `_meta.claudeCode.parentToolUseId` on chunks and tools; Task/Agent subagents; background-launch text; `mcp__s__t` and `claudeCode.mcpServer` identity; drops the Bash `description` display copy if terminal meta is absent; drops the `Exit code N` first line when N is the shown exit (`exitLine`) |
 | codex | `_meta.codex.threadStatus` → `turn_state`; `collaboration.spawnAgent` subagents and names; Guardian review |
 | grok | Typed `rawOutput`, `exit:` prefix, read anchors, `<workspace_result>` |
 | omp | `details` subagents, `wait` jobs, code cells, background-frame status hold |
@@ -239,6 +239,7 @@ Each phase lands separately and leaves the app working.
 No new DOM, CSS or row components; every row is fed `ToolView` instead of wire data. Visible differences:
 - Claude and Codex lanes gain the `EXIT n` readout.
 - The Claude Bash description no longer fills the output well.
+- A failed Claude command's well no longer repeats its exit code as an `Exit code N` first line.
 - Mode names come from the ACP `modes` field, and the lane head shows the session's starting mode as soon as the session opens, not only after the first `current_mode_update`.
 - The lane activity line shows the cleaned tool title (phase 2a).
 
@@ -334,8 +335,14 @@ Plain harness tool names that carry their server only in `rawInput` now prompt. 
 - **Seen in the running app (2026-11-11, Claude lane):**
   - The installed bundle was built after phase 3 and declares `terminal_output`.
   - Window captures of a Claude lane show `EXIT 0` with output for successful commands, `EXIT 1` for `false`, and `EXIT 3` with `boom` for `echo boom; exit 3`.
-  - A failing command's well starts with Claude's `Exit code N` line, so the code shows twice. Before stripping that line, check the wire profiler to see whether it arrives in `terminal_output` or in `content`.
+  - A failing command's well started with Claude's `Exit code N` line, so the code showed twice. The follow-up below removes it.
   - Codex lane, in a `tauri dev` build of the phase 3 + 4a working tree: `printf hi` shows `EXIT 0` with `hi` in the well. Before phase 3, codex-acp sent this output only as `terminal_output_delta`, which Krypton did not read. `false` shows `EXIT 1` with an empty well. No `Exit code N` line and no input copy appeared, unlike Claude.
+- **Follow-up (2026-11-11): Claude's `Exit code N` line.**
+  - `LaneAdapter.exitLine` is a pattern for a first output line that restates the exit code. The Claude adapter sets it to `Exit code N`.
+  - `generic.ts` `dropExitLine` removes that line from every section, terminal output or `content` text, when N is the exit the row shows. It runs before the line cap, so the well still shows its full line count.
+  - The line stays while the exit is unknown, and when it names another code, because the well is then the only place that code appears. A `false` whose output was only that line shows an empty well, as on Codex.
+  - Tests in `adapters/tool.test.ts` cover terminal output, `content` text, the unknown and mismatched exits, a later line, a Codex lane, and the kept `sections` reference.
+  - Seen in a `tauri dev` build on a Claude lane: `echo boom; exit 3` shows `EXIT 3` with only `boom` in the well.
 
 ### Phase 4a — Implemented (2026-11-11)
 
@@ -411,7 +418,7 @@ The auto-allow decisions are resolved (2026-11-10): the bypass is fixed before 2
 
 - Outbound and spawn-time backend choices: MCP delivery, spawn args, startup hints, fs scope, steering requests, resource blocks, timeline/lessons gating.
 - Rust protocol replies: answering permissions and questions, the Grok exit-plan auto-approve, `set_model` / `set_config_option`.
-- Visual changes to rows or chrome beyond the three listed in UI Changes.
+- Visual changes to rows or chrome beyond those listed in UI Changes.
 - `terminal_output_delta` streaming and ACP v2 `terminal_update` notifications.
 
 ## Resources

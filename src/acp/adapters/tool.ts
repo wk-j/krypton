@@ -11,6 +11,7 @@ import { scanValueForImagePaths } from '../image-paths';
 import type { ContentBlock, ToolCall, ToolCallContent, ToolCallUpdate } from '../types';
 import {
   contentOutputSections,
+  dropExitLine,
   extractCommandLineRaw,
   extractModifiedPath,
   extractRawToolName,
@@ -283,15 +284,18 @@ function outputOf(
     source = raw.length > 0 ? raw : contentOutputSections(merged.content);
   }
   const peeled = adapter.exitPrefix ? peelSectionExit(source, known) : { exitCode: known, sections: source };
+  const exit = terminal?.exit ?? peeled.exitCode;
+  // Before the line cap, so a dropped restatement does not cost a line of output.
+  const shown = adapter.exitLine ? dropExitLine(peeled.sections, exit, adapter.exitLine) : peeled.sections;
   const lineLimit = kind === 'execute' && isGitDiffCommand(command) ? 80 : kind === 'execute' ? 12 : 6;
-  const sections = peeled.sections
+  const sections = shown
     .map((section) => ({
       label: section.label,
       text: boundedOutputLines(adapter.cleanOutput ? adapter.cleanOutput(section.text, kind) : section.text, lineLimit),
     }))
     .filter((section) => section.text)
     .slice(0, 4);
-  return { sections, exit: terminal?.exit ?? peeled.exitCode };
+  return { sections, exit };
 }
 
 /**

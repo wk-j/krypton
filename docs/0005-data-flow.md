@@ -1356,7 +1356,9 @@ PUBLISH
     `rawOutput` / `content` text is not shown beside it. `ToolView.exit` takes
     `terminal_exit.exit_code` over `rawOutput.exit_code`; a null code paints no
     readout. An update that moves neither output nor exit keeps the prior
-    `sections` array, so ToolRow does not repaint.
+    `sections` array, so ToolRow does not repaint. An adapter's `exitLine`
+    (Claude: `Exit code N`) drops a first output line that restates the
+    shown exit, before the line cap; while the exit is unknown it stays.
 20. Plan tracking pinned panel (Spec 90):
     a. session/update { sessionUpdate: 'plan' } already flows from Rust through
        the lane decoder as a LaneEvent { type: 'plan', entries }.

@@ -265,6 +265,24 @@ export function peelExitPrefix(text: string): { code: number; rest: string } | n
   return { code, rest: text.slice(match[0].length) };
 }
 
+/**
+ * Sections without a first line that restates `exit`, the code the row
+ * already shows (`LaneAdapter.exitLine`). A line naming another code, or any
+ * line when the exit is unknown, stays: it is then the only place the code is.
+ */
+export function dropExitLine(
+  sections: ReadonlyArray<{ label: string; text: string }>,
+  exit: number | null,
+  pattern: RegExp,
+): Array<{ label: string; text: string }> {
+  return sections.map((section) => {
+    const match = exit === null ? null : pattern.exec(section.text);
+    return match && Number(match[1]) === exit
+      ? { label: section.label, text: section.text.slice(match[0].length) }
+      : section;
+  });
+}
+
 /** Grok's `exit: N` first line on `stdout`/`output` sections → the exit code. */
 export function peelSectionExit(
   sections: ReadonlyArray<{ label: string; text: string }>,
