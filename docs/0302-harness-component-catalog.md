@@ -905,12 +905,19 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 | 6.6 | `DictationControl` | `[● REC th  ⌘D]` (phases `MIC · MIC en · REC th · FINALIZING…`) | `harness-dictation-controller.ts:37-82` |
 | 6.7 | `LiveVoiceStrip` | `LIVE  muted  alloy  ░░░░░░░░ ██░░░░░░  you: refactor the composer   ⌘⇧L stop · hold left ⌥ to talk` | `harness-live-voice-controller.ts:461-499` |
 | 6.8 | `DecisionComposer` | `perm      a accept · A all · r reject · R all` | `acp-harness-view.ts:13299-13313` |
+| 6.9 | `BackgroundTaskStrip` | `BACKGROUND 1 · RUNNING mvn test · 0:12 · Running tests` with semantic `⌘P` then `=` detail hints | Spec 384; persistent first child of both draft and decision composers, updated directly from launch/metrics |
 
 `LiveVoiceStrip` keeps `LiveVoiceSessionProps.muted: boolean`. The microphone starts muted;
 the muted hint is `⌘⇧L stop · hold left ⌥ to talk`, changing to
 `⌘⇧L stop · release left ⌥ to mute` while bare Left Option is held. Release or focus
 loss closes the microphone without stopping playback/session; see
 [spec 314](./0314-harness-live-push-to-talk.md) for cancellation and safety behavior.
+
+`BackgroundTaskStrip` reads the active lane's registered tasks and the poll timestamp, snapshots
+displayed scalar values, and reconciles rows by task ID. Up to three running/unknown/orphaned jobs
+stay visible; `+N more` names the overflow. With no unsettled jobs it retains the latest-started
+final result. Empty lanes reserve no height. It owns no timer and never touches sealed transcript
+DOM; `Composer.patchBackgroundTasks()` updates it without rebuilding the draft or decision controls.
 
 ---
 
@@ -967,15 +974,15 @@ HarnessView
 │                        QueueCard · TicketDock · AnnotationRail
 ├─ ExecutionDialog ───── view-owned OverlayShell modal (spec 319); never row-owned
 ├─ Composer ──────────── ComposerMeta(Chip, StatList) · DraftLine · StagingStrip
-│                        PeerStrip · InlinePalette ×4 · DictationControl · LiveVoiceStrip
+│                        PeerStrip · InlinePalette ×4 · DictationControl · LiveVoiceStrip · BackgroundTaskStrip
 └─ Overlays ──────────── current registry: 20 components; no TimelineCapture
 ```
 
 # Totals
 
 Current registry counts come from `HARNESS_COMPONENTS` in `src/acp/components/registry.ts`.
-The registry has **80 component definitions**; `LayoutHost` is a separate layout entry, so
-the inventory total is **81**. The historical numbered catalog predates later additions:
+Use that registry for current totals rather than the historical numbered catalog.
+Later additions include the persistent composer `BackgroundTaskStrip` (spec 384);
 the transcript registry also includes `GenuiCard`, `DirectiveDiffRow` and `FollowUpRail` (spec 323);
 overlays include `BackgroundTasks`, `ExecutionDialog`, `GenuiPanel`, and `GenuiCatalog`. The composer's
 `AssistStrip` (spec 306) was removed on 2026-10-23 with the `next-prompt` task.

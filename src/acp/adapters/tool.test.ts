@@ -239,6 +239,57 @@ describe('tool decoding — Claude', () => {
     expect(decode('claude', launch).background).toEqual({ id: 'bx1', outputPath: '/tmp/bx1.out', command: 'npm run watch' });
     expect(decode('grok', launch).background).toBeNull();
   });
+
+  const launchText = 'Command running in background with ID: bx1. Output is being written to: /tmp/bx1.out';
+  const background = { id: 'bx1', outputPath: '/tmp/bx1.out', command: 'npm run watch' };
+  const backgroundCall = {
+    title: 'Watch project',
+    kind: 'execute' as const,
+    rawInput: { command: 'npm run watch', run_in_background: true },
+  };
+
+  it.each([
+    { stdout: launchText },
+    launchText,
+    { message: launchText },
+  ])('reads generic rawOutput launches only on Claude lanes: %j', (rawOutput) => {
+    const call = { ...backgroundCall, rawOutput };
+    expect(decode('claude', call).background).toEqual(background);
+    expect(decode('codex', call).background).toBeNull();
+  });
+
+  it('captures a rawOutput launch beyond the displayed output lines', () => {
+    const view = decode('claude', {
+      ...backgroundCall,
+      rawOutput: { stdout: `${'still starting\n'.repeat(30)}${launchText}` },
+    });
+    expect(view.background).toEqual(background);
+    expect(view.sections.some((section) => section.text.includes(launchText))).toBe(false);
+  });
+
+  it('prefers content, then terminal launch text over rawOutput', () => {
+    const terminalText = launchText.replaceAll('bx1', 'terminal');
+    const rawOutput = { stdout: launchText.replaceAll('bx1', 'raw') };
+    const call = {
+      ...backgroundCall,
+      rawOutput,
+      content: [{ type: 'content' as const, content: { type: 'text' as const, text: launchText } }],
+      _meta: { terminal_output: { terminal_id: 'c1', data: terminalText } },
+    };
+    expect(decode('claude', call).background).toEqual(background);
+    expect(decode('claude', { ...call, content: [] }).background)
+      .toEqual({ ...background, id: 'terminal', outputPath: '/tmp/terminal.out' });
+  });
+
+  it.each([
+    { stdout: launchText.replace('/tmp/bx1.out', 'tmp/bx1.out') },
+    { stdout: 'Command is running in the background.' },
+    { stdout: 'ordinary command output' },
+    undefined,
+  ])('does not infer a launch from a flag or unvalidated output: %j', (rawOutput) => {
+    expect(decode('claude', { ...backgroundCall, rawOutput }).background).toBeNull();
+  });
+
 });
 
 describe('tool decoding — Codex', () => {

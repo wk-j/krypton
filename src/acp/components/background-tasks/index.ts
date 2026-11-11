@@ -1,9 +1,9 @@
 // Spec 305 §UI changes — `BackgroundTasks`.
 //
 // One lane's detached shell jobs, rendered under its process tree in the `=`
-// Lane Metrics overlay. The lane itself is `idle` while these run — its turn
-// ended the moment the agent detached the command — so this section is the only
-// place the work is named, timed and given an exit code.
+// Lane Metrics overlay. The lane can be idle while these run. Spec 384's
+// composer strip makes current work visible; this section retains detailed
+// task/resource history, timing and exit codes.
 //
 // Rows are keyed by task id so a status change patches one row in place; the
 // running glyph is the shared `Spinner`, which the widened `updateSpinnerTicker()`

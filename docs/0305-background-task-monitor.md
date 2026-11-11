@@ -37,7 +37,7 @@ So the one signal the user has (the lane spinner, which is gated on `status === 
 
 ## Solution
 
-A per-lane registry of background tasks, captured from the launch tool call itself — the adapter already hands Krypton the task ID and the absolute output path in the tool result. Status is refreshed on the **existing** 2 s metrics poll by stat-ing/tailing that file and matching the lane's process tree. Rendered as a `BACKGROUND TASKS` section inside the existing `=` *Lane Metrics* overlay, plus a `bg N` chip on the lane head and a `#bg` transcript snapshot.
+A per-lane registry of background tasks, captured from the launch tool call itself — the adapter hands Krypton the task ID and the absolute output path in the tool result. Status is refreshed on the existing shared 2 s metrics feed by stat-ing/tailing that file and matching the lane's process tree. Spec 384 adds an automatically visible `BACKGROUND` strip above the active lane's composer, including decision mode, after the launch turn ends. The `BACKGROUND TASKS` section inside `=` Lane Metrics, the lane-head `bg N` chip and the `#bg` snapshot remain available as detail.
 
 Read-only observer: no protocol change, no new timer, no process control.
 
@@ -70,7 +70,7 @@ Alternatives ruled out:
 | VS Code | Tasks run inside the Terminal panel; "Tasks: Show Running Tasks" opens a separate list | Separate surface, mouse-first *(general knowledge, docs not consulted)* |
 | tmux | `monitor-activity` marks a window with an activity flag in the status line | Status-flag precedent for the lane-head chip *(general knowledge, docs not consulted)* |
 
-**Krypton delta** — keyboard-only (`=` overlay, `#bg` command, no mouse affordance) and deliberately *status-only*: Krypton cannot read or kill the process, so a row never pretends to be an interactive terminal. The badge vocabulary follows Warp; the placement diverges from VS Code by extending the existing lane-metrics overlay instead of adding a panel.
+**Krypton delta** — read-only observation, not an interactive terminal or a process-control surface. Spec 384 makes the active lane's work automatically visible in the composer; existing keyboard routes (`=` overlay and `#bg`) expose the detailed history and resource table without being required to discover ongoing work.
 
 ## Affected Files
 
@@ -81,7 +81,7 @@ Alternatives ruled out:
 | `src/types.ts` | `AcpBackgroundTaskStatus` mirror type |
 | `src/acp/harness-view-types.ts` | `BackgroundTask` + `backgroundTasks: BackgroundTask[]` on `HarnessLane` |
 | `src/acp/harness-background-tasks.ts`, `.test.ts` | New: launch parsing, registry + cap, status folding, process-subtree usage |
-| `src/acp/acp-harness-view.ts` | `captureBackgroundLaunch` on `tool_call` / `tool_call_update`; `refreshBackgroundTasks` inside `pollMetrics()`; widened `updateSpinnerTicker()` gate; `#bg` → `printBackgroundTasks`; overlay + lane-head props |
+| `src/acp/acp-harness-view.ts` | `captureBackgroundLaunch` on tool events; `refreshBackgroundTasks` on the shared metrics feed; spinner gate; `#bg` snapshot; composer strip, overlay and lane-head props |
 | `src/acp/components/background-tasks/{index.ts,background-tasks.css,background-tasks.test.ts}` | New section component (one directory per surface, per spec 301/302) |
 | `src/acp/components/metrics-overlay/index.ts`, `.test.ts` | `MetricsLane` gains `tasks` + `now`; one `BackgroundTasks` per lane block, mounted for the block's life |
 | `src/acp/components/lane-head/index.ts`, `lane-head.css` | `bg N` chip in `headChips()` + the `acp-harness__lane-bg` pill |
@@ -146,18 +146,27 @@ pub async fn acp_background_task_status(
 
 ```
 1. Agent calls Bash with run_in_background; adapter emits tool_call / tool_call_update
-2. View matches content text `Command running in background with ID: (\S+)\. Output is being written to: (\S+)`
+2. Claude adapter matches the launch marker in content, accumulated terminal output,
+   then generic rawOutput text sections: `Command running in background with ID: <id>. Output is being written to: <absolute path>`
    → pushes a BackgroundTask onto lane.backgroundTasks (state 'running')
-3. Existing 2 s pollMetrics() tick: collect every non-terminal task across lanes
+3. Existing shared 2 s metrics feed: collect tasks in 'running' or 'unknown' state across lanes
 4. invoke('acp_background_task_status', { queries })  — one IPC round trip for all lanes
 5. For each answer: bytes/lastLine updated; exit_code present → state 'exited', endedAt = modified_ms
-6. No marker: match lane metrics processes by argv == task.command → pid/cpu/rss;
+6. No marker: match command text in lane process argv → pid/cpu/rss;
    no match twice in a row (missStreak >= 2) → state 'orphaned'
-7. Lane head chip + overlay section update through the component kernel (deps = formatted values,
-   so a poll that moves nothing writes nothing)
+7. Lane head chip + visible composer strip + optional overlay section update through
+   the component kernel; displayed scalar dependencies make equal polls write nothing
 ```
 
 ### UI Changes
+
+**Persistent composer strip (spec 384).** Automatically present above draft and permission/question
+controls for the active lane whenever its registry is nonempty, including idle, Zen and concise
+layouts. It shows command, state, elapsed and latest log line with steady LEDs. Three unsettled
+jobs are shown newest-first plus a remaining count; otherwise the most recently started job's
+final result stays visible. Unknown/orphaned states stay explicit, not success. Each lane owns a
+fresh registry; reset/restart clears it. The shared metrics feed patches only this child, never
+the draft or sealed transcript. The strip has no timer or process-control action of its own.
 
 **Lane head chip** (`headChips()`, grid column 4): `bg 2` when ≥1 task is `running`, title `2 background tasks: <commands> — ⌘P = for detail`. Plain `Chip`, tone `on`, no spinner — `Chip` owns its own markup and the count is the signal, not an animation.
 
@@ -200,7 +209,7 @@ None.
 
 | Case | Handling |
 |------|----------|
-| Launch text format changes upstream | Regex misses → no task captured, section stays hidden, one `debug!` log. Nothing else breaks |
+| Unsupported/malformed launch text | No task captured; strip and section stay hidden when the registry is empty. Do not infer a job from assistant narration or the background flag alone. |
 | Output file deleted or on a gone volume | `exists: false` → state `unknown`, last known bytes retained, row dimmed |
 | Job killed by a signal (no marker written) | Marker never appears; pid leaves the tree → `orphaned` after 2 polls (~4 s) |
 | Build output contains `[exited with code 0]` mid-log | Only the last non-empty line is matched |
@@ -209,7 +218,7 @@ None.
 | Lane closed / `#new` / restart | Tasks are cleared with the lane state they live on |
 | More than 20 tasks on one lane | Drop oldest `exited`/`orphaned` first; a `running` task is never dropped |
 | Two lanes in the same repo | Output paths contain the ACP session id, so IDs never collide across lanes |
-| Non-Claude backend (Codex, Gemini, omp) | No launch text → no tasks → chip and section absent |
+| Non-Claude backend | This capture path is Claude-only. Other backends do not register spec-305 jobs; OMP keeps its independent spec-370 job cards. |
 | argv match ambiguity (two identical commands) | First unmatched process row wins; pid/CPU are advisory, never the liveness source of truth when a marker exists |
 
 ## Out of Scope

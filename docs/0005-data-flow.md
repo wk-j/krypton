@@ -1610,7 +1610,7 @@ publisher's 300 ms debounce → `TelemetryLane.reviewLoop` in the next snapshot.
 polls `/telemetry`, renders the lane card's `review pass` section, and ticks elapsed
 times itself between polls.
 
-## Background Task Flow (spec 305)
+## Background Task Flow (specs 305/384)
 
 A Claude lane's `run_in_background` shell work outlives the turn that launched it:
 the launch tool call completes immediately, `finishTurn` sets the lane `idle`, and
@@ -1622,8 +1622,8 @@ cannot see (`clientCapabilities.terminal` is `false` — `src-tauri/src/acp.rs`)
 1. tool_call / tool_call_update → the Claude lane adapter (adapters/claude.ts)
    parseBackgroundLaunch: `Command running in background with ID: <id>. Output is
      being written to: <abs path>` → ToolView.background
-   (read from a `content` text block, or from the call's terminal output when it
-   arrived as `_meta.terminal_output`, spec 380 phase 3)
+   (content first, accumulated `_meta.terminal_output` second, then generic
+   rawOutput text sections including stdout; capture precedes display trimming)
    → captureBackgroundLaunch(lane, view) → registerBackgroundTask (dedupes by id, cap 20)
 2. Existing shared 2 s metrics feed → refreshBackgroundTasks
    → invoke('acp_background_task_status', { queries: [{id, path}, …] })  — one round trip
@@ -1634,13 +1634,18 @@ cannot see (`clientCapabilities.terminal` is `false` — `src-tauri/src/acp.rs`)
    no marker + pid in the lane process tree (argv match) → 'running' + subtree CPU/RSS
    no marker + no pid, twice in a row                   → 'orphaned'
    file missing      → 'unknown' (last known bytes/line kept)
-5. refreshMetricsRender → LaneHead `bg N` chip + the BackgroundTasks section inside
-   the `=` Lane Metrics overlay; `#bg` prints the same table as a transcript row
+5. refreshMetricsRender → LaneHead `bg N` chip + Composer.patchBackgroundTasks
+   → visible BackgroundTaskStrip above the active lane's draft or decision controls
+   + BackgroundTasks inside the optional `=` Lane Metrics overlay
+   `#bg` still prints a transcript snapshot; none of these updates repaints a sealed row
 ```
 
-The spinner ticker (`updateSpinnerTicker`) counts a running task as live, but only
-while the metrics overlay is open — that is the one surface where a task spinner is
-mounted, and the lane itself is `idle` the whole time.
+The composer strip uses steady LEDs, not a spinner or a new timer. It stays visible
+after the launch turn ends, shows up to three unsettled jobs and a remaining count,
+and retains the newest-started final result when none remain unsettled. Lane switches
+select independent registries; reset/restart clears the old lane's registry. Its
+display dependencies snapshot mutable task fields, so equal polls write nothing.
+The existing overlay spinner ticker remains gated on the metrics overlay being open.
 
 ## Running Built-in Command Flow (spec 343)
 

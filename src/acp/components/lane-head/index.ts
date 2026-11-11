@@ -122,9 +122,8 @@ function headChips(next: LaneHeadProps): HeadChip[] {
     });
   }
 
-  // spec 305: detached shell work outlives the turn that launched it, so the
-  // lane reads `idle` while a build runs. This chip is the only lane-level
-  // signal that something is still going.
+  // Detached shell work outlives its launch turn. Keep a compact head signal;
+  // the spec 384 composer strip names the active lane's work without an overlay.
   const running = lane.backgroundTasks.filter((task) => task.state === 'running');
   if (running.length > 0) {
     out.push({

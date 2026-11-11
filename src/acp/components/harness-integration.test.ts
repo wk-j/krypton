@@ -727,3 +727,72 @@ describe('Assistant Instances dock (spec 357)', () => {
     }
   });
 });
+
+describe('visible background activity (spec 384)', () => {
+  it('survives a completed launch and idle turn, then updates only chrome when the job exits', async () => {
+    const lane = call<HarnessLane>(view, 'createLane', 0, 'claude', 'Claude-1');
+    lane.status = 'idle';
+    lane.draft = 'keep this draft';
+    lane.cursor = lane.draft.length;
+    lane.stickToBottom = false;
+    lanes(view).push(lane);
+    activate(view, lane.id);
+    lane.transcript.push({ id: 'sealed-background-proof', kind: 'assistant', text: 'The launch turn ended.' });
+    call(view, 'renderDashboard');
+    call(view, 'renderComposer');
+    const sealed = view.element.querySelector<HTMLElement>('[data-msg-id="sealed-background-proof"]')!;
+    const input = view.element.querySelector('.acp-harness__input');
+    const body = view.element.querySelector<HTMLElement>('.acp-harness__lane-body')!;
+    body.scrollTop = 73;
+    view.element.focus();
+    const changes: MutationRecord[] = [];
+    const observer = new MutationObserver((records) => changes.push(...records));
+    observer.observe(sealed, { subtree: true, attributes: true, childList: true, characterData: true });
+    try {
+      const event = toolEventSource('claude').call({
+        toolCallId: 'background-launch', kind: 'execute', status: 'completed',
+        rawInput: { command: 'mvn test', run_in_background: true },
+        rawOutput: { stdout: 'Command running in background with ID: bg1. Output is being written to: /tmp/bg1.output' },
+      });
+      call(view, 'captureBackgroundLaunch', lane, event.view);
+      call(view, 'captureBackgroundLaunch', lane, event.view);
+      const strip = view.element.querySelector<HTMLElement>('.acp-harness__background-strip')!;
+      expect(lane.backgroundTasks).toHaveLength(1);
+      expect(strip.hidden).toBe(false);
+      expect(strip.textContent).toContain('mvn test');
+      expect(strip.textContent).toContain('RUNNING');
+      vi.mocked(invoke).mockImplementation(async (command) => command === 'acp_background_task_status' ? [{
+        id: 'bg1', exists: true, bytes: 20, modified_ms: Date.now(),
+        exit_code: 0, last_line: 'All tests completed',
+      }] : []);
+      await call<Promise<void>>(view, 'applyMetrics', []);
+      expect(strip.textContent).toContain('DONE');
+      expect(strip.textContent).toContain('exit 0');
+      expect(strip.textContent).toContain('All tests completed');
+      expect(lane.status).toBe('idle');
+      expect(lane.draft).toBe('keep this draft');
+      expect(view.element.querySelector('.acp-harness__input')).toBe(input);
+      expect(document.activeElement).toBe(view.element);
+      expect(body.scrollTop).toBe(73);
+      expect(view.element.querySelector('[data-msg-id="sealed-background-proof"]')).toBe(sealed);
+      expect([...changes, ...observer.takeRecords()]).toEqual([]);
+      const other = call<HarnessLane>(view, 'createLane', 1, 'omp', 'OMP-1');
+      other.status = 'idle';
+      lanes(view).push(other);
+      activate(view, other.id);
+      call(view, 'renderComposer');
+      expect(other.backgroundTasks).toEqual([]);
+      expect(strip.hidden).toBe(true);
+      activate(view, lane.id);
+      call(view, 'renderComposer');
+      expect(strip.hidden).toBe(false);
+      expect(strip.textContent).toContain('DONE');
+      lane.backgroundTasks = [];
+      call(view, 'refreshMetricsRender');
+      expect(strip.hidden).toBe(true);
+    } finally {
+      observer.disconnect();
+      vi.mocked(invoke).mockImplementation(async () => []);
+    }
+  });
+});

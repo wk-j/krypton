@@ -19,7 +19,6 @@ Listed by spec number. Older specs remain in this directory.
 
 | # | Spec |
 |---|------|
-| 364 | [Hide the Working Progress Ring](./0364-progress-gauge-hide-working.md) |
 | 365 | [Harness Tool-Error Fire](./0365-harness-tool-error-fire.md) |
 | 366 | [Console Faceplate UI](./0366-console-faceplate-ui.md) |
 | 367 | [Light Scheme Redesign](./0367-light-scheme-redesign.md) (Draft) |
@@ -39,6 +38,7 @@ Listed by spec number. Older specs remain in this directory.
 | 381 | [Harness Component Gallery](./0381-harness-component-gallery.md) |
 | 382 | [Recessed Shortcut Keycaps](./0382-recessed-shortcut-keycaps.md) |
 | 383 | [Tool Name Readouts](./0383-tool-name-readouts.md) |
+| 384 | [Visible Background Task Strip](./0384-visible-background-task-strip.md) |
 
 ## ADRs (31)
 

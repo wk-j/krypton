@@ -8074,6 +8074,7 @@ export class AcpHarnessView implements ContentView {
       modesById: new Map(),
       promptHistory: [],
       queuedPrompts: [],
+      backgroundTasks: [],
     };
     // spec 130: every harness-memory-capable lane gets attention tools by
     // default; seed local audit counters at lane creation so silent turns count
@@ -11546,6 +11547,7 @@ export class AcpHarnessView implements ContentView {
     this.cancelPendingArtifactsForLane(lane);
     this.cancelPendingReviewsForLane(lane);
     await this.ticketCtl.releaseLane(lane.id);
+    lane.backgroundTasks = [];
     const client = lane.client;
     lane.client = null;
     await client.dispose();
@@ -11577,6 +11579,7 @@ export class AcpHarnessView implements ContentView {
     lane.plan = null;
     lane.planCollapsed = false;
     lane.queuedPrompts = []; // spec 136: fresh session — queued prompts were for the old context
+    lane.backgroundTasks = [];
     this.steerCtl.resetLane(lane.id); // spec 278
     this.liveVoiceCtl.onLaneGone(lane); // spec 280: the voice session spoke to the old session
     this.clearToolError(lane.id); // spec 365: the failure belonged to the old session
@@ -11644,6 +11647,7 @@ export class AcpHarnessView implements ContentView {
     lane.pendingTurnExtractions = [];
     lane.stagedImages = [];
     lane.queuedPrompts = []; // spec 136: fresh session — drop queued prompts
+    lane.backgroundTasks = [];
     this.steerCtl.resetLane(lane.id); // spec 278
     this.liveVoiceCtl.onLaneGone(lane); // spec 280: the voice session spoke to the old session
     this.clearToolError(lane.id); // spec 365: the failure belonged to the old session
@@ -13697,6 +13701,7 @@ export class AcpHarnessView implements ContentView {
     this.composer.update({
       kind: 'draft',
       accent: lane.accent,
+      background: { tasks: lane.backgroundTasks, now: Date.now() },
       command: this.focus === 'transcript',
       memory: this.memoryDrawerOpen,
       dictating: this.dictationCtl.session?.laneId === lane.id,
@@ -13937,6 +13942,7 @@ export class AcpHarnessView implements ContentView {
     this.composer.update({
       kind: 'decision',
       accent: lane.accent,
+      background: { tasks: lane.backgroundTasks, now: Date.now() },
       liveVoice: this.liveVoiceCtl.stripProps(lane),
       decision: { label, hint },
     });
@@ -14287,6 +14293,8 @@ export class AcpHarnessView implements ContentView {
       (shell as LaneShell | undefined)?.update(this.laneShellProps(lane));
     }
     if (this.metricsPanelOpen) this.renderMetricsPanel();
+    const active = this.activeLane();
+    if (active) this.composer.patchBackgroundTasks({ tasks: active.backgroundTasks, now: Date.now() });
     this.renderLanePeek();
   }
 

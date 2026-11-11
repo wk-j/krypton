@@ -1,7 +1,7 @@
 // Spec 380 — Claude (`@agentclientprotocol/claude-agent-acp`, backend id `claude`).
 
 import type { ToolCall, ToolCallUpdate } from '../types';
-import { UNVERIFIED_SUPPLIES } from './generic';
+import { rawOutputGenericSections, UNVERIFIED_SUPPLIES } from './generic';
 import { applySubagentCard } from './tool';
 import type { LaneAdapter, ToolStep } from './types';
 
@@ -102,8 +102,14 @@ export const claudeAdapter: LaneAdapter = {
     const { draft, merged } = step;
     draft.parentId = claudeParentToolUseId(step.call._meta) ?? draft.parentId;
     crossCheckIdentity(step);
-    // spec 305: `run_in_background` launches name the task id and its output file.
-    const launch = parseBackgroundLaunch(merged) ?? parseBackgroundLaunchText(step.terminalOutput);
+    // Specs 305/384: capture validated launch text before output display trimming.
+    let launch = parseBackgroundLaunch(merged) ?? parseBackgroundLaunchText(step.terminalOutput);
+    if (!launch) {
+      for (const section of rawOutputGenericSections(merged.rawOutput)) {
+        launch = parseBackgroundLaunchText(section.text);
+        if (launch) break;
+      }
+    }
     if (launch) draft.background = { ...launch, command: launchCommand(merged) };
     applySubagentCard(step);
   },

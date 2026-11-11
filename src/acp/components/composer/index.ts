@@ -8,8 +8,8 @@
 //
 //   1. the root's modifiers — `--command`, `--memory`, `--dictating`,
 //      `--permission` — and `--acp-lane-accent`;
-//   2. the child ORDER: chrome, live-voice strip, staging strip, the four
-//      inline palettes, the input line. The peer readout is not a root
+//   2. the child ORDER: background-task strip, chrome, live-voice strip,
+//      staging strip, the four inline palettes, the input line. The peer readout is not a root
 //      child: it sits at the end of the chrome row's left run, so a queued
 //      lane mail or a pending wait costs no line of its own;
 //   3. the three shapes the root takes: `no lanes`, the decision row (a
@@ -31,6 +31,7 @@ import { Component } from '../../../ui/component';
 import { classes, el, setChildren } from '../../../ui/dom';
 import type { KeyHint } from '../../../ui/kbd';
 import { syncOrder } from '../../../ui/list';
+import { BackgroundTaskStrip, type BackgroundTaskStripProps } from '../background-task-strip';
 import { ComposerMeta, type ComposerMetaProps } from '../composer-meta';
 import { DecisionComposer, type DecisionComposerProps } from '../decision-composer';
 import { DictationControl, type DictationControlProps } from '../dictation-control';
@@ -75,6 +76,7 @@ export interface ComposerEmptyProps {
 export interface ComposerDecisionProps {
   readonly kind: 'decision';
   readonly accent: string;
+  readonly background: BackgroundTaskStripProps;
   readonly liveVoice: LiveVoiceStripProps;
   readonly decision: DecisionComposerProps;
 }
@@ -82,6 +84,7 @@ export interface ComposerDecisionProps {
 export interface ComposerDraftProps {
   readonly kind: 'draft';
   readonly accent: string;
+  readonly background: BackgroundTaskStripProps;
   /** `focus === 'transcript'` — command mode. */
   readonly command: boolean;
   /** The memory drawer is open. */
@@ -108,6 +111,7 @@ export interface ComposerDraftProps {
 export type ComposerProps = ComposerEmptyProps | ComposerDecisionProps | ComposerDraftProps;
 
 export class Composer extends Component<ComposerProps> {
+  private readonly background = new BackgroundTaskStrip();
   private readonly peer = new PeerStrip();
   private readonly meta = new ComposerMeta(this.peer.el);
   private readonly dictation = new DictationControl();
@@ -185,7 +189,7 @@ export class Composer extends Component<ComposerProps> {
     }
     this.el.style.setProperty('--acp-lane-accent', next.accent);
     if (next.kind === 'decision') {
-      syncOrder(this.el, [this.liveVoice.el, this.decision.el]);
+      syncOrder(this.el, [this.background.el, this.liveVoice.el, this.decision.el]);
       return;
     }
     if (next.dictation === null) this.dictation.el.remove();
@@ -193,6 +197,7 @@ export class Composer extends Component<ComposerProps> {
       this.meta.toolsEl.appendChild(this.dictation.el);
     }
     syncOrder(this.el, [
+      this.background.el,
       this.meta.el,
       this.liveVoice.el,
       this.staging.el,
@@ -210,6 +215,11 @@ export class Composer extends Component<ComposerProps> {
     this.liveVoice.update(props);
   }
 
+  /** Spec 384: metrics update live jobs without rebuilding the draft or transcript. */
+  patchBackgroundTasks(props: BackgroundTaskStripProps): void {
+    this.background.update(props);
+  }
+
   /**
    * Hand every child its props, whatever the root's own dependency tuple says.
    * A child that compares equal writes nothing; a child whose state moved
@@ -217,6 +227,7 @@ export class Composer extends Component<ComposerProps> {
    */
   private updateChildren(next: ComposerProps): void {
     if (next.kind === 'empty') return;
+    this.background.update(next.background);
     if (next.kind === 'decision') {
       this.liveVoice.update(next.liveVoice);
       this.decision.update(next.decision);
@@ -248,6 +259,7 @@ export class Composer extends Component<ComposerProps> {
   }
 
   protected onDispose(): void {
+    this.background.dispose();
     this.meta.dispose();
     this.dictation.dispose();
     this.peer.dispose();

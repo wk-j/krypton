@@ -17,6 +17,7 @@ import { def as annotationRail } from './annotation-rail';
 import { def as assistantRow } from './assistant-row';
 import { def as assistantInstances } from './assistant-instances';
 import { def as backgroundTasks } from './background-tasks';
+import { def as backgroundTaskStrip } from './background-task-strip';
 import { def as card } from './card';
 import { def as caret } from './caret';
 import { def as chip } from './chip';
@@ -162,6 +163,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   // layer 6 — composer
   composer,
   composerMeta,
+  backgroundTaskStrip,
   draftLine,
   stagingStrip,
   peerStrip,

@@ -1,0 +1,112 @@
+/* Spec 384 — a flat, bounded status strip on the composer plate. */
+@layer krypton.component {
+  .acp-harness__background-strip {
+    display: block;
+    flex: none;
+    container-type: inline-size;
+    min-width: 0;
+    max-width: 100%;
+    padding: 5px 0;
+    color: var(--krypton-ink-2);
+    font-family: var(--agent-font, var(--krypton-font-family, monospace));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    line-height: 1.4;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .acp-harness__background-strip[hidden],
+  .acp-harness__background-strip-more[hidden] {
+    display: none;
+  }
+
+  .acp-harness__background-strip-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    min-width: 0;
+    margin-bottom: 3px;
+  }
+
+  .acp-harness__background-strip-label,
+  .acp-harness__background-strip-count {
+    color: var(--mat-silk);
+    font-weight: 600;
+    letter-spacing: 0.13em;
+    text-shadow: var(--mat-engrave);
+  }
+
+  .acp-harness__background-strip-hint {
+    margin-left: auto;
+    color: var(--krypton-ink-3);
+  }
+
+  .acp-harness__background-strip-row {
+    display: grid;
+    grid-template-columns: 6px max-content minmax(0, 1fr) max-content minmax(0, 1fr);
+    align-items: center;
+    gap: 2px 8px;
+    min-width: 0;
+    padding: 4px 0;
+    border-top: 1px solid var(--mat-groove-lo);
+  }
+
+  .acp-harness__background-strip-led {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+  }
+
+  .acp-harness__background-strip-row--running .acp-harness__background-strip-led {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
+  }
+
+  .acp-harness__background-strip-row--unknown .acp-harness__background-strip-led,
+  .acp-harness__background-strip-row--orphaned .acp-harness__background-strip-led {
+    background: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+  }
+
+  .acp-harness__background-strip-row--failed .acp-harness__background-strip-led {
+    background: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+  }
+
+  .acp-harness__background-strip-state,
+  .acp-harness__background-strip-elapsed {
+    white-space: nowrap;
+  }
+
+  .acp-harness__background-strip-command,
+  .acp-harness__background-strip-tail {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-harness__background-strip-tail,
+  .acp-harness__background-strip-elapsed,
+  .acp-harness__background-strip-more {
+    color: var(--krypton-ink-3);
+  }
+
+  .acp-harness__background-strip-more {
+    padding-top: 3px;
+  }
+
+  @container (max-width: 480px) {
+    .acp-harness__background-strip-row {
+      grid-template-columns: 6px max-content minmax(0, 1fr) max-content;
+      column-gap: 6px;
+    }
+
+    .acp-harness__background-strip-tail {
+      grid-column: 3 / -1;
+    }
+
+    .acp-harness__background-strip-tail:empty {
+      display: none;
+    }
+  }
+}
