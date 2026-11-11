@@ -16,7 +16,7 @@ import type { GalleryInput } from './examples';
 // so a state that drifts is on the page before a lane happens to hit it.
 
 /** Row kinds only Krypton itself produces; spec 381 excludes them. */
-const KRYPTON_ONLY: readonly RowKind[] = ['interLane', 'docCard', 'directiveDiff'];
+const KRYPTON_ONLY: readonly RowKind[] = ['interLane', 'docCard'];
 
 const TOOL_KINDS = [
   'read', 'edit', 'delete', 'move', 'search', 'execute', 'think', 'fetch', 'other', 'agents', 'wait',

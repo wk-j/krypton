@@ -1,5 +1,4 @@
 pub mod acp;
-pub mod acp_harness_config;
 mod acp_install;
 mod acp_updates;
 pub mod acp_wire;
@@ -265,8 +264,6 @@ pub fn run() {
             commands::live_assist_toggle,
             commands::live_assist_hide,
             commands::live_assist_ready,
-            commands::get_acp_harness_config,
-            commands::get_acp_harness_config_path,
             commands::acp_collect_review_git_state,
             commands::collect_working_diff,
             commands::native_git_diff,

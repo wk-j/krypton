@@ -762,17 +762,6 @@ export interface LaneSummary {
   local?: boolean;
   cwd?: string | null;
   workspaceKey?: string;
-  /** spec 124: lane-scope directive binding, if any. Surfaced via peer_list so
-   * callers can pick the lane whose role fits the job. Reflects
-   * `activeDirectiveId` only — one-shot `turnDirectiveOverride` is excluded
-   * because it isn't the lane's persistent identity. */
-  activeDirective: {
-    id: string;
-    title: string;
-    task: string;
-    description: string;
-    enabled: boolean;
-  } | null;
 }
 
 export interface LaneStatusEvent {

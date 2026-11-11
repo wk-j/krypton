@@ -2,11 +2,10 @@
 //
 // Replaces `renderTranscriptItem`'s 18-branch `if/else if` chain. The branch
 // ORDER is load-bearing: a `system` item that carries both a notice (spec 371)
-// and a `diff` renders as the notice, because the inter-lane event branch it
-// replaced ran first (`harness-transcript-render.ts:379` before `:395`).
+// and a `systemCommand` renders as the notice, because the notice branch runs
+// first.
 
 import { AssistantRow } from '../assistant-row';
-import { DirectiveDiffRow } from '../directive-diff-row';
 import { DocCardRow } from '../doc-card-row';
 import { FsActivityRow } from '../fs-activity-row';
 import { FsWriteReviewRow } from '../fs-write-review-row';
@@ -39,7 +38,6 @@ export const ROW_KINDS = [
   'notice',
   'docCard',
   'systemCommand',
-  'directiveDiff',
   'thought',
   'user',
   'text',
@@ -62,7 +60,6 @@ export function rowKindFor(item: HarnessTranscriptItem): RowKind {
   if (item.kind === 'system' && systemRowVariant(item) !== 'plain') return 'notice';
   if (item.kind === 'artifact' && item.artifact) return 'docCard';
   if (item.kind === 'review' && item.review) return 'docCard';
-  if (item.kind === 'system' && item.diff) return 'directiveDiff';
   if (item.kind === 'system' && item.id !== HIDDEN_INDICATOR_ID && item.systemCommand) return 'systemCommand';
   if (item.kind === 'thought') return 'thought';
   if (item.kind === 'user') return 'user';
@@ -93,8 +90,6 @@ export function createTranscriptRow(props: RowProps): TranscriptRow {
       return new UsageRow(props);
     case 'docCard':
       return new DocCardRow(props);
-    case 'directiveDiff':
-      return new DirectiveDiffRow(props);
     case 'systemCommand':
       return new SystemCommandRow(props);
     case 'thought':

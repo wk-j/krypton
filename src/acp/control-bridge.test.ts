@@ -39,7 +39,6 @@ function makeHarness(harnessId: string, displayNames: string[], focused = false)
     backendId: 'test',
     modelName: null,
     inboxDepth: 0,
-    activeDirective: null,
   }));
   const entry: HarnessEntry = {
     harnessId,

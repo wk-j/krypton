@@ -466,7 +466,7 @@ export class ToolRow extends TranscriptRow {
       if (rows.length > 0) return this.diffStatBlock(rows, section.text);
     }
     if (isGitDiffCommand(tool.command) && section.text.includes('diff --git')) {
-      this.unidiff ??= new DiffBlock('unified');
+      this.unidiff ??= new DiffBlock();
       this.unidiff.update({ mode: 'unified', rows: unifiedDiffRows(section.text), prefix: PREFIX });
       return this.unidiff.el;
     }
@@ -530,7 +530,7 @@ export class ToolRow extends TranscriptRow {
     reconcile<(typeof items)[number], DiffBlock>(this.diffs, items, {
       key: (item) => item.key,
       create: (item) => {
-        const block = new DiffBlock('paired');
+        const block = new DiffBlock();
         block.update(item.props);
         return block;
       },

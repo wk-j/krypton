@@ -168,7 +168,6 @@ export interface HarnessTranscriptItem {
   /** spec 280: a user row that came from the live voice session. */
   voice?: true;
   status?: string;
-  diff?: { title: string; unified: string };
   tool?: ToolPayload;
   toolStartedAt?: number;
   toolEndedAt?: number;
@@ -899,20 +898,8 @@ export interface HarnessLane {
   /** spec 120: set when drain calls enqueueSystemPrompt; cleared on turn end. */
   pendingCoordinatorDrain: CoordinatorDrainContext | null;
   coordinatorDrainProvenanceUsed: boolean;
-  /** spec 124: directive assigned to this lane (lane scope). */
-  activeDirectiveId: string | null;
-  /** spec 124: queued lane-scope change while busy; promoted before next prompt.
-   * Object presence = change pending; `directiveId: null` = clear on next send.
-   * Plain `null` on the field = no pending change. */
-  pendingDirectiveChange: { directiveId: string | null } | null;
-  /** spec 124: MCP scope = "next_turn"; used for one prompt then cleared.
-   * Object presence = override active; `directiveId: null` = clear active
-   * directive for one turn. Plain `null` on the field = no override. */
-  turnDirectiveOverride: { directiveId: string | null } | null;
-  /** spec 124: restored after a next-turn override completes. */
-  previousDirectiveId: string | null;
-  /** spec 164: built-in Polly role overlay (orchestrator / implementer). Overrides
-   *  user directives while set. */
+  /** spec 164: built-in Polly role overlay (orchestrator / implementer). Supplies
+   *  the lane's role block while set. */
   pollyBuiltinRole: 'orchestrator' | 'implementer' | null;
   /** spec 164: while a lane serves as a Polly implementer it auto-accepts
    *  permissions (`permissionMode = 'bypass'`). This stashes the user's own mode
@@ -932,9 +919,6 @@ export interface HarnessLane {
    *  default-on for every harness-memory-capable lane; this flag now drives local
    *  audit/UI behavior rather than MCP tool visibility. */
   triageEquipped: boolean;
-  /** Legacy spec-129 override field retained for saved/runtime shape stability.
-   *  The user-facing manual toggle was removed in spec 130. */
-  triageOverride: boolean | null;
   /** spec 128: set when this lane flagged ≥1 judgement item during the current
    *  turn; read at busy→idle to classify the turn as flagged vs silent. */
   flaggedThisTurn: boolean;

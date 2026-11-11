@@ -174,16 +174,6 @@ fn parse_operation(args: &[String]) -> Result<(&'static str, Value, Option<Strin
             json!({ "lane": lane, "modelId": model_id }),
             None,
         )),
-        ["directive", lane, "--clear"] => Ok((
-            "lane.directive",
-            json!({ "lane": lane, "directiveId": null }),
-            None,
-        )),
-        ["directive", lane, directive_id] => Ok((
-            "lane.directive",
-            json!({ "lane": lane, "directiveId": directive_id }),
-            None,
-        )),
         ["permission-mode", lane, mode] => Ok((
             "lane.permission_mode",
             json!({ "lane": lane, "mode": mode }),
@@ -250,7 +240,7 @@ fn remove_flag(args: &mut Vec<String>, flag: &str) -> bool {
 }
 
 fn usage() -> String {
-    "usage: kryptonctl [--json] [--yes] acp <capabilities|harness|harnesses|lanes|spawn|send|cancel|close|restart|new|model|directive|permission-mode|transcript|permissions|permission|memory|peers> | computer <list|exec>".to_string()
+    "usage: kryptonctl [--json] [--yes] acp <capabilities|harness|harnesses|lanes|spawn|send|cancel|close|restart|new|model|permission-mode|transcript|permissions|permission|memory|peers> | computer <list|exec>".to_string()
 }
 
 fn read_descriptor() -> Result<RuntimeDescriptor, String> {

@@ -18,7 +18,6 @@
 
 import './lane-picker.css';
 
-import type { HarnessDirective } from '../../../config';
 import { Component } from '../../../ui/component';
 import { el, frag } from '../../../ui/dom';
 import type { KeyHint } from '../../../ui/kbd';
@@ -37,6 +36,8 @@ const HINTS: readonly KeyHint[] = [
   { keys: ['Enter'], label: 'spawn' },
   { keys: ['Esc'], label: 'cancel' },
 ];
+
+const TITLE = '// add lane';
 
 const EMPTY = 'no ACP backends installed';
 
@@ -72,11 +73,6 @@ export interface LanePickerProps {
   /** Lanes already running per backend id; a missing id counts as zero. */
   readonly running: ReadonlyMap<string, number>;
   readonly cursor: number;
-  /**
-   * spec 163: set when Shift+Enter in the directive picker opened this one, so
-   * the head can say which directive the spawned lane will carry.
-   */
-  readonly pendingDirective: HarnessDirective | null;
   /** Another overlay took the single open slot; clear the owner's flag. */
   onAutoClose?(): void;
 }
@@ -100,13 +96,7 @@ export class LanePicker extends Component<LanePickerProps> {
   }
 
   protected readDeps(next: LanePickerProps): readonly unknown[] {
-    return [
-      next.open,
-      this.keyFor(next),
-      next.cursor,
-      next.pendingDirective?.id,
-      next.pendingDirective?.title,
-    ];
+    return [next.open, this.keyFor(next), next.cursor];
   }
 
   /**
@@ -133,7 +123,7 @@ export class LanePicker extends Component<LanePickerProps> {
       rootClass: BLOCK,
       block: BLOCK,
       parts: PARTS,
-      title: headTitle(next.pendingDirective),
+      title: TITLE,
       sub: HINTS,
       body: this.list.el,
       empty: entries.length === 0 ? EMPTY : undefined,
@@ -182,11 +172,6 @@ export class LanePicker extends Component<LanePickerProps> {
     this.list.dispose();
     this.shell.dispose();
   }
-}
-
-function headTitle(directive: HarnessDirective | null): string {
-  if (directive === null) return '// add lane';
-  return `// add lane · directive: ${directive.title || directive.id}`;
 }
 
 export const def: ComponentDef = { id: 'lane-picker', blocks: [BLOCK] };

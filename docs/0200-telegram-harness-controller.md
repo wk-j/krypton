@@ -106,7 +106,7 @@ lane,” but that framing misses the real safety and state problems:
 - `src/acp/control-bridge.ts` resolves a harness/lane and routes the operation to
   the owning `AcpHarnessView`.
 - `src/acp/acp-harness-view.ts` remains the state authority for lane lifecycle,
-  transcript, prompt queue, permissions, memory, directives, attention,
+  transcript, prompt queue, permissions, memory, attention,
   artifacts, review data, and issue bindings.
 - `src/acp/control-publish.ts` already serializes frontend-published live events
   and `ControlServer` fans them out to SSE subscribers.
@@ -484,7 +484,6 @@ control syntax.
 | `/new [--clear-memory]` | `lane.new`; successful session replacement clears the chat target |
 | `/close` | `lane.close`; successful close clears the chat target |
 | `/model [id]` | List or set `lane.model` |
-| `/directive [id\|clear]` | List or set `lane.directive` |
 | `/mode [normal\|acceptEdits\|bypass]` | Read/set the lane's persistent permission mode; separate from Telegram turn bypass |
 | `/transcript [count]` | Pull a bounded recent `lane.transcript` snapshot |
 | `/permissions` | List pending permissions from other-origin turns and provide accept/reject buttons |

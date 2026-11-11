@@ -44,7 +44,7 @@ export class FsWriteReviewRow extends TranscriptRow {
   private readonly head = el('div', { class: 'acp-harness__fs-review-head' });
   private readonly verb = el('span', { class: 'acp-harness__fs-review-verb', text: 'write' });
   private readonly path = el('span', { class: 'acp-harness__fs-review-path' });
-  private readonly diff = new DiffBlock('paired');
+  private readonly diff = new DiffBlock();
   private rows: readonly DiffRow[] = [];
   private rowsSource: { readonly oldText: string; readonly newText: string } | null = null;
 

@@ -52,18 +52,6 @@
   font-size: var(--krypton-font-size, 13px);
   outline: none;
 
-  /* spec 125 — lane-rail disambiguation palette. Scoped to the harness so
-   * other surfaces don't inherit these tokens; themes can override by
-   * redeclaring under a more specific selector. */
-  --krypton-role-analysis: #6fb8d9;
-  --krypton-role-review:   #d9c66f;
-  --krypton-role-impl:     #6fd994;
-  --krypton-role-plan:     #b86fd9;
-  --krypton-role-explore:  #d9886f;
-  --krypton-role-hash-1:   #d96fb3;
-  --krypton-role-hash-2:   #6f8fd9;
-  --krypton-role-hash-3:   #d9a86f;
-
   --krypton-backend-claude:   #d97757;
   --krypton-backend-codex:    #d7e7f0;
   --krypton-backend-opencode: #c186d9;
@@ -1660,15 +1648,6 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
     --krypton-backend-cline:    #1a8a80;
     --krypton-backend-antigravity: #b0308a;
     --krypton-backend-fx:       #5f7f12;
-
-    --krypton-role-analysis: #2a7aa0;
-    --krypton-role-review:   #8a7820;
-    --krypton-role-impl:     #2a8a58;
-    --krypton-role-plan:     #7a38b0;
-    --krypton-role-explore:  #b05a38;
-    --krypton-role-hash-1:   #a04080;
-    --krypton-role-hash-2:   #3a62b0;
-    --krypton-role-hash-3:   #a07838;
 
     --agent-accent: var(--agent-green, #0b7d6a);
     --agent-user: var(--agent-cyan, #007799);

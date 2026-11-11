@@ -1,8 +1,8 @@
 // Spec 302 §2.3 — `ListPicker<T>`.
 //
 // The keyboard-driven row list every harness picker reimplements: the lane
-// picker, the directive picker, the model picker, the session picker, the
-// ticket picker, the remote-harness picker and the inline question list each
+// picker, the model picker, the session picker, the ticket picker, the
+// remote-harness picker and the inline question list each
 // carry their own copy of the same three lines of cursor arithmetic and their
 // own `innerHTML` row loop.
 //
@@ -72,8 +72,8 @@ export interface ListPickerProps<T> {
   /** Row index attribute name: `data-${name}-index`, e.g. `ticket`. */
   readonly name: string;
   /**
-   * Joins `block` to the element name. Default `'__'`. The lane, directive,
-   * model and session pickers are elements of the `acp-harness` block and use
+   * Joins `block` to the element name. Default `'__'`. The lane, model and
+   * session pickers are elements of the `acp-harness` block and use
    * `'-'`: `acp-harness__picker-list` / `-row`.
    */
   readonly separator?: '__' | '-';

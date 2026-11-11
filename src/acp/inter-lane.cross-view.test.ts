@@ -55,7 +55,6 @@ function makeView(
         backendId: 'test',
         modelName: null,
         inboxDepth: 0,
-        activeDirective: null,
       })),
     getLane: (laneId) => {
       const status = statuses.get(laneId);

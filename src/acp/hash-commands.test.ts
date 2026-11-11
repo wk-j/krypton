@@ -132,7 +132,7 @@ describe('buildCommandManifest', () => {
   it('carries the real prompt template on every prompt-backed command', () => {
     const promptBacked = [
       'handoff', 'resume', 'wiki', 'recall', 'learn',
-      'directive', 'draw', 'review', 'polly', 'debby', 'dispatch-github-issue',
+      'draw', 'review', 'polly', 'debby', 'dispatch-github-issue',
       'analyze-github-issue', 'fix-github-issue', 'tag-github-issue',
       'post-github-comment', 'attach-issue-artifact', 'handle-github-issue', 'rails',
     ];

@@ -34,7 +34,6 @@ describe('InterLaneCoordinator transcript dedup (spec 120 phase 0)', () => {
           backendId: laneId.split('-')[0],
           modelName: null,
           inboxDepth: 0,
-          activeDirective: null,
         })),
       getLane: (laneId) => {
         const status = statuses.get(laneId);
@@ -116,7 +115,7 @@ describe('InterLaneCoordinator.deliverAcknowledge (spec 183)', () => {
       listLanes: () =>
         [...statuses.entries()].map(([laneId, status]) => ({
           laneId, status, displayName: names.get(laneId) ?? laneId,
-          backendId: laneId.split('-')[0], modelName: null, inboxDepth: 0, activeDirective: null,
+          backendId: laneId.split('-')[0], modelName: null, inboxDepth: 0,
         })),
       getLane: (laneId) => {
         const status = statuses.get(laneId);
@@ -166,7 +165,7 @@ describe('InterLaneCoordinator.deliverRedirect lesson nudge (spec 298)', () => {
       prompts,
       listLanes: () => [{
         laneId: 'claude-1', status: 'idle', displayName: 'Claude-1',
-        backendId: 'claude', modelName: null, inboxDepth: 0, activeDirective: null,
+        backendId: 'claude', modelName: null, inboxDepth: 0,
       }],
       getLane: (laneId) => (laneId === 'claude-1' ? { status: 'idle', displayName: 'Claude-1' } : null),
       setLaneStatus: () => {},

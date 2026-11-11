@@ -2,15 +2,14 @@
 //
 // The composer's chrome row: the status chip on the left
 // (`reviewing · 2:14 · 3 queued`), the lane's permission mode after it
-// (`auto-edit`, `bypass`) and the directive (`directive 0301-impl`), the git
-// branch (icon + `main`), the node the composer hands the constructor (the
-// peer readout, `▼1 lane mail queued`), and on
-// the right the `? help` hint plus whatever the composer mounts beside it (the
-// dictation control). Built today by `acp-harness-view.ts:13289-13304` out of
+// (`auto-edit`, `bypass`), the git branch (icon + `main`), the node the
+// composer hands the constructor (the peer readout, `▼1 lane mail queued`),
+// and on the right the `? help` hint plus whatever the composer mounts beside
+// it (the dictation control). Built today by `acp-harness-view.ts:13289-13304` out of
 // `harness-composer-meta.ts:48-68` (`renderStatusSegments`), `composerStatusChip`
 // (`:13390-13430`), `renderSaltyBypassChip` / `renderPermissionModeChip`
-// (`harness-lane-chrome.ts:346-363`), `renderDirectiveChip` (`:13359-13381`) and
-// `renderComposerProjectStatus` (`:13644-13653`).
+// (`harness-lane-chrome.ts:346-363`) and `renderComposerProjectStatus`
+// (`:13644-13653`).
 //
 // **This is the only part of the composer that ticks.** The 1 Hz
 // `setInterval` at `acp-harness-view.ts:13439` rebuilds the WHOLE composer just
@@ -59,21 +58,9 @@ export interface ComposerMetaSegment extends MetaSegment {
   readonly hints?: readonly KeyHint[];
 }
 
-/** The directive chip's nested `◆ <source>` triage marker — the one chip in
- *  this row with an element inside it (`acp-harness-view.ts:13378`). */
-export interface ComposerMetaChipExtra {
-  /** Full class name, e.g. `acp-harness__directive-chip__triage`. */
-  readonly class: string;
-  readonly text: string;
-  readonly title?: string;
-  /** Text between the chip's own text and the marker. Default `' '`. */
-  readonly separator?: string;
-}
-
 export interface ComposerMetaChipProps extends ChipProps {
-  /** Identity across updates: `sandbox`, `permission-mode`, `directive`. */
+  /** Identity across updates: `salty-bypass`, `permission-mode`. */
   readonly key: string;
-  readonly extra?: ComposerMetaChipExtra | null;
 }
 
 export interface ComposerMetaBranch {
@@ -92,13 +79,11 @@ export interface ComposerMetaProps {
   readonly segments: readonly ComposerMetaSegment[];
   /** Busy lane with no flash override — `acp-harness__memory-chip--running`. */
   readonly running: boolean;
-  /** Sandbox / permission-mode / directive, in paint order. */
+  /** Salty bypass / permission mode, in paint order. */
   readonly chips: readonly ComposerMetaChipProps[];
   readonly branch: ComposerMetaBranch | null;
   /** `? help`, as a key cap and its legend. */
   readonly helpHint: readonly KeyHint[];
-  /** Click on `[data-open-directive-picker]`. Not a dependency. */
-  readonly onOpenDirective?: () => void;
 }
 
 const SEGMENT_BLOCK = 'acp-harness__meta-seg';
@@ -141,18 +126,7 @@ function chipSignature(chip: ComposerMetaChipProps): string {
     chip.icon?.cls ?? '',
     (chip.modifiers ?? []).join(' '),
     chip.data ? Object.entries(chip.data).map(([k, v]) => `${k}=${v ?? ''}`).join(',') : '',
-    chip.extra?.class ?? '',
-    chip.extra?.text ?? '',
-    chip.extra?.title ?? '',
-    chip.extra?.separator ?? '',
   ].join('\u0001');
-}
-
-/** The chip plus the nodes of its optional trailing marker. */
-interface ChipEntry {
-  readonly chip: Chip;
-  separator: Text | null;
-  marker: HTMLElement | null;
 }
 
 export class ComposerMeta extends Component<ComposerMetaProps> {
@@ -166,8 +140,7 @@ export class ComposerMeta extends Component<ComposerMetaProps> {
   private helpSignature: string | null = null;
   private readonly projectEl: HTMLElement;
   private readonly branchEl: HTMLElement;
-  private readonly chips = new Map<string, ChipEntry>();
-  private openDirective: (() => void) | undefined;
+  private readonly chips = new Map<string, Chip>();
 
   /**
    * @param trailing A node the caller owns and updates, placed last in the
@@ -187,19 +160,6 @@ export class ComposerMeta extends Component<ComposerMetaProps> {
     this.helpEl = el('span', { class: 'acp-harness__help-hint' });
     this.toolsEl = el('div', { class: 'acp-harness__composer-tools' }, this.helpEl);
     this.el.append(this.metaEl, this.toolsEl);
-    // ONE delegated listener for the row's whole life. The handler is
-    // retargeted by `update()`, never re-attached by `paint()`.
-    this.bag.listen(this.el, 'click', (event: Event): void => {
-      if (!this.openDirective || !(event.target instanceof Element)) return;
-      if (!event.target.closest('[data-open-directive-picker]')) return;
-      event.preventDefault();
-      this.openDirective();
-    });
-  }
-
-  update(next: ComposerMetaProps): void {
-    this.openDirective = next.onOpenDirective;
-    super.update(next);
   }
 
   protected readDeps(next: ComposerMetaProps): readonly unknown[] {
@@ -239,9 +199,9 @@ export class ComposerMeta extends Component<ComposerMetaProps> {
       live.add(props.key);
       nodes.push(this.paintChip(props));
     }
-    for (const [key, entry] of this.chips) {
+    for (const [key, chip] of this.chips) {
       if (live.has(key)) continue;
-      entry.chip.dispose();
+      chip.dispose();
       this.chips.delete(key);
     }
 
@@ -259,39 +219,20 @@ export class ComposerMeta extends Component<ComposerMetaProps> {
     }
   }
 
-  /** Paint one chip and its optional marker, returning the node to place. */
+  /** Paint one chip, returning the node to place. */
   private paintChip(props: ComposerMetaChipProps): HTMLElement {
-    let entry = this.chips.get(props.key);
-    if (!entry) {
-      entry = { chip: new Chip(), separator: null, marker: null };
-      this.chips.set(props.key, entry);
+    let chip = this.chips.get(props.key);
+    if (!chip) {
+      chip = new Chip();
+      this.chips.set(props.key, chip);
     }
-    entry.chip.update(props);
-    const extra = props.extra ?? null;
-    if (!extra) {
-      entry.separator?.remove();
-      entry.marker?.remove();
-      entry.separator = null;
-      entry.marker = null;
-      return entry.chip.el;
-    }
-    if (!entry.separator) entry.separator = document.createTextNode('');
-    if (!entry.marker) entry.marker = el('span');
-    entry.separator.data = extra.separator ?? ' ';
-    entry.marker.className = extra.class;
-    setAttr(entry.marker, 'title', extra.title);
-    entry.marker.textContent = extra.text;
-    // The chip's own paint() replaces its children whenever its deps move, so
-    // the marker is re-placed every pass rather than once at creation.
-    if (entry.marker.previousSibling !== entry.separator || entry.marker.nextSibling !== null) {
-      entry.chip.el.append(entry.separator, entry.marker);
-    }
-    return entry.chip.el;
+    chip.update(props);
+    return chip.el;
   }
 
   protected onDispose(): void {
     disposeList(this.statusEl);
-    for (const entry of this.chips.values()) entry.chip.dispose();
+    for (const chip of this.chips.values()) chip.dispose();
     this.chips.clear();
   }
 }
@@ -308,6 +249,5 @@ export const def: ComponentDef = {
     'acp-harness__help-hint',
     'acp-harness__project-status',
     'acp-harness__project-branch',
-    'acp-harness__directive-chip',
   ],
 };

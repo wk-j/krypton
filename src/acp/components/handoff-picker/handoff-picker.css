@@ -1,6 +1,6 @@
 /* Spec 307 §UI Changes — `HandoffPicker`.
-   Carved from directive-picker.css: head, list and preview at the same width,
-   because a handoff row carries six fields. The `acp-harness__handoff-*`
+   Head, list and preview at the same width, because a handoff row carries
+   six fields. The `acp-harness__handoff-*`
    prefix is this directory's alone; nothing in src/styles/ declares it.
 
    Spec 366 / DESIGN.md "Overlays and dialogs": one floating plate over the

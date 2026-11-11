@@ -26,8 +26,6 @@ import { def as composerMeta } from './composer-meta';
 import { def as decisionComposer } from './decision-composer';
 import { def as dictationControl } from './dictation-control';
 import { def as diffBlock } from './diff-block';
-import { def as directiveDiffRow } from './directive-diff-row';
-import { def as directivePicker } from './directive-picker';
 import { def as docCardRow } from './doc-card-row';
 import { def as dockAction } from './dock-action';
 import { def as draftLine } from './draft-line';
@@ -143,7 +141,6 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   usageRow,
   systemCommandRow,
   systemRow,
-  directiveDiffRow,
   imageStrip,
   resourceRail,
   followUpRail,
@@ -178,7 +175,6 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   decisionComposer,
   // layer 7 — overlays
   lanePicker,
-  directivePicker,
   modelPicker,
   sessionPicker,
   ticketPicker,

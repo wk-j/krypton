@@ -3,7 +3,7 @@
 // The leading block of every `sendUserPrompt` turn is split in two:
 //   - a small turn header (identity, tool-name line, volatile state, lesson
 //     deltas, per-turn provenance), sent every turn, and
-//   - the lane policy (tool index, peering, ticket pin, lessons, directive/role
+//   - the lane policy (tool index, peering, ticket pin, lessons, role
 //     block), sent only when the current agent session has not seen this exact
 //     text. Lessons are tracked by content, not by the policy hash: a lesson
 //     change after the policy went out rides the header as a delta.

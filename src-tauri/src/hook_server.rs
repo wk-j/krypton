@@ -4713,17 +4713,6 @@ async fn handle_bus_tool_call(
         "lesson_retire" => lesson_retire(state, harness_id, lane_label, arguments),
         "peer_send" => peer_send(state, harness_id, lane_label, arguments).await,
         "peer_list" => peer_list(state, harness_id).await,
-        // spec 161: the four directive_* tools were removed to reclaim ~1,224
-        // tokens/turn. Authoring is now the `#directive` harness command (the
-        // agent edits acp-harness.toml with its own file tools); assignment stays
-        // on the keyboard picker. Answer any stray cached call with guidance.
-        "directive_list" | "directive_preview" | "directive_apply" | "directive_remove" => Err(
-            "directive tools were removed (spec 161). To author a directive, the user runs the \
-             `#directive <intent>` harness command, which lets you edit \
-             ~/.config/krypton/acp-harness.toml with your normal file tools. To assign one, the \
-             user opens the directive picker (Cmd+P → .)."
-                .to_string(),
-        ),
         "attention_flag" => attention_flag(state, harness_id, lane_label, arguments).await,
         "attention_resolve" => attention_resolve(state, harness_id, lane_label, arguments).await,
         "timeline_record" => timeline_record(&state.hook_server, harness_id, lane_label, arguments),
@@ -6930,12 +6919,12 @@ fn bus_tool_descriptors() -> Value {
         },
         {
             "name": "peer_list",
-            "description": "List live peer lanes. Returns `{ lanes, count }` where each lane has `laneId`, `displayName`, `backendId`, `status`, `modelName`, `inboxDepth`, and `activeDirective` (the lane-scope directive binding: `{ id, title, task, description, enabled }` or null). The list spans this harness AND every other open harness view: each entry also carries `local` (true for a sibling in this harness, false for a cross-harness peer) and `cwd` (that lane's working directory). A foreign peer may be in a DIFFERENT repository — read `cwd` to pick the right peer and to know which project a message would leave for. Use `activeDirective` to pick the lane whose role fits the job (e.g., a lane bound to a 'review' directive for review work). Pass `displayName` to peer_send as `to_lane` for local and foreign peers alike. Re-query rather than caching — lanes come and go.",
+            "description": "List live peer lanes. Returns `{ lanes, count }` where each lane has `laneId`, `displayName`, `backendId`, `status`, `modelName`, and `inboxDepth`. The list spans this harness AND every other open harness view: each entry also carries `local` (true for a sibling in this harness, false for a cross-harness peer) and `cwd` (that lane's working directory). A foreign peer may be in a DIFFERENT repository — read `cwd` to pick the right peer and to know which project a message would leave for. Pass `displayName` to peer_send as `to_lane` for local and foreign peers alike. Re-query rather than caching — lanes come and go.",
             "inputSchema": { "type": "object", "properties": {} }
         },
         {
             "name": "artifact_new",
-            "description": "Create an HTML artifact the user opens in their browser, for views that beat prose: side-by-side comparisons, diagrams, annotated diffs, parameterized previews, dashboards. Use ONLY when the user asks for a visual/interactive artifact, or your active directive explicitly tells you to produce HTML artifacts for this task. Do NOT default to HTML for ordinary prose, plans, or answers, and do NOT volunteer unsolicited dashboards — those stay in your turn text. Returns `{ id, path, content_marker }`. The path points to a file that ALREADY EXISTS — a ready-made HTML scaffold with the default Binance dark styling and a light/auto toggle. Use your EDIT/patch tool (NOT a Write that recreates the file, and NOT a shell heredoc — both lose the styling or leak HTML into the transcript) to replace the placeholder inside `<main data-artifact-content>` with your content; keep the `<style id=\"krypton-artifact-base\">` block and the toggle. Write plain semantic HTML (headings, tables, `<pre><code>`, `<section class=\"ka-card\">`) — it is styled automatically; to override a default, add your own `<style>` AFTER the base block. NEVER use left accent borders (`border-left` rails) to color-code cards/callouts/steps — use a full border, a background tint, or heading/icon color instead; the scaffold strips left-only borders at runtime, so a rail will not render anyway. Then call artifact_register { id }. The artifact is a live file: keep editing it to iterate. Opening is always user-triggered; never auto-opens.",
+            "description": "Create an HTML artifact the user opens in their browser, for views that beat prose: side-by-side comparisons, diagrams, annotated diffs, parameterized previews, dashboards. Use ONLY when the user asks for a visual/interactive artifact. Do NOT default to HTML for ordinary prose, plans, or answers, and do NOT volunteer unsolicited dashboards — those stay in your turn text. Returns `{ id, path, content_marker }`. The path points to a file that ALREADY EXISTS — a ready-made HTML scaffold with the default Binance dark styling and a light/auto toggle. Use your EDIT/patch tool (NOT a Write that recreates the file, and NOT a shell heredoc — both lose the styling or leak HTML into the transcript) to replace the placeholder inside `<main data-artifact-content>` with your content; keep the `<style id=\"krypton-artifact-base\">` block and the toggle. Write plain semantic HTML (headings, tables, `<pre><code>`, `<section class=\"ka-card\">`) — it is styled automatically; to override a default, add your own `<style>` AFTER the base block. NEVER use left accent borders (`border-left` rails) to color-code cards/callouts/steps — use a full border, a background tint, or heading/icon color instead; the scaffold strips left-only borders at runtime, so a rail will not render anyway. Then call artifact_register { id }. The artifact is a live file: keep editing it to iterate. Opening is always user-triggered; never auto-opens.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

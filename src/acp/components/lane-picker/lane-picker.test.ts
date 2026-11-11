@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { HarnessDirective } from '../../../config';
 import type { AcpBackendDescriptor } from '../../types';
 import { LanePicker, type LanePickerProps } from './index';
 
@@ -10,17 +9,6 @@ const BACKENDS: readonly AcpBackendDescriptor[] = [
   { id: 'droid', display_name: 'Droid', command: 'droid' },
 ];
 
-const DIRECTIVE: HarnessDirective = {
-  id: '0301-impl',
-  title: '0301 implementation',
-  icon: '⚒',
-  description: 'carve the components out',
-  task: 'implementation',
-  system_prompt: 'ship the kernel',
-  enabled: true,
-  triage_equipped: false,
-};
-
 const pickers: LanePicker[] = [];
 
 const base = (over: Partial<LanePickerProps> = {}): LanePickerProps => ({
@@ -28,7 +16,6 @@ const base = (over: Partial<LanePickerProps> = {}): LanePickerProps => ({
   backends: BACKENDS,
   running: new Map([['claude', 2]]),
   cursor: 0,
-  pendingDirective: null,
   ...over,
 });
 
@@ -87,18 +74,6 @@ describe('LanePicker', () => {
       ['acp-harness__icon acp-harness__picker-logo acp-harness__picker-logo--pi', '#krypton-logo-pi'],
       ['acp-harness__icon acp-harness__picker-logo acp-harness__picker-logo--omp', '#krypton-logo-omp'],
     ]);
-  });
-
-  it('names the pending spawn directive in the head (spec 163)', () => {
-    const picker = mount(base({ pendingDirective: DIRECTIVE }));
-    expect(picker.el.querySelector('header')?.firstElementChild?.textContent).toBe(
-      '// add lane · directive: 0301 implementation',
-    );
-
-    picker.update(base({ pendingDirective: { ...DIRECTIVE, title: '' } }));
-    expect(picker.el.querySelector('header')?.firstElementChild?.textContent).toBe(
-      '// add lane · directive: 0301-impl',
-    );
   });
 
   it('replaces the list with the empty note when no backend is installed', () => {

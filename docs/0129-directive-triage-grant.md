@@ -1,6 +1,7 @@
 # Directive-Bound Triage Grant — Implementation Spec
 
 > Status: Implemented
+> **Removed by [spec 389](0389-remove-harness-directives.md)** (2026-11-11): the directives feature no longer exists. This document is kept as history.
 > Date: 2026-05-30
 > Milestone: M8 — Polish
 > Extends: `docs/0128-attention-triage.md` (spec 128), `docs/0124-acp-harness-directive-management.md` (spec 124)

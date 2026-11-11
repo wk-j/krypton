@@ -42,7 +42,6 @@ function laneSummary(
     status,
     modelName: 'opus',
     inboxDepth: 0,
-    activeDirective: null,
     ...overrides,
   };
 }

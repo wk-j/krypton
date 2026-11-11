@@ -5,14 +5,13 @@ import {
   type DiffBlockProps,
   type DiffRow,
   pairedDiffRows,
-  rawDiffRows,
   unifiedDiffRows,
 } from './index';
 
 const PREFIX = 'acp-harness';
 
 const paint = (props: DiffBlockProps): DiffBlock => {
-  const block = new DiffBlock(props.mode);
+  const block = new DiffBlock();
   block.update(props);
   return block;
 };
@@ -103,7 +102,7 @@ describe('DiffBlock paired', () => {
 
   it('keeps the path header above the body and removes it when the path goes away', () => {
     const rows: DiffRow[] = [{ kind: 'add', text: 'x', oldLine: null, newLine: 1 }];
-    const block = new DiffBlock('paired');
+    const block = new DiffBlock();
     block.update({ mode: 'paired', rows, prefix: PREFIX, path: 'src/ui/list.ts' });
 
     const header = block.el.firstElementChild;
@@ -195,35 +194,6 @@ describe('DiffBlock unified', () => {
   });
 });
 
-describe('DiffBlock raw', () => {
-  it('prints the unified text verbatim, sign included, inside a pre', () => {
-    const block = paint({
-      mode: 'raw',
-      rows: rawDiffRows('@@ context\n+ added line\n- removed line'),
-      prefix: PREFIX,
-    });
-
-    expect(block.el.tagName).toBe('PRE');
-    expect(block.el.className).toBe('acp-harness__directive-diff');
-    expect(block.el.outerHTML).toBe(
-      '<pre class="acp-harness__directive-diff">' +
-        '<div class="acp-harness__directive-diff-ctx">@@ context</div>' +
-        '<div class="acp-harness__directive-diff-add">+ added line</div>' +
-        '<div class="acp-harness__directive-diff-del">- removed line</div>' +
-        '</pre>',
-    );
-  });
-
-  it('keeps blank lines as context rows, as the directive card does today', () => {
-    const block = paint({ mode: 'raw', rows: rawDiffRows('+a\n\n+b'), prefix: PREFIX });
-    expect(Array.from(block.el.children).map((row) => row.getAttribute('class'))).toEqual([
-      'acp-harness__directive-diff-add',
-      'acp-harness__directive-diff-ctx',
-      'acp-harness__directive-diff-add',
-    ]);
-  });
-});
-
 describe('DiffBlock prefix', () => {
   it('re-derives every class from the prefix it was given', () => {
     const block = paint({
@@ -247,7 +217,7 @@ describe('DiffBlock on the cell grid (spec 326)', () => {
   ];
 
   it('grids every paired text cell once the diff holds a diagram, and clears when it does not', () => {
-    const block = new DiffBlock('paired');
+    const block = new DiffBlock();
     block.update({ mode: 'paired', rows: diagram, prefix: PREFIX });
     const body = block.el.querySelector<HTMLElement>('.acp-harness__tool-body--diff')!;
     expect(body.classList.contains('acp-cellgrid-lines')).toBe(true);
@@ -260,15 +230,11 @@ describe('DiffBlock on the cell grid (spec 326)', () => {
     expect(body.querySelector('.acp-cellgrid')).toBeNull();
   });
 
-  it('grids unified and raw diff lines the same way', () => {
+  it('grids unified diff lines the same way', () => {
     const unified = paint({ mode: 'unified', rows: unifiedDiffRows('@@ -1 +1 @@\n-│ เก่า  │\n+│ ใหม่  │'), prefix: PREFIX });
     expect(unified.el.classList.contains('acp-cellgrid-lines')).toBe(true);
     const unifiedTexts = Array.from(unified.el.querySelectorAll<HTMLElement>('.acp-harness__tool-diff-text'));
     expect(unifiedTexts.length).toBeGreaterThan(0);
     expect(unifiedTexts.every((text) => text.classList.contains('acp-cellgrid'))).toBe(true);
-
-    const raw = paint({ mode: 'raw', rows: rawDiffRows('-│ เก่า  │\n+│ ใหม่  │'), prefix: PREFIX });
-    expect(raw.el.classList.contains('acp-cellgrid-lines')).toBe(true);
-    expect(Array.from(raw.el.children).every((line) => line.classList.contains('acp-cellgrid'))).toBe(true);
   });
 });

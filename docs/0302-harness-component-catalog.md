@@ -485,8 +485,8 @@ raw       + the raw unified line, sign included
 ```
 
 **Emits** paired → `.${prefix}__diff-line--add|del|ctx|hunk > -num -num -mark -text` (mark `+` / `−` U+2212 / ` ` / `⋯`);
-unified → `.acp-harness__tool-diff-line--${tone} > -mark + -text` (mark `@@` / `·` / `+` / `-`);
-raw → `.acp-harness__directive-diff-add|del|ctx`.
+unified → `.acp-harness__tool-diff-line--${tone} > -mark + -text` (mark `@@` / `·` / `+` / `-`).
+(The directive-only `raw` mode was removed by spec 389.)
 
 **Replaces** `harness-tool-render.ts:608-623,931-953` · `harness-transcript-render.ts:397-419`, built on the
 existing prefix-parameterised precedent `diff-render.ts:17-102`. **Resolves the mark inconsistency**:
@@ -881,7 +881,7 @@ Typed `systemCommand` rows render the `#mcp` endpoint and lane counters as a rea
 table; `#bg` tasks as a status/elapsed/output/command table; and each bare
 `#assist` task as its own mode/summary readout. Each producer retains the original
 portable `item.text` for Live Assist and control API. Plain lifecycle and error
-messages stay in `SystemRow`; usage, notices, directive diffs and the synthetic
+messages stay in `SystemRow`; usage, notices and the synthetic
 hidden-rows indicator keep their existing precedence. The source label is `sys`
 for both plain and typed system rows; typed results show `MCP`, `BG`, or `ASSIST`
 in a blue command-kind readout like `TOOL EXECUTE`, with an unlit LED because
@@ -927,7 +927,7 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 | 4.2 | `LaneHead` | `{ lane, active, mcp, metrics, inboxDepth, pendingPeers, isOrchestrator, runs }` | `⠙ claude-1 busy  #handoff · 0:42  ◆ orch  sonnet-4-6  mcp ✓ 14  12.4% 843M  ⚒ Edit src/acp/lane-peek.ts` — spec 343: running built-ins lead the chip strip (two at most, then `+N`) | `harness-lane-chrome.ts:86-130` + the per-head `innerHTML` on the 2 s metrics tick (`acp-harness-view.ts:13550`) |
 | 4.3 | `LaneSymbol` | `{ status }` | busy `⠋` · perm/peer/error/starting → icon · idle → empty | `harness-lane-chrome.ts:612-652`. Status vocabulary unchanged: `starting · idle · busy · action required · awaiting peer · error · stopped` |
 | 4.4 | `LaneStats` | `{ lane, projectDir }` | `sess 4f2a9c · krypton · ⌁128.4k/200.0k (64%) · cache 93% · $0.4412 USD · ⚒37 · ≡412` | `harness-lane-chrome.ts:464-537` (`StatList` inline) |
-| 4.5 | `RailEntry` | `{ lane, active, peerHint, directive, reviewCount, runs }` | `● [logo] claude-1 ⇆ 37 128.4k` / `impl  harness UI refactor · next send`; spec 343: a running built-in replaces the status word (`#e2e run login +1`) or the directive title | `acp-harness-view.ts:13024-13141` |
+| 4.5 | `RailEntry` | `{ lane, active, peerHint, reviewCount, runs }` | `● [logo] claude-1 ⇆ 37 128.4k` / `next send`; spec 343: a running built-in replaces the status word (`#e2e run login +1`); spec 389 removed the directive tag and title | `acp-harness-view.ts:13024-13141` |
 | 4.6 | `LaneRail` | `{ lanes, activeId }` | zen-mode left rail, `reconcile` over `RailEntry` | `acp-harness-view.ts:12930-12943,12660-12667` |
 
 ---
@@ -957,7 +957,7 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 | # | Component | Example UI | Replaces |
 |---|---|---|---|
 | 6.1 | `Composer` | root; owns `--command` / `--memory` / `--dictating` modifiers and slot order | `acp-harness-view.ts:13190-13296`. **Deletes the 1 Hz full `innerHTML` rebuild** (`:13409`) — only `ComposerMeta` ticks |
-| 6.2 | `ComposerMeta` | `reviewing · 2:14 · 3 queued      auto-edit   directive 0301-impl   ⟨branch icon⟩ main        ? help` (the branch mark is the `krypton-icon-branch` symbol, geometry shared with the workspace footer — `src/chrome-icons.ts`) | `harness-composer-meta.ts:48-68` + `composerStatusChip` `:13410-13460` (`Chip` + `StatList`) |
+| 6.2 | `ComposerMeta` | `reviewing · 2:14 · 3 queued      auto-edit   ⟨branch icon⟩ main        ? help` (the branch mark is the `krypton-icon-branch` symbol, geometry shared with the workspace footer — `src/chrome-icons.ts`) | `harness-composer-meta.ts:48-68` + `composerStatusChip` `:13410-13460` (`Chip` + `StatList`) |
 | 6.3 | `DraftLine` | `claude-1  ⠋  convert the UI into reusable comp_onents` (underline caret over the next cell, ghost text inline) | `acp-harness-view.ts:13246-13293,15417-15420` |
 | 6.4 | `StagingStrip` | `[▣ screenshot.png  x] [▣ diagram.png  x]   2 images · Esc to clear` | `acp-harness-view.ts:13228-13245` |
 | 6.5 | `PeerStrip` | `⇆ awaiting codex · 5m+ · #cancel drops pending lane-mail wait` / `▼3 lane mails queued` — a lit readout at the end of `ComposerMeta`'s left run, not a line of its own | `lane-peek.ts:731-779` |
@@ -994,8 +994,8 @@ cursor math, its own shell, or its own empty state.
 
 | # | Component | Composition | Example UI (head line) | Replaces |
 |---|---|---|---|---|
-| 7.1 | `LanePicker` | Shell + ListPicker | `// add lane · directive: 0301-impl` | `acp-harness-view.ts:12669-12712` |
-| 7.2 | `DirectivePicker` | Shell + ListPicker + preview pane | `// directive · claude-1` | `:12715-12777` |
+| 7.1 | `LanePicker` | Shell + ListPicker | `// add lane` | `acp-harness-view.ts:12669-12712` |
+| 7.2 | ~~`DirectivePicker`~~ | Removed by spec 389 | — | — |
 | 7.3 | `ModelPicker` | Shell + ListPicker | `// model · claude-1` | `:12779-12818` |
 | 7.4 | `SessionPicker` | Shell + ListPicker, 4 phases (`backend · loading · error · list`) | `// claude-code sessions` | `:12820-12894` |
 | 7.5 | `TicketPicker` | Shell + TabStrip + filter + ListPicker + ActionButton row | `GitHub + local tickets   target: codex-1 · idle` | `harness-ticket-controller.ts:678-783` |
@@ -1046,7 +1046,7 @@ HarnessView
 Current registry counts come from `HARNESS_COMPONENTS` in `src/acp/components/registry.ts`.
 Use that registry for current totals rather than the historical numbered catalog.
 Later additions include the persistent composer `BackgroundTaskStrip` (spec 384);
-the transcript registry also includes `GenuiCard`, `DirectiveDiffRow`, `FollowUpRail` (spec 323)
+the transcript registry also includes `GenuiCard`, `FollowUpRail` (spec 323)
 and `RemoteCommandCard` (spec 386);
 overlays include `BackgroundTasks`, `ExecutionDialog`, `RemoteCommandDialog`, `GenuiPanel`, and `GenuiCatalog`. The composer's
 `AssistStrip` (spec 306) was removed on 2026-10-23 with the `next-prompt` task.
@@ -1057,12 +1057,12 @@ overlays include `BackgroundTasks`, `ExecutionDialog`, `RemoteCommandDialog`, `G
 | 0 — layout | 1 | 4 hardcoded `*SlotEl` fields + their CSS pinning |
 | 1 — leaf | 9 | ~75 |
 | 2 — composite | 5 | ~45 (incl. 8 cursor handlers, 4 palette handlers, 12 overlay shells) |
-| 3 — transcript | 23 | Original cutover plus ExecutionCard (spec 315), RemoteCommandCard (spec 386), GenuiCard, DirectiveDiffRow, and FollowUpRail |
+| 3 — transcript | 22 | Original cutover plus ExecutionCard (spec 315), RemoteCommandCard (spec 386), GenuiCard, and FollowUpRail; DirectiveDiffRow removed (spec 389) |
 | 4 — lane chrome | 6 | `renderDashboard`, `renderActiveLaneChrome`, `refreshMetricsRender`, `renderRailEntry`, `refreshZenRail` |
 | 5 — right rail | 9 | Original cutover plus `AssistantInstances` (spec 357); historical 8 builders + 3 `patch*` functions |
 | 6 — composer | 9 | Original composer cutover; AssistStrip came and went (spec 306) |
-| 7 — overlays | 21 | Current registry; historical 7.15 retired, later additions (incl. `ExecutionDialog`, spec 319, and `RemoteCommandDialog`, spec 386) retained |
-| **Total** | **83 (82 registered + LayoutHost)** | **Historical cutover counts remain historical; no Timeline capture implementation or style owner remains** |
+| 7 — overlays | 20 | Current registry; historical 7.15 retired, DirectivePicker removed (spec 389), later additions (incl. `ExecutionDialog`, spec 319, and `RemoteCommandDialog`, spec 386) retained |
+| **Total** | **81 (80 registered + LayoutHost)** | **Historical cutover counts remain historical; no Timeline capture implementation or style owner remains** |
 
 # Packaging, style ownership, and theming
 

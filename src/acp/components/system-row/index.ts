@@ -44,8 +44,8 @@ export type SystemRowVariant = 'plain' | 'notice' | 'event';
 
 /**
  * Which body a `system` item renders. Exported because the transcript
- * dispatcher routes a notice before the directive-diff branch: an item
- * carrying both renders as the notice, as the inter-lane event always did.
+ * dispatcher routes a notice before the typed system-command branch: an item
+ * carrying both renders as the notice.
  */
 export function systemRowVariant(item: HarnessTranscriptItem): SystemRowVariant {
   const source = item.notice?.source;

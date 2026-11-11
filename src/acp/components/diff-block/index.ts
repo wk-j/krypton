@@ -1,6 +1,6 @@
 // Spec 302 §2.5 — `DiffBlock`.
 //
-// The three diff renderers the harness ships, behind one component:
+// The two diff renderers the harness ships, behind one component:
 //
 //   - `paired`  — the side-by-side gutter preview built by `diff-render.ts:17-102`
 //     and mounted by `harness-tool-render.ts:608-623` /
@@ -8,9 +8,6 @@
 //     its rows: `context` lines around every change, then a `lineCap` with a
 //     "… N more lines" tail.
 //   - `unified` — the `git diff` output renderer (`harness-tool-render.ts:931-953`).
-//   - `raw`     — the directive upsert approval card's `<pre>`
-//     (`harness-transcript-render.ts:397-415`), which prints the unified text
-//     verbatim, sign included.
 //
 // `diff-render.ts` already parameterised its row builder by class prefix — the
 // one existing reuse precedent in the repo (spec 301 §Prior Art). `prefix` is
@@ -28,7 +25,7 @@ import { classes, el, setChildren } from '../../../ui/dom';
 import { gridifyLines } from '../../cell-grid';
 import type { ComponentDef } from '../types';
 
-export type DiffMode = 'paired' | 'unified' | 'raw';
+export type DiffMode = 'paired' | 'unified';
 
 /**
  * `file` is the `diff --git` header row of a unified diff; `meta` its
@@ -40,7 +37,7 @@ export type DiffRowKind = 'add' | 'del' | 'ctx' | 'hunk' | 'meta' | 'file';
 
 export interface DiffRow {
   readonly kind: DiffRowKind;
-  /** Already stripped of its sign in `unified`; verbatim in `raw`. */
+  /** Already stripped of its sign in `unified`. */
   readonly text: string;
   /** Paired gutters. `null` when the row does not exist on that side. */
   readonly oldLine?: number | null;
@@ -92,27 +89,12 @@ const UNIFIED_MARK: Readonly<Record<DiffRowKind, string>> = {
   file: '',
 };
 
-const RAW_TONE: Readonly<Record<DiffRowKind, string>> = {
-  add: 'add',
-  del: 'del',
-  ctx: 'ctx',
-  hunk: 'ctx',
-  meta: 'ctx',
-  file: 'ctx',
-};
-
 export class DiffBlock extends Component<DiffBlockProps> {
   private pathEl: HTMLElement | null = null;
   private bodyEl: HTMLElement | null = null;
 
-  /**
-   * The root tag is mode-dependent (`<pre>` for `raw`, whose monospace comes
-   * from the UA sheet, not from `.acp-harness__directive-diff`), and a
-   * component may not swap its own node — so the mode is fixed at
-   * construction. Every call site renders exactly one mode.
-   */
-  constructor(mode: DiffMode) {
-    super(el(mode === 'raw' ? 'pre' : 'div'));
+  constructor() {
+    super(el('div'));
   }
 
   protected readDeps(next: DiffBlockProps): readonly unknown[] {
@@ -122,16 +104,13 @@ export class DiffBlock extends Component<DiffBlockProps> {
   protected syncClasses(next: DiffBlockProps): void {
     const prefix = next.prefix;
     if (next.mode === 'paired') this.el.className = `${prefix}__tool-diff`;
-    else if (next.mode === 'unified') {
-      this.el.className = classes(`${prefix}__tool-rich`, `${prefix}__tool-rich--unidiff`);
-    } else this.el.className = `${prefix}__directive-diff`;
+    else this.el.className = classes(`${prefix}__tool-rich`, `${prefix}__tool-rich--unidiff`);
   }
 
   protected paint(next: DiffBlockProps): void {
     this.syncClasses(next);
     if (next.mode === 'paired') this.paintPaired(next);
-    else if (next.mode === 'unified') this.paintUnified(next);
-    else this.paintRaw(next);
+    else this.paintUnified(next);
   }
 
   /** `diff-render.ts:40-78` — keep window, gap markers, cap, "more lines" tail. */
@@ -231,16 +210,6 @@ export class DiffBlock extends Component<DiffBlockProps> {
     setChildren(this.el, nodes);
     gridifyLines(this.el, lineTexts(this.el, `.${prefix}__tool-diff-line > .${prefix}__tool-diff-text`));
   }
-
-  /** `harness-transcript-render.ts:401-415`. */
-  private paintRaw(next: DiffBlockProps): void {
-    const prefix = next.prefix;
-    const nodes = next.rows.map((row) =>
-      el('div', { class: `${prefix}__directive-diff-${RAW_TONE[row.kind]}`, text: row.text }),
-    );
-    setChildren(this.el, nodes);
-    gridifyLines(this.el, nodes);
-  }
 }
 
 /**
@@ -325,16 +294,6 @@ function gitDiffFileLabel(line: string): string {
   const oldPath = match[1] ?? '';
   const newPath = match[2] ?? '';
   return oldPath === newPath ? newPath : `${oldPath} -> ${newPath}`;
-}
-
-/** Line rows for `mode: 'raw'` — `harness-transcript-render.ts:403-412`. The
- *  sign stays in the text, and empty lines are rows too. */
-export function rawDiffRows(unified: string): DiffRow[] {
-  return unified.split('\n').map((line) => {
-    const sign = line.charAt(0);
-    const kind: DiffRowKind = sign === '+' ? 'add' : sign === '-' ? 'del' : 'ctx';
-    return { kind, text: line };
-  });
 }
 
 export const def: ComponentDef = { id: 'diff-block', blocks: [] };

@@ -328,7 +328,7 @@ as the primary flow, with exact typed `/use <lane>` retained as fallback.
 ## Out of Scope
 
 - Generic agent-authored Telegram buttons or arbitrary callback operations
-- Permission accept/reject, model, directive, or other controller submenus
+- Permission accept/reject, model, or other controller submenus
 - Reply keyboards that replace the user's phone keyboard
 - Mini Apps, hosted web UI, inline-bot mode, deep links, or media
 - Persisting picker actions across Krypton restarts

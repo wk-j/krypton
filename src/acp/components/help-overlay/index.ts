@@ -213,7 +213,6 @@ function buildSections(): readonly HelpSection[] {
       { term: '#wiki [hint]', desc: 'Compound this session into the project wiki (docs/wiki/)' },
       { term: '#recall <question>', desc: 'Answer a question from the project wiki, with citations' },
       { term: '#learn <sha>', desc: 'Explain a commit as a learning note in the knowledge dir' },
-      { term: '#directive <intent>', desc: 'Have the active lane create/edit a reusable directive in acp-harness.toml' },
       {
         term: '#draw <request>',
         desc: 'Draw in an open tldraw Offline document (focused or named) — static shapes or durable document scripts',

@@ -16,13 +16,6 @@ const BASE: ComposerMetaProps = {
       text: 'auto-edit',
       title: 'Auto-edit — file edits are auto-accepted; commands still ask. Shift+Tab to change.',
     },
-    {
-      key: 'directive',
-      block: 'acp-harness__directive-chip acp-harness__directive-chip--set',
-      text: 'directive 0301-impl',
-      title: 'Cmd+P then . to change',
-      data: { 'open-directive-picker': '1' },
-    },
   ],
   branch: { ref: 'main', title: '/Users/wk/Source/krypton on main' },
   helpHint: [{ keys: ['?'], label: 'help' }],
@@ -57,8 +50,6 @@ describe('ComposerMeta', () => {
         '</span>' +
         '<span class="acp-harness__composer-mode" title="Auto-edit — file edits are auto-accepted; ' +
         'commands still ask. Shift+Tab to change.">auto-edit</span>' +
-        '<span class="acp-harness__directive-chip acp-harness__directive-chip--set" ' +
-        'title="Cmd+P then . to change" data-open-directive-picker="1">directive 0301-impl</span>' +
         '<span class="acp-harness__project-status" title="/Users/wk/Source/krypton on main">' +
         '<svg class="acp-harness__icon" aria-hidden="true"><use href="#krypton-icon-branch"></use></svg>' +
         '<span class="acp-harness__project-branch">main</span></span>' +
@@ -83,7 +74,7 @@ describe('ComposerMeta', () => {
   it('advances the elapsed segment without touching the chips or the branch', () => {
     const meta = mount();
     const elapsed = meta.el.querySelector('[data-seg="elapsed"]');
-    const directive = meta.el.querySelector('.acp-harness__directive-chip');
+    const mode = meta.el.querySelector('.acp-harness__composer-mode');
     const branch = meta.el.querySelector('.acp-harness__project-branch');
 
     meta.update({
@@ -97,47 +88,24 @@ describe('ComposerMeta', () => {
 
     expect(meta.el.querySelector('[data-seg="elapsed"]')).toBe(elapsed);
     expect(elapsed?.textContent).toBe('2:15');
-    expect(meta.el.querySelector('.acp-harness__directive-chip')).toBe(directive);
+    expect(meta.el.querySelector('.acp-harness__composer-mode')).toBe(mode);
     expect(meta.el.querySelector('.acp-harness__project-branch')).toBe(branch);
   });
 
-  it('updates the directive segment alone when only the directive moves', () => {
+  it('updates the mode chip alone, in place, when only the mode moves', () => {
     const meta = mount();
     const status = meta.el.querySelector('.acp-harness__memory-chip');
+    const mode = meta.el.querySelector('.acp-harness__composer-mode');
 
     meta.update({
       ...BASE,
-      chips: [
-        BASE.chips[0],
-        { ...BASE.chips[1], text: 'directive 0302-catalog (next send)',
-          block: 'acp-harness__directive-chip acp-harness__directive-chip--set acp-harness__directive-chip--pending' },
-      ],
+      chips: [{ ...BASE.chips[0], text: 'bypass', tone: 'warn' }],
     });
 
     expect(meta.el.querySelector('.acp-harness__memory-chip')).toBe(status);
-    expect(meta.el.querySelector('.acp-harness__directive-chip')?.textContent)
-      .toBe('directive 0302-catalog (next send)');
-    expect(meta.el.querySelector('.acp-harness__directive-chip')?.className)
-      .toBe('acp-harness__directive-chip acp-harness__directive-chip--set acp-harness__directive-chip--pending');
-  });
-
-  it('nests the triage marker inside the directive chip and drops it again', () => {
-    const meta = mount({
-      ...BASE,
-      chips: [
-        { ...BASE.chips[1], extra: { class: 'acp-harness__directive-chip__triage', text: '◆ lane', title: 'attention triage lane' } },
-      ],
-    });
-
-    const chip = meta.el.querySelector('.acp-harness__directive-chip');
-    expect(chip?.innerHTML).toBe(
-      'directive 0301-impl <span class="acp-harness__directive-chip__triage" ' +
-        'title="attention triage lane">◆ lane</span>',
-    );
-
-    meta.update({ ...BASE, chips: [BASE.chips[1]] });
-    expect(meta.el.querySelector('.acp-harness__directive-chip__triage')).toBeNull();
-    expect(chip?.textContent).toBe('directive 0301-impl');
+    expect(meta.el.querySelector('.acp-harness__composer-mode')).toBe(mode);
+    expect(mode?.textContent).toBe('bypass');
+    expect(mode?.className).toBe('acp-harness__composer-mode acp-harness__composer-mode--warn');
   });
 
   it('re-derives the running modifier when the lane goes idle and back', () => {
@@ -159,23 +127,9 @@ describe('ComposerMeta', () => {
 
   it('drops a chip that is no longer painted', () => {
     const meta = mount();
-    meta.update({ ...BASE, chips: [BASE.chips[1]] });
-    expect(meta.el.querySelector('.acp-harness__lane-sandbox')).toBeNull();
-    expect(meta.el.querySelector('.acp-harness__directive-chip')).not.toBeNull();
-  });
-
-  it('opens the directive picker from the chip, and stops after dispose()', () => {
-    let opened = 0;
-    const meta = new ComposerMeta();
-    meta.update({ ...BASE, onOpenDirective: (): void => { opened += 1; } });
-    const chip = meta.el.querySelector<HTMLElement>('.acp-harness__directive-chip');
-
-    chip?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(opened).toBe(1);
-
-    meta.dispose();
-    chip?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    expect(opened).toBe(1);
+    meta.update({ ...BASE, chips: [] });
+    expect(meta.el.querySelector('.acp-harness__composer-mode')).toBeNull();
+    expect(meta.el.querySelector('.acp-harness__project-status')).not.toBeNull();
   });
 
   it('leaves whatever the composer mounted in the tools slot alone', () => {

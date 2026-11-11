@@ -1,6 +1,7 @@
 # ACP Harness Directive Management — Implementation Spec
 
 > Status: Implemented — **MCP surface superseded by [spec 161](0161-directive-tools-on-demand.md)**
+> **Removed by [spec 389](0389-remove-harness-directives.md)** (2026-11-11): the directives feature no longer exists. This document is kept as history.
 > Date: 2026-05-28
 > Milestone: M8 — Polish
 

@@ -349,36 +349,3 @@ export interface KnowledgeConfig {
 export async function loadConfig(): Promise<KryptonConfig> {
   return invoke<KryptonConfig>('get_config');
 }
-
-/** A reusable ACP Harness directive (spec 124). Mirrors the Rust
- * `HarnessDirective` shape in `acp-harness.toml`. */
-export interface HarnessDirective {
-  id: string;
-  title: string;
-  icon: string;
-  description: string;
-  /** Free-form task key (implementation/review/research/...). */
-  task: string;
-  system_prompt: string;
-  enabled: boolean;
-  /** Legacy spec-129 metadata. Since spec 130, attention_flag is default-on for
-   * every harness-memory-capable lane and this no longer controls tool visibility. */
-  triage_equipped: boolean;
-}
-
-export interface AcpHarnessUserConfig {
-  version: number;
-  directives: HarnessDirective[];
-}
-
-/** Load the ACP Harness directive config (`~/.config/krypton/acp-harness.toml`),
- * creating an empty default file when missing. */
-export async function getAcpHarnessConfig(): Promise<AcpHarnessUserConfig> {
-  return invoke<AcpHarnessUserConfig>('get_acp_harness_config');
-}
-
-/** Absolute path to `acp-harness.toml`. Surfaced to the `#directive` command so
- * the agent edits the real file (resolving `~` / `XDG_CONFIG_HOME`). */
-export async function getAcpHarnessConfigPath(): Promise<string> {
-  return invoke<string>('get_acp_harness_config_path');
-}

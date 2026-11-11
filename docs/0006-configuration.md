@@ -896,60 +896,9 @@ count = 3
 
 The clamps live in the frontend, so an out-of-range value in TOML is corrected, not rejected. The trust store is `~/.config/krypton/rails-trust.toml`, written only by `#rails trust` or the Rails dock's Trust button (spec 344), both a human action; deleting an entry makes that project's checks wait for trust again.
 
-### ACP Harness Directives (`acp-harness.toml`)
+### `acp-harness.toml` (unused since spec 389)
 
-Reusable, backend/task-scoped **directives** (system-style prompt blocks) live in a separate Krypton-owned file, **not** in `krypton.toml`:
-
-| File | `~/.config/krypton/acp-harness.toml` |
-|------|--------------------------------------|
-
-Unlike `krypton.toml` (hand-edited, never written by Krypton), `acp-harness.toml` may be edited three ways: **by hand**, by the **`#directive` command** (which directs the focused lane to edit it with its own file tools — spec 161), or it is **created empty on first harness open**. Edits are picked up the next time the harness loads it — and the directive picker re-reads it on every open — so there is no live hot-reload in v1. A directive entry that fails to parse is skipped with a warning rather than breaking the whole file. See `docs/0124-acp-harness-directive-management.md` and `docs/0161-directive-tools-on-demand.md`.
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `version` | int | `1` | Schema version for future migrations |
-| `[[directives]]` | array | `[]` | Reusable Harness directives |
-| `[[directives]].id` | string | — | Required, unique, lowercase kebab-case (`[a-z0-9][a-z0-9-]*`) |
-| `[[directives]].title` | string | `""` | Display title in the picker |
-| `[[directives]].icon` | string | `""` | 1–2 char glyph; falls back to a deterministic glyph from task/backend when empty |
-| `[[directives]].description` | string | `""` | One-line description shown in the picker |
-| `[[directives]].backend` | string | `""` | Target backend id (empty = all backends) |
-| `[[directives]].task` | string | `""` | Free-form task key (`implementation`/`review`/`research`/…), kebab-case |
-| `[[directives]].system_prompt` | string | `""` | Reusable system-style prompt block (16 KiB cap) |
-| `[[directives]].enabled` | bool | `true` | Disabled directives show in the picker but cannot be assigned |
-| `[[directives]].triage_equipped` | bool | `false` | Legacy spec-129 metadata. Since spec 130, `attention_flag` / `attention_resolve` are default-on for every lane that receives the `krypton-harness-memory` MCP server, so this field no longer controls tool visibility or assignment approval. Krypton still accepts and displays it as a legacy directive badge for compatibility. See `docs/0130-default-attention-triage.md`. |
-
-A directive's `system_prompt` is injected into the same leading context packet as the lane-context stub, after it and before the user's prompt. Assign a directive to the focused lane with `Cmd+P → .` (the directive picker) or by clicking the composer `directive …` chip. To **create or edit** a directive, type `#directive <what you want>` in the composer (spec 161): the focused lane reads `acp-harness.toml`, adds/edits the `[[directives]]` entry with its own file tools, and the picker shows it on the next open. (The earlier dedicated directive MCP tools — `directive_list`/`directive_preview`/`directive_apply`/`directive_remove` — were removed to cut per-turn token overhead; agent-initiated cross-lane assignment is no longer available.)
-
-Example:
-
-```toml
-version = 1
-
-[[directives]]
-id = "codex-implementation"
-title = "Codex Implementation"
-icon = "⌘"
-description = "Scoped code changes and narrow verification."
-backend = "codex"
-task = "implementation"
-enabled = true
-system_prompt = """
-You are the implementation lane. Make scoped edits, follow existing patterns, and run the narrowest useful checks before reporting changed files.
-"""
-
-[[directives]]
-id = "claude-review"
-title = "Claude Review"
-icon = "◇"
-description = "Read-only review for regressions and missing tests."
-backend = "claude"
-task = "review"
-enabled = true
-system_prompt = """
-You are the review lane. Do not edit files. Prioritize bugs, regressions, risky assumptions, and missing tests.
-"""
-```
+Earlier versions kept ACP Harness **directives** in `~/.config/krypton/acp-harness.toml`. Spec 389 removed the directives feature, and Krypton no longer reads or creates this file. An existing copy is left on disk untouched; delete it by hand if you no longer need it. See `docs/0389-remove-harness-directives.md`.
 
 ### Connected Computers (app-managed, spec 311)
 
@@ -1042,7 +991,7 @@ it. See spec 200 and ADR-0013 through ADR-0015.
 
 ### ACP Harness Attention Triage (spec 128)
 
-Attention triage is **default-on** for lanes that receive the `krypton-harness-memory` MCP server. There is no `krypton.toml` switch and no required directive grant: `tools/list` advertises `attention_flag` / `attention_resolve` by default, while payload validation and the review queue remain the safety surface. The old `Cmd+P → '` manual equip action has been removed from the active UI. Summon the judgement queue with `Cmd+P → ;`. Existing `triage_equipped` directive fields are preserved only as legacy metadata/badges. See `docs/0128-attention-triage.md` and `docs/0130-default-attention-triage.md`.
+Attention triage is **default-on** for lanes that receive the `krypton-harness-memory` MCP server. There is no `krypton.toml` switch and no per-lane grant: `tools/list` advertises `attention_flag` / `attention_resolve` by default, while payload validation and the review queue remain the safety surface. The old `Cmd+P → '` manual equip action has been removed from the active UI. Summon the judgement queue with `Cmd+P → ;`. See `docs/0128-attention-triage.md` and `docs/0130-default-attention-triage.md`.
 
 ### Loopback Server & Hooks Configuration
 

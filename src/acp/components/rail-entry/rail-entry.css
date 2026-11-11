@@ -14,7 +14,7 @@
     /* spec 125 — three-column / two-row grid:
      *   col 1 = LED (8px cell), col 2 = backend logo (14px), col 3 = body
      *   row 1 = head (name + peer hints + metrics, flex inside)
-     *   row 2 = meta (tag chip + trimmed directive title, or status label)
+     *   row 2 = meta (status label, or the running built-in)
      * The meta row always renders so row height stays consistent across lanes.
      * The 1px key edge comes out of the old 6px/8px padding, so the text
      * keeps its place. */
@@ -103,56 +103,13 @@
   .acp-harness__rail-logo--antigravity { color: var(--krypton-backend-antigravity); }
   .acp-harness__rail-logo--fx       { color: var(--krypton-backend-fx); }
 
-  /* A role tag is an embossed label on the key face, tinted by its role
-     (DESIGN.md "Chips"). */
-  .acp-harness__rail-tag {
-    flex: 0 0 auto;
-    display: inline-block;
-    max-width: 10ch;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    padding: 0 5px;
-    border: 1px solid transparent;
-    border-radius: 999px;
-    font-size: 0.92em;
-    line-height: 1.3;
-    letter-spacing: 0.06em;
-    text-transform: lowercase;
-  }
-
-  .acp-harness__rail-tag--analysis { color: var(--krypton-role-analysis); }
-  .acp-harness__rail-tag--review   { color: var(--krypton-role-review); }
-  .acp-harness__rail-tag--impl     { color: var(--krypton-role-impl); }
-  .acp-harness__rail-tag--plan     { color: var(--krypton-role-plan); }
-  .acp-harness__rail-tag--explore  { color: var(--krypton-role-explore); }
-  .acp-harness__rail-tag--hash-1   { color: var(--krypton-role-hash-1); }
-  .acp-harness__rail-tag--hash-2   { color: var(--krypton-role-hash-2); }
-  .acp-harness__rail-tag--hash-3   { color: var(--krypton-role-hash-3); }
-
-  /* Clearing on the next send: struck through, read at the secondary ink tier
-     (never dimmed with opacity). */
-  .acp-harness__rail-tag--clearing {
-    border-style: dashed;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
-    text-decoration: line-through;
-  }
-
-  .acp-harness__rail-meta__title {
-    flex: 0 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
-  }
-
   .acp-harness__rail-meta__hint {
     flex: 0 0 auto;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   }
 
-  /* spec 343: a built-in `#` command in flight takes the status word's (or the
-     directive title's) place. Plain text, no pill: padding would change the
+  /* spec 343: a built-in `#` command in flight takes the status word's
+     place. Plain text, no pill: padding would change the
      meta row height spec 125 keeps constant. It shrinks first, never below 6ch.
      Running work reads in the running-key cyan. */
   .acp-harness__rail-meta__run {
@@ -161,13 +118,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     color: rgb(var(--agent-cyan-rgb, 109, 208, 255));
-  }
-
-  /* A directive swap/clear waiting for the next send is something the user set
-     and may want to undo: warning ink on the title and its hint. */
-  .acp-harness__rail-entry--pending .acp-harness__rail-meta__title,
-  .acp-harness__rail-entry--pending .acp-harness__rail-meta__hint {
-    color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
   }
 
   .acp-harness__rail-peers {
@@ -300,8 +250,6 @@
    Lamp colours tuned for a dark ground are too pale as text on aluminium, so
    the warning / running inks cap to dark ink (spec 321). */
 @layer krypton.scheme {
-  html[data-theme-scheme='light'] .acp-harness__rail-entry--pending .acp-harness__rail-meta__title,
-  html[data-theme-scheme='light'] .acp-harness__rail-entry--pending .acp-harness__rail-meta__hint,
   html[data-theme-scheme='light'] .acp-harness__rail-entry--needs_permission .acp-harness__rail-meta__hint {
     color: #8a5a00;
   }

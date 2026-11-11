@@ -1,6 +1,7 @@
 # `/commands` — Built-in Hash-Command Reference Page — Implementation Spec
 
 > Status: Implemented (rev 2 — adds system-prompt visibility, pivots to manifest-driven content)
+> Spec 389 (2026-11-11) removed `#directive` and `directivePrompt`; the references below are history.
 > Date: 2026-07-04
 > Milestone: M-ACP — Harness Multi-Agent
 > Builds on: `docs/168-*` (lane-monitor dashboard), `docs/0170-artifact-gallery-endpoint.md`, `docs/0171-docs-browser.md`
@@ -13,7 +14,7 @@ command, three commands (`#docs`, `#console`, `#dispatch-github-issue`) are disp
 and invisible in the palette, and — the part the palette can never show — ten
 commands inject a **system prompt** into the lane that the user cannot read
 anywhere today (`#handoff`, `#resume`, `#wiki`, `#recall`,
-`#directive`, `#review`, `#polly`, `#debby`, `#dispatch-github-issue`).
+`#review`, `#polly`, `#debby`, `#dispatch-github-issue`).
 
 ## Solution
 

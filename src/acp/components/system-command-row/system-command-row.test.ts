@@ -83,11 +83,10 @@ describe('SystemCommandRow', () => {
     expect(row.el.querySelector('table')).toBeNull();
   });
 
-  it('keeps notice, usage, directive diff, hidden indicator, and non-system items ahead of typed commands', () => {
+  it('keeps notice, usage, hidden indicator, and non-system items ahead of typed commands', () => {
     const command: SystemCommandPayload = { command: 'bg', capturedAt: 0, tasks: [] };
     expect(rowKindFor({ ...item(command), usage: {} as HarnessTranscriptItem['usage'] })).toBe('usage');
     expect(rowKindFor({ ...item(command), notice: { source: 'triage', subject: 'subject', tone: 'info' } })).toBe('notice');
-    expect(rowKindFor({ ...item(command), diff: { title: 'x', unified: '+x' } })).toBe('directiveDiff');
     expect(rowKindFor({ ...item(command), id: '__hidden_indicator__' })).toBe('text');
     expect(rowKindFor({ ...item(command), kind: 'shell' })).toBe('text');
     expect(rowKindFor({ id: 'plain', kind: 'system', text: 'first\nsecond' })).toBe('text');

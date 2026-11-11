@@ -90,7 +90,6 @@ import {
 } from './harness-panel-visibility';
 import { HelpOverlay } from './components/help-overlay';
 import { LanePicker } from './components/lane-picker';
-import { DirectivePicker } from './components/directive-picker';
 import { HandoffPicker } from './components/handoff-picker';
 import { MemoryDrawer } from './components/memory-drawer';
 import { MetricsOverlay, type MetricsLane } from './components/metrics-overlay';
@@ -277,7 +276,6 @@ import {
   attachIssueArtifactPrompt,
   createGithubIssuePrompt,
   dailyBriefPrompt,
-  directivePrompt,
   fixGithubIssuePrompt,
   handleGithubIssuePrompt,
   handoffResumePrompt,
@@ -300,7 +298,7 @@ import { applyVerbSelection, filteredVerbNames, verbPaletteContext } from './ver
 
 // Re-exported from their new home (spec 185 moved the prompt builders to
 // harness-prompts.ts) so existing import sites — tests included — keep working.
-export { directivePrompt, tldrawDrawPrompt, wikiIngestPrompt, wikiRecallPrompt } from './harness-prompts';
+export { tldrawDrawPrompt, wikiIngestPrompt, wikiRecallPrompt } from './harness-prompts';
 import {
   POLLY_ROLE_PROMPTS,
   parsePollyTask,
@@ -364,13 +362,7 @@ import type { AttentionTier } from '../view-bus-types';
 import { SYSTEM_SOURCE } from '../view-bus-types';
 import { providerForBackend, type UsageProvider } from '../usage-store';
 import type { HarnessLaneMark } from '../window-footer-lanes';
-import {
-  loadConfig,
-  getAcpHarnessConfig,
-  getAcpHarnessConfigPath,
-  type LaneModelConfig,
-  type HarnessDirective,
-} from '../config';
+import { loadConfig, type LaneModelConfig } from '../config';
 import {
   ensureComposerBloomLayer,
   spawnComposerBlooms,
@@ -649,17 +641,12 @@ export {
 } from './harness-icons';
 export {
   backendLogoId,
-  directiveRole,
-  directiveTagLabel,
   harnessBackends,
-  hashBucket,
   LANE_ACCENT_PALETTE,
   laneAccent,
   laneAccentForLabel,
   pickLaneAccent,
-  trimBackendPrefix,
 } from './harness-lane-identity';
-export type { DirectiveRoleBucket } from './harness-lane-identity';
 export type {
   LaneActivitySample,
   LaneHeatSide,
@@ -895,7 +882,7 @@ const SPINNER_INTERVAL_MS = 80;
 
 const REMOTE_UNSUPPORTED_HASH_COMMANDS = new Set([
   '#gallery', '#ui-gallery', '#docs', '#analyses', '#reviews', '#push', '#usage', '#daily', '#lessons',
-  '#xenon', '#termctrl', '#hurl', '#draw', '#ticket', '#review', '#review-thread', '#directive', '#e2e',
+  '#xenon', '#termctrl', '#hurl', '#draw', '#ticket', '#review', '#review-thread', '#e2e',
   '#analyze-github-issue', '#create-github-issue', '#dispatch-github-issue',
   '#fix-github-issue', '#handle-github-issue', '#post-github-comment', '#tag-github-issue', '#attach-issue-artifact',
   '#learn',
@@ -909,7 +896,6 @@ export const ACP_HARNESS_LEADER_KEYS: readonly LeaderKeySpec[] = [
   { key: '_', label: 'Close Active Lane', icon: 'x', group: 'Harness', effect: 'danger' },
   { key: '=', label: 'Lane Metrics', icon: 'chart-line', group: 'Harness' },
   { key: '0', label: 'Resume Session', icon: 'rotate-ccw-clock', group: 'Harness', effect: 'important' },
-  { key: '.', label: 'Directives', icon: 'scroll-text', group: 'Harness' },
 ];
 
 /** spec 299: the transcript line for a lesson write. The store pressure rides
@@ -1042,17 +1028,12 @@ const LANE_DEFAULTS = {
   cursorMcpNames: null,
   pendingCoordinatorDrain: null,
   coordinatorDrainProvenanceUsed: false,
-  activeDirectiveId: null,
-  pendingDirectiveChange: null,
-  turnDirectiveOverride: null,
-  previousDirectiveId: null,
   pollyBuiltinRole: null,
   pollySavedPermissionMode: null,
   debbyBuiltinRole: null,
   saltyBuiltinRole: null,
   saltySavedPermissionMode: null,
   triageEquipped: true,
-  triageOverride: null,
   flaggedThisTurn: false,
   cancelRequestedAt: null,
   cancelUnacked: false,
@@ -1638,14 +1619,6 @@ export class AcpHarnessView implements ContentView {
   private nextLaneIndex = 1;
   private systemRows: (string | readonly ProsePart[])[] = ['loading ACP backends...'];
   private laneModels: Record<string, LaneModelConfig> = {};
-  /** spec 124: reusable directives loaded from acp-harness.toml. */
-  private directives: HarnessDirective[] = [];
-  /** spec 124: directive picker overlay state. */
-  private directivePickerOpen = false;
-  private directivePickerCursor = 0;
-  /** spec 163: directive whose lane the backend (lane) picker is about to spawn,
-   * set by Shift+Enter in the directive picker. null = plain "+ new lane" flow. */
-  private pendingSpawnDirectiveId: string | null = null;
   /** spec 127: model picker overlay state. */
   private modelPickerOpen = false;
   private modelPickerCursor = 0;
@@ -1694,7 +1667,6 @@ export class AcpHarnessView implements ContentView {
   private reviewPriorityOverlay!: ReviewPriorityOverlay;
   private orchestratorConsole!: OrchestratorConsole;
   private lanePicker!: LanePicker;
-  private directivePicker!: DirectivePicker;
   private modelPicker!: ModelPicker;
   private handoffPickerCmp!: HandoffPicker;
   private sessionPickerCmp!: SessionPicker;
@@ -1983,32 +1955,20 @@ export class AcpHarnessView implements ContentView {
       listLanes: () =>
         this.lanes
           .filter((l) => l.status !== 'stopped')
-          .map<LaneSummary>((l) => {
-            const directive = this.directiveById(l.activeDirectiveId);
-            return {
-              laneId: l.id,
-              displayName: l.displayName,
-              backendId: l.backendId,
-              status: l.status,
-              modelName: l.modelName,
-              inboxDepth: 0,
-              // spec 141: local lanes are tagged local:true and carry this view's
-              // harnessId + cwd so peer_list presents local and foreign peers
-              // uniformly.
-              local: true,
-              harnessId: this.harnessMemoryId ?? undefined,
-              cwd: this.projectDir,
-              activeDirective: directive
-                ? {
-                    id: directive.id,
-                    title: directive.title,
-                    task: directive.task,
-                    description: directive.description,
-                    enabled: directive.enabled,
-                  }
-                : null,
-            };
-          }),
+          .map<LaneSummary>((l) => ({
+            laneId: l.id,
+            displayName: l.displayName,
+            backendId: l.backendId,
+            status: l.status,
+            modelName: l.modelName,
+            inboxDepth: 0,
+            // spec 141: local lanes are tagged local:true and carry this view's
+            // harnessId + cwd so peer_list presents local and foreign peers
+            // uniformly.
+            local: true,
+            harnessId: this.harnessMemoryId ?? undefined,
+            cwd: this.projectDir,
+          })),
       getLane: (id) => {
         const l = this.lanes.find((x) => x.id === id);
         if (!l) return null;
@@ -2282,33 +2242,18 @@ export class AcpHarnessView implements ContentView {
     }
     // spec 175: harness-scoped read operations for a web mirror.
     if (operation === 'lane.status') {
-      return this.lanes.map((l) => {
-        const directive = this.directiveById(l.activeDirectiveId);
-        return {
-          laneId: l.id,
-          displayName: l.displayName,
-          backendId: l.backendId,
-          sessionId: l.sessionId,
-          status: l.status,
-          modelName: l.modelName,
-          currentModelId: l.currentModelId,
-          queueDepth: l.queuedPrompts.length,
-          pendingPermissions: l.pendingPermissions.length,
-          permissionMode: l.permissionMode,
-          directive: directive
-            ? { id: directive.id, title: directive.title, task: directive.task }
-            : null,
-          activity: l.activity ?? null,
-        };
-      });
-    }
-    if (operation === 'directive.list') {
-      return this.directives.map((d) => ({
-        id: d.id,
-        title: d.title,
-        task: d.task,
-        description: d.description,
-        enabled: d.enabled,
+      return this.lanes.map((l) => ({
+        laneId: l.id,
+        displayName: l.displayName,
+        backendId: l.backendId,
+        sessionId: l.sessionId,
+        status: l.status,
+        modelName: l.modelName,
+        currentModelId: l.currentModelId,
+        queueDepth: l.queuedPrompts.length,
+        pendingPermissions: l.pendingPermissions.length,
+        permissionMode: l.permissionMode,
+        activity: l.activity ?? null,
       }));
     }
     if (operation === 'review.outcomes') {
@@ -2508,17 +2453,6 @@ export class AcpHarnessView implements ContentView {
         lane.modelName = modelId;
         this.render();
         return { lane: lane.displayName, modelId, result };
-      }
-      case 'lane.directive': {
-        const directiveId = params.directiveId === null ? null : requiredString(params, 'directiveId');
-        if (directiveId) {
-          const directive = this.directiveById(directiveId);
-          if (!directive || !this.directiveAssignable(directive)) {
-            throw controlError('invalid_directive', `directive ${directiveId} is unavailable (unknown or disabled)`);
-          }
-        }
-        this.assignDirectiveToLane(lane, directiveId);
-        return { lane: lane.displayName, directiveId };
       }
       case 'lane.permission_mode': {
         const mode = requiredString(params, 'mode');
@@ -3084,12 +3018,6 @@ export class AcpHarnessView implements ContentView {
       this.scheduleLaneRender(lane);
       reply({ accepted: true });
     });
-
-    // spec 161: the directive_* MCP tools were removed, so the Rust round-trip
-    // events `acp-harness-directives-changed` / `acp-directive-apply-requested`
-    // are no longer emitted and their listeners are gone. Directive authoring is
-    // now the `#directive` command (the lane edits acp-harness.toml directly);
-    // the picker reloads from disk on every open via refreshDirectives().
 
     // spec 130: a lane flagged a judgement item via attention_flag.
     type AttentionFlagEvent = {
@@ -4497,18 +4425,6 @@ export class AcpHarnessView implements ContentView {
         run: () => this.openSessionPicker(),
       },
       {
-        // spec 124 wanted `R` ("diRective"), but every letter is a reserved
-        // global leader key (and `/` `;` `?` are taken by other views), so the
-        // free non-reserved key is `.`.
-        key: '.',
-        label: 'Directives',
-        icon: 'scroll-text',
-        group: 'Harness',
-        run: () => this.openDirectivePicker(),
-        isEnabled: () => this.lanes.length > 0,
-        disabledReason: () => 'no active lane',
-      },
-      {
         // spec 127: model picker. `,` is the free non-reserved key (all letters
         // are reserved global leader keys; ⌃/⌘M is the memory drawer).
         key: ',',
@@ -4533,7 +4449,7 @@ export class AcpHarnessView implements ContentView {
       {
         // spec 146: review quality matrix overlay. `'` is a free non-reserved
         // key (all letters are reserved global leader keys; `;` is the adjacent
-        // triage queue, `,` `.` are model/directives). Inside, j/k switch lane.
+        // triage queue, `,` is the model picker). Inside, j/k switch lane.
         key: "'",
         label: 'Review Matrix',
         icon: 'grid-3x3',
@@ -4640,11 +4556,6 @@ export class AcpHarnessView implements ContentView {
     if (this.pickerOpen) {
       e.preventDefault();
       this.handlePickerKey(e);
-      return true;
-    }
-    if (this.directivePickerOpen) {
-      e.preventDefault();
-      this.handleDirectivePickerKey(e);
       return true;
     }
     if (this.modelPickerOpen) {
@@ -5288,7 +5199,6 @@ export class AcpHarnessView implements ContentView {
     this.reviewPriorityOverlay?.dispose();
     this.orchestratorConsole?.dispose();
     this.lanePicker?.dispose();
-    this.directivePicker?.dispose();
     this.modelPicker?.dispose();
     this.handoffPickerCmp?.dispose();
     this.sessionPickerCmp?.dispose();
@@ -5622,39 +5532,6 @@ export class AcpHarnessView implements ContentView {
 
   // ──────────────────────────────────────────────────────────────────
   // Attention triage (spec 128)
-
-  /** Legacy spec-129 metadata: directives may still carry/show a triage badge,
-   * but spec 130 no longer uses it to control tool visibility. */
-  private directiveGrantsTriage(lane: HarnessLane): boolean {
-    const directive = this.directiveById(lane.activeDirectiveId);
-    return directive?.triage_equipped === true && directive.enabled;
-  }
-
-  /** spec 130: attention triage is default-on for harness-memory-capable lanes. */
-  private computeTriageEquipped(lane: HarnessLane): boolean {
-    void lane;
-    return true;
-  }
-
-  /** Where the visible triage chip comes from. Directive grants are legacy
-   * metadata; default is the active capability source. */
-  private triageSource(lane: HarnessLane): 'default' | 'legacy' {
-    return this.directiveGrantsTriage(lane) ? 'legacy' : 'default';
-  }
-
-  /**
-   * spec 130: ensure a running lane participates in attention audit. Directive
-   * changes no longer affect MCP tool visibility.
-   */
-  private refreshTriageEquip(lane: HarnessLane): void {
-    const next = this.computeTriageEquipped(lane);
-    if (next === lane.triageEquipped) return;
-    lane.triageEquipped = next;
-    if (next) this.triageStore.equip(lane.id);
-    else this.triageStore.unequip(lane.id);
-    this.renderTriageGaugeEl();
-    this.scheduleLaneRender(lane);
-  }
 
   private openTriageOverlay(): void {
     this.closeReviewMatrixOverlay(); // mutual-exclude: never stack the full-screen overlays
@@ -6119,7 +5996,6 @@ export class AcpHarnessView implements ContentView {
   private consoleObscuringModalOpen(): boolean {
     return this.helpOpen
       || this.pickerOpen
-      || this.directivePickerOpen
       || this.modelPickerOpen
       || this.handoffPicker !== null
       || this.sessionPicker.open
@@ -6842,9 +6718,6 @@ export class AcpHarnessView implements ContentView {
     this.sessionPickerCmp = new SessionPicker();
     body.appendChild(this.sessionPickerCmp.el);
 
-    this.directivePicker = new DirectivePicker();
-    body.appendChild(this.directivePicker.el);
-
     // spec 127: model picker (keyboard-only — j/k/↵/esc, no mouse handlers).
     this.modelPicker = new ModelPicker();
     body.appendChild(this.modelPicker.el);
@@ -6877,10 +6750,10 @@ export class AcpHarnessView implements ContentView {
     this.annotationOverlayEl.append(annoLabel, this.annotationQuoteEl, this.annotationInputEl, annoHint);
     commandCenter.appendChild(this.annotationOverlayEl);
 
-    // Spec 301 §6: the composer root is a component. Its three click targets —
-    // the dictation toggle, the directive chip and a staged image's remove
-    // button — are each a prop on the part that emits them, so the delegated
-    // listener this node used to carry is gone with the markup it matched.
+    // Spec 301 §6: the composer root is a component. Its click targets — the
+    // dictation toggle and a staged image's remove button — are each a prop on
+    // the part that emits them, so the delegated listener this node used to
+    // carry is gone with the markup it matched.
     this.composer = new Composer();
     this.composerEl = this.composer.el;
     commandCenter.appendChild(this.composerEl);
@@ -7022,7 +6895,6 @@ export class AcpHarnessView implements ContentView {
       this.laneModels = {};
     }
 
-    await this.refreshDirectives();
     // spec 298: lessons are global; the cache is app-wide and the first policy
     // of every lane should already carry them.
     void watchLessons();
@@ -8022,59 +7894,6 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
-  private async refreshDirectives(): Promise<void> {
-    try {
-      const cfg = await getAcpHarnessConfig();
-      this.directives = cfg.directives ?? [];
-    } catch (e) {
-      console.warn('[acp-harness] load directives failed:', e);
-      this.directives = [];
-    }
-    // Drop bindings to directives that no longer exist (deleted on disk).
-    // `pendingDirectiveChange` with `directiveId: null` is a deliberate clear
-    // and must survive a refresh — only drop it when it targets a directive
-    // that has disappeared.
-    for (const lane of this.lanes) {
-      if (lane.activeDirectiveId && !this.directiveById(lane.activeDirectiveId)) {
-        lane.activeDirectiveId = null;
-      }
-      const pending = lane.pendingDirectiveChange;
-      if (pending && pending.directiveId !== null && !this.directiveById(pending.directiveId)) {
-        lane.pendingDirectiveChange = null;
-      }
-      const override = lane.turnDirectiveOverride;
-      if (override && override.directiveId !== null && !this.directiveById(override.directiveId)) {
-        lane.turnDirectiveOverride = null;
-        lane.previousDirectiveId = null;
-      }
-      // spec 130: directive changes no longer grant/revoke attention tools, but
-      // recomputing keeps legacy chip metadata and audit state coherent.
-      this.refreshTriageEquip(lane);
-    }
-  }
-
-  private directiveById(id: string | null): HarnessDirective | null {
-    if (!id) return null;
-    return this.directives.find((d) => d.id === id) ?? null;
-  }
-
-  /** The directive that will be injected on the lane's next prompt: a one-shot
-   * next-turn override wins over the lane-scoped active directive. An override
-   * with `directiveId: null` deliberately clears for the turn. */
-  private effectiveDirective(lane: HarnessLane): HarnessDirective | null {
-    const id = lane.turnDirectiveOverride
-      ? lane.turnDirectiveOverride.directiveId
-      : lane.activeDirectiveId;
-    const directive = this.directiveById(id);
-    return directive && directive.enabled ? directive : null;
-  }
-
-  /** True when a directive may be assigned to any lane. Directives are
-   * backend-agnostic (spec 163), so assignability is just the enabled flag. */
-  private directiveAssignable(directive: HarnessDirective): boolean {
-    return directive.enabled;
-  }
-
   private createLane(index: number, backendId: string, displayName: string): HarnessLane {
     const accent = pickLaneAccent(this.lanes.map((existing) => existing.accent));
     const lane: HarnessLane = {
@@ -8879,19 +8698,9 @@ export class AcpHarnessView implements ContentView {
     lane.currentAssistantId = null;
     lane.currentAssistantMessageId = null;
     lane.currentThoughtId = null;
-    // spec 124: promote a deferred lane-scope assignment, then build blocks
-    // (which read the effective directive), then consume any one-shot override.
-    // The deferred change is a sentinel-safe object: a queued clear is
-    // represented as `{ directiveId: null }`, not by a plain null on the field.
-    if (lane.pendingDirectiveChange) {
-      lane.activeDirectiveId = lane.pendingDirectiveChange.directiveId;
-      lane.pendingDirectiveChange = null;
-      this.refreshTriageEquip(lane); // spec 130: keep audit/default state coherent
-    }
     // spec 279: an advertised agent slash command (`/review`) goes out bare —
     // OMP joins all prompt blocks and only parses a command at the very start,
-    // so a leading lane-context packet turns it into plain model text. The
-    // one-shot directive override then waits for the next ordinary turn.
+    // so a leading lane-context packet turns it into plain model text.
     const agentCommand = isAgentSlashCommand(text, lane.availableCommands);
     // spec 289: an explicit `/compact` drops the lane policy from the agent's history.
     if (agentCommand && lane.policyDelivery && /^\/compact\b/.test(text.trim())) {
@@ -8900,10 +8709,6 @@ export class AcpHarnessView implements ContentView {
     const blocks = agentCommand
       ? this.buildUserBlocks(text, images)
       : this.buildPromptBlocks(lane, text, images);
-    if (!agentCommand && lane.turnDirectiveOverride) {
-      lane.turnDirectiveOverride = null;
-      lane.previousDirectiveId = null;
-    }
     this.updateComposerTick();
     this.render();
     // spec 199: a force-restart mid-turn bumps spawnEpoch and swaps the client;
@@ -9011,7 +8816,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   /** The user's own blocks — images, then text. spec 278: a steer sends only
-   *  these; the lane-context packet and directive are already in the turn. */
+   *  these; the lane-context packet is already in the turn. */
   private buildUserBlocks(userText: string, images: StagedImage[]): ContentBlock[] {
     const imageBlocks: ContentBlock[] = images.map((img) => ({
       type: 'image',
@@ -9026,9 +8831,9 @@ export class AcpHarnessView implements ContentView {
 
   private buildPromptBlocks(lane: HarnessLane, userText: string, images: StagedImage[] = []): ContentBlock[] {
     const tail = this.buildUserBlocks(userText, images);
-    // spec 124: the directive block rides inside the SAME leading packet as the
-    // lane-context stub so adapters that only honor the first resource/text
-    // block still see both. Never emit the directive as a second block.
+    // The role block rides inside the SAME leading packet as the lane-context
+    // stub so adapters that only honor the first resource/text block still see
+    // both. Never emit the role block as a second block.
     const leading = this.composeLeadingContext(lane);
     // spec 359: fx treats every resource URI as a target for scoped AGENTS.md
     // loading and posts an "unsafe target" notice for `krypton://`; it inlines
@@ -9055,9 +8860,8 @@ export class AcpHarnessView implements ContentView {
   /** spec 289: the leading block. The turn header goes every turn; the lane
    *  policy only when this agent session has not seen it. spec 332: lessons are
    *  compared by content, so a lesson change after the policy went out rides
-   *  this turn's header as a delta. spec 124: the role/directive block lives
-   *  inside the policy, so it still rides in the SAME block as the header —
-   *  never as a second block. */
+   *  this turn's header as a delta. The role block lives inside the policy, so
+   *  it still rides in the SAME block as the header — never as a second block. */
   private composeLeadingContext(lane: HarnessLane): string {
     const policy = this.renderLanePolicy(lane);
     const plan = planPolicyDelivery(lane.policyDelivery, hashPolicy(policy.hashInput), policy.lessons);
@@ -9104,7 +8908,7 @@ export class AcpHarnessView implements ContentView {
   }
 
   /** spec 289: everything that holds until the roster, gates, ticket, or
-   *  directive change. Memory (handoff_set) is intentionally NOT advertised:
+   *  role change. Memory (handoff_set) is intentionally NOT advertised:
    *  per the handoff-only decision (spec 165) the #handoff prompt names it
    *  when the user invokes it; #resume embeds the document (spec 293).
    *  spec 332: `hashInput` reduces the lessons block to its heading, so a lesson
@@ -9147,7 +8951,7 @@ export class AcpHarnessView implements ContentView {
     };
   }
 
-  /** The built-in role prompt (Polly/Debby/Salty) or the effective directive. */
+  /** The built-in role prompt (Polly/Debby/Salty), or null when none is set. */
   private renderRoleBlock(lane: HarnessLane): string | null {
     if (lane.pollyBuiltinRole) {
       const heading =
@@ -9166,12 +8970,7 @@ export class AcpHarnessView implements ContentView {
           : `## Salty executor — ${lane.saltyBuiltinRole}`;
       return `${heading}\n${SALTY_ROLE_PROMPTS[lane.saltyBuiltinRole]}`;
     }
-    const directive = this.effectiveDirective(lane);
-    if (!directive) return null;
-    const heading = directive.title.trim()
-      ? `## Directive: ${directive.title.trim()}`
-      : '## Directive';
-    return `${heading}\n${directive.system_prompt.trim()}`;
+    return null;
   }
 
   private finishTurn(lane: HarnessLane, stopReason: StopReason, reason?: string): void {
@@ -10751,120 +10550,6 @@ export class AcpHarnessView implements ContentView {
     payload.autoReason = autoReason;
   }
 
-  // ─── Directive picker (spec 124) ──────────────────────────────────────────
-
-  /** Directives ordered for the picker: enabled first, then disabled. Directives
-   * are backend-agnostic (spec 163) — any directive applies to any lane, so there
-   * is no backend filter here. Enter assigns to the focused lane; Shift+Enter
-   * spawns a new lane after the user picks a backend. */
-  private pickerDirectives(): HarnessDirective[] {
-    return [...this.directives].sort((a, b) => Number(b.enabled) - Number(a.enabled));
-  }
-
-  private async openDirectivePicker(): Promise<void> {
-    const lane = this.activeLane();
-    if (!lane) {
-      this.flashChip('no active lane');
-      return;
-    }
-    await this.refreshDirectives();
-    if (this.directives.length === 0) {
-      this.flashChip('no directives — edit ~/.config/krypton/acp-harness.toml');
-      return;
-    }
-    this.pickerOpen = false;
-    this.directivePickerOpen = true;
-    // Start the cursor on the lane's current directive when present.
-    const ordered = this.pickerDirectives();
-    const currentId = lane.pendingDirectiveChange
-      ? lane.pendingDirectiveChange.directiveId
-      : lane.activeDirectiveId;
-    const idx = ordered.findIndex((d) => d.id === currentId);
-    this.directivePickerCursor = idx >= 0 ? idx : 0;
-    this.render();
-  }
-
-  private closeDirectivePicker(): void {
-    if (!this.directivePickerOpen) return;
-    this.directivePickerOpen = false;
-    this.render();
-  }
-
-  /** Assign (lane scope) or defer a directive to the focused lane. */
-  private assignDirectiveToLane(lane: HarnessLane, directiveId: string | null): void {
-    const busy = lane.status === 'busy' || lane.status === 'needs_permission' || lane.status === 'awaiting_peer';
-    // spec 130: manual triage override is legacy; clear it when directive
-    // context changes. For the deferred (busy) case the recompute happens when
-    // the change is promoted before the next send.
-    lane.triageOverride = null;
-    if (busy) {
-      lane.pendingDirectiveChange = { directiveId };
-      this.flashChip(directiveId ? 'directive changes next send' : 'directive clears next send');
-    } else {
-      lane.activeDirectiveId = directiveId;
-      lane.pendingDirectiveChange = null;
-      this.refreshTriageEquip(lane);
-    }
-    this.appendTranscript(
-      lane,
-      'system',
-      directiveId ? `directive set: ${directiveId}` : 'directive cleared',
-    );
-    this.flushRegion('composer');
-  }
-
-  private handleDirectivePickerKey(e: KeyboardEvent): void {
-    const lane = this.activeLane();
-    if (!lane) {
-      this.closeDirectivePicker();
-      return;
-    }
-    const ordered = this.pickerDirectives();
-    const total = ordered.length;
-    if (e.key === 'Escape' || e.key === 'q') {
-      this.closeDirectivePicker();
-      return;
-    }
-    if (e.key === 'Backspace') {
-      this.assignDirectiveToLane(lane, null);
-      this.closeDirectivePicker();
-      return;
-    }
-    if (total === 0) return;
-    if (e.key === 'ArrowDown' || e.key === 'j') {
-      this.directivePickerCursor = nextCursor(this.directivePickerCursor, total);
-      this.renderDirectivePicker();
-      return;
-    }
-    if (e.key === 'ArrowUp' || e.key === 'k') {
-      this.directivePickerCursor = prevCursor(this.directivePickerCursor, total);
-      this.renderDirectivePicker();
-      return;
-    }
-    if (e.key === 'Enter') {
-      const directive = ordered[this.directivePickerCursor];
-      if (!directive) return;
-      if (!directive.enabled) {
-        this.flashChip('directive disabled');
-        return;
-      }
-      this.closeDirectivePicker();
-      if (e.shiftKey) {
-        // Shift+Enter: spawn a fresh lane with this directive. Directives are
-        // backend-agnostic (spec 163), so ask which backend to spawn via the
-        // lane backend picker; the chosen backend pairs with this directive.
-        // Pass the id into openLanePicker so it binds atomically with the open
-        // (set after the async backend fetch) — never as shared state across the
-        // await, which a re-entrant plain "+ new lane" open could inherit.
-        void this.openLanePicker(directive.id);
-      } else {
-        // Enter: switch the focused lane's directive in place. assignDirectiveToLane
-        // defers the change to the next send when the lane is busy.
-        this.assignDirectiveToLane(lane, directive.id);
-      }
-    }
-  }
-
   // ─── Model picker (spec 127) ──────────────────────────────────────────────
 
   /** Open the model picker for the focused lane. Disabled when the lane has no
@@ -10884,7 +10569,6 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     this.pickerOpen = false;
-    this.directivePickerOpen = false;
     this.modelPickerOpen = true;
     this.modelPickerLaneId = lane.id;
     const idx = lane.availableModels.findIndex((m) => m.model_id === lane.currentModelId);
@@ -10998,12 +10682,8 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
-  /** Open the lane backend picker. `forDirectiveId` (spec 163: Shift+Enter from
-   * the directive picker) carries the directive the spawned lane will start with;
-   * it is bound to the picker ONLY on a successful open, after the async backend
-   * fetch — so a re-entrant plain "+ new lane" open during the await can never
-   * inherit it, and a failed open leaves no stale pending state. */
-  private async openLanePicker(forDirectiveId?: string | null): Promise<void> {
+  /** Open the lane backend picker. */
+  private async openLanePicker(): Promise<void> {
     let entries: AcpBackendDescriptor[];
     try {
       entries = harnessBackends(await AcpClient.listBackends(), { remote: this.remoteRuntimeId !== null });
@@ -11018,16 +10698,12 @@ export class AcpHarnessView implements ContentView {
     this.pickerEntries = entries;
     this.pickerOpen = true;
     this.pickerCursor = 0;
-    this.pendingSpawnDirectiveId = forDirectiveId ?? null;
     this.render();
   }
 
   private closeLanePicker(): void {
     if (!this.pickerOpen) return;
     this.pickerOpen = false;
-    // spec 163: drop any pending directive-spawn intent on close (cancel or
-    // after consuming) so a later plain "+ new lane" never inherits it.
-    this.pendingSpawnDirectiveId = null;
     this.render();
   }
 
@@ -11051,11 +10727,8 @@ export class AcpHarnessView implements ContentView {
     if (e.key === 'Enter') {
       const entry = this.pickerEntries[this.pickerCursor];
       if (entry) {
-        // spec 163: consume a pending directive from a Shift+Enter spawn before
-        // closeLanePicker() clears it, so the new lane starts with that directive.
-        const directiveId = this.pendingSpawnDirectiveId;
         this.closeLanePicker();
-        void this.addLane(entry.id, directiveId);
+        void this.addLane(entry.id);
       }
       return;
     }
@@ -11338,28 +11011,13 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
-  /** Spawn a new lane on `backendId`. When `directiveId` is given (spec 163:
-   * Shift+Enter from the directive picker), the lane starts with that directive
-   * active — directives are backend-agnostic, so any directive pairs with any
-   * chosen backend. */
-  private async addLane(backendId: string, directiveId?: string | null): Promise<void> {
+  /** Spawn a new lane on `backendId`. */
+  private async addLane(backendId: string): Promise<void> {
     const label = backendLabel(backendId);
     // spec 141: number from the process-wide, never-recycled counter keyed by
     // the rendered label prefix so the displayName is globally unique across all
     // harness views (no per-view collision, safe to address bare).
     const lane = this.createLane(this.nextLaneIndex++, backendId, `${label}-${nextLaneNumber(label)}`);
-    if (directiveId) {
-      // Revalidate at spawn time: the directive may have been disabled or removed
-      // while the backend picker was open. Apply only if still assignable; surface
-      // the degrade rather than silently spawning an un-directed lane.
-      const directive = this.directiveById(directiveId);
-      if (directive && this.directiveAssignable(directive)) {
-        lane.activeDirectiveId = directiveId;
-        this.appendTranscript(lane, 'system', `directive set: ${directiveId}`);
-      } else {
-        this.flashChip(`directive ${directiveId} unavailable — lane spawned without it`);
-      }
-    }
     this.lanes.push(lane);
     this.publishStream(lane, 'lane_opened', {
       backendId: lane.backendId,
@@ -12386,29 +12044,6 @@ export class AcpHarnessView implements ContentView {
       await this.enqueueSystemPrompt(lane, wikiRecallPrompt(question), undefined, 'recalling wiki');
       return;
     }
-    // spec 161: #directive authors a reusable directive by having the lane edit
-    // acp-harness.toml with its own file tools (the directive_* MCP tools were
-    // removed). One-shot injection like #wiki — tokens cost only when invoked.
-    if (parts[0] === '#directive') {
-      this.setDraft(lane, '', 0);
-      const intent = text.trim().slice('#directive'.length).trim();
-      if (!intent) {
-        this.flashChip('usage: #directive <what to create/change>');
-        return;
-      }
-      if (lane.status !== 'idle' && lane.status !== 'awaiting_peer') {
-        this.flashChip('lane busy - #cancel first');
-        return;
-      }
-      let configPath = '~/.config/krypton/acp-harness.toml';
-      try {
-        configPath = await getAcpHarnessConfigPath();
-      } catch (e) {
-        console.warn('[acp-harness] config path lookup failed, using default:', e);
-      }
-      await this.enqueueSystemPrompt(lane, directivePrompt(configPath, intent), undefined, 'authoring directive');
-      return;
-    }
     // spec 196: one-shot tldraw Offline local-agent workflow. The lane uses its
     // existing shell tools and permission policy; Krypton never receives the
     // app's token or writes the native document format.
@@ -12961,14 +12596,13 @@ export class AcpHarnessView implements ContentView {
         this.renderMemory();
         this.renderHelp();
         this.renderPicker();
-        this.renderDirectivePicker();
         this.renderModelPicker();
         this.renderHandoffPicker();
         this.renderSessionPicker();
         this.renderTriageGaugeEl();
         this.renderTriageOverlayEl();
         // Collapse/restore the orchestrator console around whichever modal just
-        // opened or closed (lane/session/directive/model picker, help, memory).
+        // opened or closed (lane/session/model picker, help, memory).
         this.syncOrchestratorConsoleVisibility();
         return;
     }
@@ -13489,25 +13123,10 @@ export class AcpHarnessView implements ContentView {
       (laneId) => this.lanes.find((l) => l.id === laneId)?.status ?? null,
       now,
     );
-    // spec 124: a pending change shows only when it differs from the current
-    // binding — a swap, or a clear while a directive is bound. For a pending
-    // clear the meta line keeps the bound directive's name so the user can see
-    // which directive is being removed.
-    const pendingChange = lane.pendingDirectiveChange;
-    const boundDirective = this.directiveById(lane.activeDirectiveId);
-    const swapTarget =
-      pendingChange && pendingChange.directiveId !== null && pendingChange.directiveId !== lane.activeDirectiveId
-        ? this.directiveById(pendingChange.directiveId)
-        : null;
-    const metaDirective = swapTarget ?? boundDirective;
-    const pendingClear = !!pendingChange && pendingChange.directiveId === null && !!boundDirective;
     return {
       lane,
       active: lane.id === this.activeLaneId,
       peerHint,
-      directive: metaDirective
-        ? { directive: metaDirective, pending: swapTarget ? 'swap' : pendingClear ? 'clear' : 'none' }
-        : null,
       reviewCount: lane.sessionId ? this.reviewThreadCounts.get(lane.sessionId) ?? 0 : 0,
       runs: this.commandRuns.visible(lane.id),
     };
@@ -13523,35 +13142,8 @@ export class AcpHarnessView implements ContentView {
       backends: this.pickerEntries,
       running,
       cursor: this.pickerCursor,
-      // spec 163: when the picker was opened by Shift+Enter from the directive
-      // picker, surface which directive the spawned lane will carry.
-      pendingDirective: this.pendingSpawnDirectiveId
-        ? this.directiveById(this.pendingSpawnDirectiveId)
-        : null,
       onAutoClose: (): void => {
         this.pickerOpen = false;
-      },
-    });
-  }
-
-  private renderDirectivePicker(): void {
-    const lane = this.activeLane();
-    this.directivePicker.update({
-      open: this.directivePickerOpen,
-      laneName: lane?.displayName ?? null,
-      directives: this.pickerDirectives(),
-      currentDirectiveId: lane
-        ? lane.pendingDirectiveChange
-          ? lane.pendingDirectiveChange.directiveId
-          : lane.activeDirectiveId
-        : null,
-      cursor: this.directivePickerCursor,
-      onChoose: (index: number): void => {
-        this.directivePickerCursor = index;
-        this.handleDirectivePickerKey(new KeyboardEvent('keydown', { key: 'Enter' }));
-      },
-      onAutoClose: (): void => {
-        this.directivePickerOpen = false;
       },
     });
   }
@@ -13864,9 +13456,6 @@ export class AcpHarnessView implements ContentView {
           }
         : null,
       helpHint: HELP_HINT,
-      onOpenDirective: (): void => {
-        void this.openDirectivePicker();
-      },
     };
   }
 
@@ -13903,47 +13492,7 @@ export class AcpHarnessView implements ContentView {
           : 'Auto-edit — file edits are auto-accepted; commands still ask. ⇧Tab to change.',
       });
     }
-    const directive = this.directiveChipProps(lane);
-    if (directive) chips.push(directive);
     return chips;
-  }
-
-  /** Composer directive chip: clickable, opens the picker. Keyboard users use
-   * `Cmd+P → /`. Shows the pending (deferred) directive when the lane is busy. */
-  private directiveChipProps(lane: HarnessLane): ComposerMetaChipProps | null {
-    const pendingChange = lane.pendingDirectiveChange;
-    const pending = pendingChange !== null && pendingChange.directiveId !== lane.activeDirectiveId;
-    const id = pendingChange ? pendingChange.directiveId : lane.activeDirectiveId;
-    const directive = this.directiveById(id);
-    // spec 221: an unset directive said `directive none` — a chip whose only
-    // content is that it has no content. It returns the moment one is set; the
-    // picker itself lives on `Cmd+P` `.` and in the help overlay. A *pending*
-    // change still renders even when it resolves to none, because "clearing on
-    // the next send" is a state the user needs to see.
-    if (!directive && !pending) return null;
-    // spec 130: all harness-memory lanes may flag by default, so `◆ default`
-    // distinguishes nothing and is omitted (spec 221). Legacy directive metadata
-    // still shows, so older directive files stay legible.
-    const source = this.triageSource(lane);
-    const triage = lane.triageEquipped && source !== 'default';
-    return {
-      key: 'directive',
-      block: 'acp-harness__directive-chip',
-      text: `directive ${directive ? directive.id : 'none'}${pending ? ' (next send)' : ''}`,
-      title: '⌘P then . to change',
-      data: { 'open-directive-picker': '1' },
-      modifiers: [
-        ...(directive ? ['acp-harness__directive-chip--set'] : []),
-        ...(pending ? ['acp-harness__directive-chip--pending'] : []),
-      ],
-      extra: triage
-        ? {
-            class: 'acp-harness__directive-chip__triage',
-            text: `◆ ${source}`,
-            title: `attention triage ${source}; tools are available when this lane has harness memory MCP`,
-          }
-        : null,
-    };
   }
 
   /** The `[● REC th ⌘D]` button, or null when this webview cannot dictate. */
@@ -17097,7 +16646,6 @@ export class AcpHarnessView implements ContentView {
       || this.annotationOverlayOpen
       || this.sessionPicker.open
       || this.pickerOpen
-      || this.directivePickerOpen
       || this.modelPickerOpen
       || this.handoffPicker !== null
       || this.ticketCtl.ticketPicker !== null

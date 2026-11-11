@@ -7,8 +7,8 @@
    Spec 366 (DESIGN.md "Readouts", "Lamps", "Key"): the chrome row sits on the
    composer plate. The status run and the lane's permission mode are readout
    windows with an LED: the status LED lights while the lane works, the mode
-   LED is lit while the mode is on. The directive is a small key; the branch
-   and `? help` are printed legend. A decision row's label is the same readout
+   LED is lit while the mode is on. The branch and `? help` are printed
+   legend. A decision row's label is the same readout
    at the same type size, its amber LED lit — it waits on the human. */
 
 @layer krypton.component {
@@ -54,7 +54,7 @@
      magnified KR/GR drop caps, which overflow upward over the pane (specs
      218–220) and were painting on top of the input-line control.
      `font-size` is the bar's one type size: every readout and control in it —
-     status, lane pill, directive, branch, `? help`, MIC — inherits it rather
+     status, lane pill, branch, `? help`, MIC — inherits it rather
      than scaling its own `em`, so the run reads as one line of text. */
   .acp-harness__composer-chrome {
     display: flex;
@@ -229,53 +229,10 @@
     text-shadow: var(--mat-print);
     text-transform: uppercase;
   }
-
-  /* ── Composer directive chip: a small key that opens the picker ───────── */
-
-  .acp-harness__directive-chip {
-    flex: 0 0 auto;
-    padding: 1px 7px;
-    border: 1px solid var(--mat-key-edge);
-    border-radius: var(--krypton-border-radius, 8px);
-    background: var(--mat-key);
-    box-shadow: var(--mat-key-raise);
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72));
-    letter-spacing: 0.09em;
-    text-shadow: var(--mat-print);
-    cursor: pointer;
-  }
-
-  .acp-harness__directive-chip:hover {
-    background: var(--mat-key-hover);
-  }
-
-  .acp-harness__directive-chip:active {
-    background: var(--mat-key-down);
-    box-shadow: var(--mat-key-sunk);
-  }
-
-  /* A bound directive backlights the legend. */
-  .acp-harness__directive-chip--set {
-    color: var(--mat-lit);
-  }
-
-  /* A swap/clear queued for the next send: warning ink. */
-  .acp-harness__directive-chip--pending {
-    color: color-mix(in srgb, rgb(var(--krypton-warning-rgb, 232, 197, 71)) 70%, var(--krypton-fg, #d8e8d8));
-    text-shadow: var(--mat-print);
-  }
-
-  /* spec 129 — the triage grant marker inside the directive key. */
-  .acp-harness__directive-chip__triage {
-    margin-left: 6px;
-    letter-spacing: 0.04em;
-    color: var(--mat-silk);
-  }
 }
 
 @layer krypton.scheme {
-  html[data-theme-scheme='light'] .acp-harness__composer-mode--warn,
-  html[data-theme-scheme='light'] .acp-harness__directive-chip--pending {
+  html[data-theme-scheme='light'] .acp-harness__composer-mode--warn {
     color: #8a5a00;
   }
 }

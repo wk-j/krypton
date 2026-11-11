@@ -1,11 +1,11 @@
 // Spec 302 §4.5 — `RailEntry`.
 //
 // One lane row in the zen-mode left rail: status dot, backend logo, head line
-// (name · peer glyphs · tool count · context count) and the meta line (role tag
-// + trimmed directive title + pending hint, or the compact permission/status
-// hint). Ported from `acp-harness-view.ts:13053-13171` (`renderRailEntry`),
-// which rebuilt the whole entry — `document.createElement` + one `innerHTML` —
-// on every rail refresh.
+// (name · peer glyphs · tool count · context count) and the meta line (the
+// compact permission/status hint, or a running built-in). Ported from
+// `acp-harness-view.ts:13053-13171` (`renderRailEntry`), which rebuilt the
+// whole entry — `document.createElement` + one `innerHTML` — on every rail
+// refresh.
 //
 // `peerHint` arrives as a prop rather than being derived here: it needs the
 // coordinator and the *other* lanes' statuses (`deriveRailPeerHint`), neither
@@ -20,40 +20,17 @@ import { syncOrder } from '../../../ui/list';
 import { formatCount } from '../../harness-format';
 import type { CommandRunView } from '../../harness-command-runs';
 import { compactPermissionMeta } from '../../harness-lane-chrome';
-import {
-  BACKEND_LABELS,
-  backendLogoId,
-  directiveRole,
-  directiveTagLabel,
-  trimBackendPrefix,
-} from '../../harness-lane-identity';
+import { BACKEND_LABELS, backendLogoId } from '../../harness-lane-identity';
 import type { HarnessLane } from '../../harness-view-types';
 import type { RailPeerHint } from '../../lane-peek';
-import type { HarnessDirective } from '../../../config';
 import { Chip, type ChipProps } from '../chip';
 import { statusLabel } from '../lane-symbol';
 import type { ComponentDef } from '../types';
-
-/**
- * The directive the meta line shows, plus how it got there.
- *
- * spec 124: a pending change is shown when it actually differs from the current
- * binding — a swap (`directiveId` → different id) or a clear (`directiveId` →
- * null while a directive is bound). For a pending clear the meta line keeps
- * showing the currently bound directive (with the strike on the tag), so the
- * user can see which directive is being removed. `pending !== 'none'` therefore
- * always comes with a directive to show, which is why this is one object.
- */
-export interface RailDirective {
-  readonly directive: HarnessDirective;
-  readonly pending: 'none' | 'swap' | 'clear';
-}
 
 export interface RailEntryProps {
   readonly lane: HarnessLane;
   readonly active: boolean;
   readonly peerHint: RailPeerHint;
-  readonly directive: RailDirective | null;
   readonly reviewCount: number;
   /** spec 343: built-in `#` commands in flight on this lane, oldest first. */
   readonly runs: readonly CommandRunView[];
@@ -68,7 +45,6 @@ export class RailEntry extends Component<RailEntryProps> {
   private readonly nameEl = el('span', { class: 'acp-harness__rail-name' });
   private readonly peersEl = el('span', { class: 'acp-harness__rail-peers' });
   private readonly metaEl = el('span', { class: 'acp-harness__rail-meta' });
-  private readonly metaTitleEl = el('span', { class: 'acp-harness__rail-meta__title' });
   private readonly metaHintEl = el('span', { class: 'acp-harness__rail-meta__hint' });
   private readonly metaRunEl = el('span', { class: 'acp-harness__rail-meta__run' });
   private readonly reviewEl = el('span', { class: 'acp-harness__rail-review-count' });
@@ -88,7 +64,7 @@ export class RailEntry extends Component<RailEntryProps> {
 
   protected readDeps(next: RailEntryProps): readonly unknown[] {
     const lane = next.lane;
-    this.nextHint = next.directive ? [] : railStatusHint(lane);
+    this.nextHint = railStatusHint(lane);
     this.nextRun = railRunText(next);
     return [
       lane.status,
@@ -104,10 +80,6 @@ export class RailEntry extends Component<RailEntryProps> {
       next.peerHint.trafficSuffix,
       next.peerHint.title,
       next.peerHint.kind,
-      next.directive?.directive.id,
-      next.directive?.directive.title,
-      next.directive?.directive.task,
-      next.directive?.pending,
       next.reviewCount,
       keyHintsSignature(this.nextHint),
       this.nextRun,
@@ -122,8 +94,6 @@ export class RailEntry extends Component<RailEntryProps> {
       `acp-harness__rail-entry--${next.lane.status}`,
       next.active && 'acp-harness__rail-entry--active',
       hint.kind !== 'none' && `acp-harness__rail-entry--peer-${hint.kind}`,
-      next.directive && 'acp-harness__rail-entry--directive',
-      next.directive && next.directive.pending !== 'none' && 'acp-harness__rail-entry--pending',
     );
   }
 
@@ -138,7 +108,7 @@ export class RailEntry extends Component<RailEntryProps> {
 
     const live = new Set<string>();
     this.paintHead(next, live);
-    this.paintMeta(next, live);
+    this.paintMeta();
     for (const [key, chip] of this.chipPool) {
       if (live.has(key)) continue;
       chip.dispose();
@@ -146,13 +116,8 @@ export class RailEntry extends Component<RailEntryProps> {
     }
 
     const titleBase = next.peerHint.title ? `${next.peerHint.title} · ` : '';
-    const meta = next.directive;
-    const titleDirective = meta
-      ? ` · directive ${meta.directive.id}`
-        + (meta.pending === 'swap' ? ' (next send)' : meta.pending === 'clear' ? ' (clear next send)' : '')
-      : '';
     const titleRuns = next.runs.length > 0 ? ` · running ${next.runs.map((run) => run.text).join(', ')}` : '';
-    this.el.title = `${titleBase}${statusLabel(lane.status)}${titleDirective}${titleRuns}`;
+    this.el.title = `${titleBase}${statusLabel(lane.status)}${titleRuns}`;
 
     if (next.reviewCount > 0) {
       this.reviewEl.textContent = `${next.reviewCount} reviews`;
@@ -225,41 +190,17 @@ export class RailEntry extends Component<RailEntryProps> {
     syncOrder(this.headEl, nodes);
   }
 
-  /** spec 125 — the meta line is a role tag chip + trimmed directive title (the
-   *  user icon it replaced carried less per pixel), or the compact permission /
-   *  status hint when no directive is bound. spec 343: a running built-in takes
-   *  the status word's place, or the directive title's; the head line has no
-   *  room for it. */
-  private paintMeta(next: RailEntryProps, live: Set<string>): void {
-    const meta = next.directive;
-    if (this.nextRun) this.metaRunEl.textContent = this.nextRun;
-    if (!meta) {
-      if (this.nextRun) {
-        syncOrder(this.metaEl, [this.metaRunEl]);
-        return;
-      }
-      this.metaHintEl.replaceChildren(...keyHintNodes(this.nextHint));
-      syncOrder(this.metaEl, [this.metaHintEl]);
+  /** spec 125 — the meta line is the compact permission / status hint. spec
+   *  343: a running built-in takes the status word's place; the head line has
+   *  no room for it. */
+  private paintMeta(): void {
+    if (this.nextRun) {
+      this.metaRunEl.textContent = this.nextRun;
+      syncOrder(this.metaEl, [this.metaRunEl]);
       return;
     }
-    const tag = this.chip('tag', live, {
-      block: 'acp-harness__rail-tag',
-      text: directiveTagLabel(meta.directive.task),
-      modifiers: [
-        `acp-harness__rail-tag--${directiveRole(meta.directive.task)}`,
-        ...(meta.pending === 'clear' ? ['acp-harness__rail-tag--clearing'] : []),
-      ],
-    });
-    const raw = meta.directive.title.trim();
-    this.metaTitleEl.textContent = trimBackendPrefix(raw, next.lane.backendId) || raw || meta.directive.id;
-    const nodes: HTMLElement[] = [tag, this.nextRun ? this.metaRunEl : this.metaTitleEl];
-    if (meta.pending === 'swap' || meta.pending === 'clear') {
-      this.metaHintEl.textContent = meta.pending === 'swap' ? '· next send' : '· clear next send';
-      nodes.push(this.metaHintEl);
-    } else {
-      this.metaHintEl.remove();
-    }
-    syncOrder(this.metaEl, nodes);
+    this.metaHintEl.replaceChildren(...keyHintNodes(this.nextHint));
+    syncOrder(this.metaEl, [this.metaHintEl]);
   }
 
   private chip(key: string, live: Set<string>, props: ChipProps): HTMLElement {
@@ -292,11 +233,11 @@ function peerChip(kind: 'awaiting' | 'inbox' | 'traffic', glyph: string): ChipPr
 function railRunText(next: RailEntryProps): string {
   const [first, ...rest] = next.runs;
   if (!first) return '';
-  if (!next.directive && next.lane.status === 'needs_permission') return '';
+  if (next.lane.status === 'needs_permission') return '';
   return rest.length > 0 ? `${first.text} +${rest.length}` : first.text;
 }
 
-/** The meta hint for a lane with no directive bound; a decision's keys are caps. */
+/** The meta line's status hint; a decision's keys are caps. */
 function railStatusHint(lane: HarnessLane): readonly KeyHint[] {
   const status: readonly KeyHint[] = [{ keys: [], label: statusLabel(lane.status) }];
   if (lane.status !== 'needs_permission') return status;
@@ -323,7 +264,6 @@ export const def: ComponentDef = {
     'acp-harness__rail-peer',
     'acp-harness__rail-metric',
     'acp-harness__rail-meta',
-    'acp-harness__rail-tag',
     'acp-harness__rail-review-count',
   ],
 };

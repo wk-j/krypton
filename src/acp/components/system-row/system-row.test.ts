@@ -161,13 +161,12 @@ describe('SystemRow — inter-lane event', () => {
     expect(row.el.querySelector('.acp-harness__msg-body')?.className).toBe('acp-harness__msg-body');
   });
 
-  it('classifies a system item for the dispatcher, a notice winning over a diff', () => {
-    const diff = { title: 't', unified: '+a' };
+  it('classifies a system item for the dispatcher', () => {
     expect(systemRowVariant(event('x'))).toBe('event');
     expect(systemRowVariant(notice({ source: 'review', action: 'recorded', tone: 'info', subject: 'x' }))).toBe('notice');
     expect(systemRowVariant(sys('plain'))).toBe('plain');
-    expect(rowKindFor({ ...event('x'), diff })).toBe('notice');
-    expect(rowKindFor({ ...sys('directive'), diff })).toBe('directiveDiff');
+    expect(rowKindFor(event('x'))).toBe('notice');
+    expect(rowKindFor(sys('plain'))).toBe('text');
   });
 });
 

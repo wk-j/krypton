@@ -13,7 +13,7 @@ A DOM-based terminal instance with custom chrome. Never a native OS window.
 _Avoid_: pane (a pane is a split *inside* a window), tab
 
 **Lane**:
-One ACP agent session inside the harness. Carries a `HarnessLaneStatus` (`starting | idle | busy | needs_permission | awaiting_peer | error | stopped`), an inbox, and optionally a bound directive.
+One ACP agent session inside the harness. Carries a `HarnessLaneStatus` (`starting | idle | busy | needs_permission | awaiting_peer | error | stopped`), an inbox.
 _Avoid_: agent (ambiguous — could mean the backend process or the pi-agent), thread
 
 **Harness Controller CLI**:
@@ -105,13 +105,6 @@ Every completed turn that produced no judgement item, plus any judgement item a 
 **Backpressure gauge**:
 The single ambient signal of the triage UI: a static count of open judgement items (queue depth). It exists so the human can scale the agent fleet to their own review rate — the consumer seeing the producer's backlog — *not* to announce activity. It shows depth, never live motion; it does not blink, pulse, or alert.
 _Avoid_: notification badge, alert count
-
-**Triage grant** (spec 129):
-A directive property (`triage_equipped`) that lets any lane *spawned* with that directive call `attention_flag` from its first turn — the per-lane opt-in sourced from a role rather than a keystroke. A *spawn-time default*, not live reconfiguration: flipping it does not retroactively equip a running lane.
-_Avoid_: triage permission (a manual override can supersede it, so it is a default not a hard permission), enable triage (the feature is always on; the grant is per-lane)
-
-**Manual equip** (spec 129, legacy):
-A runtime override of a lane's triage grant — wins over the directive-sourced grant until the lane is closed or a new directive is assigned. Spec 130 made attention triage **default-on for every lane**, which retired the need to manually equip; the `setTriageEquipped` store path remains as legacy API but no leader key invokes it. The `Leader '` chord it once used is **now the Review Matrix overlay** (spec 146) — do not document `Leader '` as manual equip.
 
 **Lane peek heat**:
 The existing *deterministic* score that ranks lanes by activity (tools / tokens / peer / process) plus an alert boost (error > needs_permission > pendingShell > awaiting_peer). The pre-LLM baseline that attention triage builds on or replaces.

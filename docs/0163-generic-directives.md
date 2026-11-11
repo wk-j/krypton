@@ -1,6 +1,7 @@
 # Generic Directives — Implementation Spec
 
 > Status: Implemented
+> **Removed by [spec 389](0389-remove-harness-directives.md)** (2026-11-11): the directives feature no longer exists. This document is kept as history.
 > Date: 2026-06-15
 > Milestone: ACP Harness — directive management (follows spec 124 / 161 / 162)
 

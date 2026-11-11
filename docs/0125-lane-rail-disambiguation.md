@@ -1,6 +1,7 @@
 # Lane Rail Disambiguation — Implementation Spec
 
 > Status: Implemented
+> **Directive parts removed by [spec 389](0389-remove-harness-directives.md)** (2026-11-11): the rail no longer shows a directive tag or title, and the meta line shows the status hint or the running command. The backend logo and status dot still apply.
 > Date: 2026-05-28
 > Milestone: M8 — Polish
 > Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): Zen rail entries become selector keys on a plate column.

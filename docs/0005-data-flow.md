@@ -427,7 +427,7 @@ d. The loop stops once the grip, the mouse and the button fades settle
    (spec 332). The lane policy goes only when the current agent session has
    not seen it. It holds the ticket pin, the roster and peering rule (when there
    are peers), the tool index, the global lessons block (spec 298), the SVG
-   line, and the role/directive block. The
+   line, and the role block (Polly/Debby/Salty only). The
    policy goes on the first turn after `spawnLane`, when its hash changes
    (lesson text is outside the hash), after
    a `usage_update` drop of at least 40% or a `/compact`, after a failed prompt,
@@ -436,9 +436,9 @@ d. The loop stops once the grip, the mouse and the button fades settle
    bodies (summary + detail) are not injected — a handoff reaches a lane only
    through `#resume` (Specs 98, 293). Exception (Spec 279): a draft whose first
    token is one of the lane's advertised `available_commands` (`/review`,
-   `/$skill …`) is sent bare — no stub, no directive — because adapters such
+   `/$skill …`) is sent bare — no stub, no role block — because adapters such
    as OMP join all prompt blocks and only parse a command at the start of the
-   joined text. A one-shot directive override waits for the next normal turn.
+   joined text.
    a. Prompt queue (Spec 136): if the active lane is busy / needs_permission,
       Enter does NOT discard the prompt — it captures {text, frozen image
       snapshot, mention targets} into the lane's FIFO queuedPrompts (cap 10).

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import type { HarnessDirective } from '../../../config';
 import type { HarnessLane } from '../../harness-view-types';
 import type { RailPeerHint } from '../../lane-peek';
 import { RailEntry, type RailEntryProps } from './index';
@@ -33,23 +32,8 @@ function props(over: Partial<RailEntryProps> = {}): RailEntryProps {
     lane: makeLane(),
     active: false,
     peerHint: NO_PEERS,
-    directive: null,
     reviewCount: 0,
     runs: [],
-    ...over,
-  };
-}
-
-function directive(over: Partial<HarnessDirective> = {}): HarnessDirective {
-  return {
-    id: '0301-impl',
-    title: 'Claude harness UI refactor',
-    icon: '*',
-    description: '',
-    task: 'implementation',
-    system_prompt: '',
-    enabled: true,
-    triage_equipped: false,
     ...over,
   };
 }
@@ -137,39 +121,6 @@ describe('RailEntry', () => {
     entry.update(props());
     expect(entry.el.querySelector('.acp-harness__rail-peers')).toBeNull();
     expect(entry.el.className).toBe('acp-harness__rail-entry acp-harness__rail-entry--idle');
-    entry.dispose();
-  });
-
-  it('paints the role tag, the backend-trimmed title and the pending hint', () => {
-    const entry = new RailEntry();
-    entry.update(props({ directive: { directive: directive(), pending: 'none' } }));
-
-    const meta = entry.el.querySelector('.acp-harness__rail-meta');
-    expect([...(meta?.children ?? [])].map((node) => node.className)).toEqual([
-      'acp-harness__rail-tag acp-harness__rail-tag--impl',
-      'acp-harness__rail-meta__title',
-    ]);
-    expect(meta?.querySelector('.acp-harness__rail-tag')?.textContent).toBe('impl');
-    expect(meta?.querySelector('.acp-harness__rail-meta__title')?.textContent).toBe('harness UI refactor');
-    expect(entry.el.className).toContain('acp-harness__rail-entry--directive');
-    expect(entry.el.title).toBe('idle · directive 0301-impl');
-
-    entry.update(props({ directive: { directive: directive(), pending: 'swap' } }));
-    expect(entry.el.className).toContain('acp-harness__rail-entry--pending');
-    expect(entry.el.querySelector('.acp-harness__rail-meta__hint')?.textContent).toBe('· next send');
-    expect(entry.el.title).toBe('idle · directive 0301-impl (next send)');
-
-    entry.update(props({ directive: { directive: directive(), pending: 'clear' } }));
-    expect(entry.el.querySelector('.acp-harness__rail-tag')?.className)
-      .toBe('acp-harness__rail-tag acp-harness__rail-tag--impl acp-harness__rail-tag--clearing');
-    expect(entry.el.querySelector('.acp-harness__rail-meta__hint')?.textContent).toBe('· clear next send');
-    entry.dispose();
-  });
-
-  it('falls back through the directive id when the title trims to nothing', () => {
-    const entry = new RailEntry();
-    entry.update(props({ directive: { directive: directive({ title: '   ' }), pending: 'none' } }));
-    expect(entry.el.querySelector('.acp-harness__rail-meta__title')?.textContent).toBe('0301-impl');
     entry.dispose();
   });
 
@@ -270,24 +221,6 @@ describe('RailEntry running-command meta (spec 343)', () => {
       runs: [run(1, '#push')],
     }));
     expect(entry.el.querySelector('.acp-harness__rail-meta')?.textContent).toBe('ask · 1–9/Enter · x decline');
-    entry.dispose();
-  });
-
-  it('takes the directive title’s place but keeps the role tag and the pending hint', () => {
-    const entry = new RailEntry();
-    entry.update(props({ directive: { directive: directive(), pending: 'swap' }, runs: [run(1, '#daily')] }));
-
-    const meta = entry.el.querySelector('.acp-harness__rail-meta');
-    expect([...(meta?.children ?? [])].map((node) => node.className)).toEqual([
-      'acp-harness__rail-tag acp-harness__rail-tag--impl',
-      'acp-harness__rail-meta__run',
-      'acp-harness__rail-meta__hint',
-    ]);
-    expect(meta?.querySelector('.acp-harness__rail-meta__run')?.textContent).toBe('#daily');
-
-    entry.update(props({ directive: { directive: directive(), pending: 'swap' }, runs: [] }));
-    expect(meta?.querySelector('.acp-harness__rail-meta__title')?.textContent).toBe('harness UI refactor');
-    expect(meta?.querySelector('.acp-harness__rail-meta__run')).toBeNull();
     entry.dispose();
   });
 });

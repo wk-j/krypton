@@ -70,7 +70,7 @@ named as "deferred" in doc 154 — it is the planned next step, not a new axis.
   harness, then calls `entry.control(op, params)` →
   `acp-harness-view.ts:handleControlOperation()` (~line 1605). Current ops:
   `harness.list/create`, `lane.list/spawn/send/cancel/close/restart/new/model/
-  directive/permission_mode/transcript`, `permission.list/resolve`,
+  permission_mode/transcript`, `permission.list/resolve`,
   `memory.list/get/clear` (spec 293: `memory.list` returns the project's
   handoffs; `memory.get` / `memory.clear <lane>` address the handoff **bound**
   to that live lane), `peer.list`, `diff.review-targets/priority/send`.
@@ -159,9 +159,9 @@ export function publishControlEvent(e: {
   values (below).
 - **New operations** (handled in `handleControlOperation`):
   `attention.list`, `attention.resolve`, `artifact.list`, `lane.status`
-  (rich per-lane snapshot: id/backend/session/model/permissionMode/directive/
+  (rich per-lane snapshot: id/backend/session/model/permissionMode/
   status/queue/activity), `lane.commands` (available slash commands),
-  `lane.metrics`, `lane.models` (available + current model), `directive.list`,
+  `lane.metrics`, `lane.models` (available + current model),
   `review.outcomes` (review quality matrix rows), and the previously-handled
   `diff.review-targets`/`diff.review-priority`/`diff.review-send` (now advertised
   in `capabilities`). All read-only except `attention.resolve`/`diff.review-send`.

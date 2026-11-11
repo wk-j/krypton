@@ -454,22 +454,6 @@ pub async fn live_assist_ready(app_handle: AppHandle) -> Result<(), String> {
     crate::live_assist::present_pending(app_handle).await
 }
 
-/// Load the ACP Harness directive config (`~/.config/krypton/acp-harness.toml`),
-/// creating an empty default file when missing so the user has something to
-/// hand-edit. See `docs/0124-acp-harness-directive-management.md`.
-#[tauri::command]
-pub fn get_acp_harness_config() -> Result<crate::acp_harness_config::AcpHarnessUserConfig, String> {
-    crate::acp_harness_config::load_or_create()
-}
-
-/// Absolute path to `acp-harness.toml` (for surfacing in the UI / docs).
-#[tauri::command]
-pub fn get_acp_harness_config_path() -> Result<String, String> {
-    crate::acp_harness_config::acp_harness_config_path()
-        .map(|p| p.display().to_string())
-        .ok_or_else(|| "Could not determine config directory".to_string())
-}
-
 /// spec 145: collect git working-tree state (diff + untracked excerpts +
 /// diffstat) for the lane's cwd. Shared by the user-triggered `#review` command
 /// (which forwards the diff/doc subject to reviewers) and attention triage

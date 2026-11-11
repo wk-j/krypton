@@ -46,9 +46,9 @@ const openShells = new Set<OverlayShell>();
 export interface OverlayShellParts {
   /**
    * `null` emits **no panel wrapper**: head, body, extras and foot become
-   * direct children of the root, which is what the directive, model and
-   * session pickers need — their rules are `>` child combinators on the
-   * overlay root (`acp-harness.css:6258-6260,6438-6439,6568-6571`).
+   * direct children of the root, which is what the model, session and
+   * handoff pickers need — their rules are `>` child combinators on the
+   * overlay root.
    */
   readonly panel?: string | null;
   readonly head?: string;
@@ -71,7 +71,7 @@ export interface OverlayShellProps {
   readonly name?: string;
   /**
    * The root's full class, replacing the `name`-derived one. The picker roots
-   * are `acp-harness__picker`, `…__directive-picker`, `…__model-picker`,
+   * are `acp-harness__picker`, `…__model-picker`,
    * `…__session-picker` and `remote-harness-picker` — none of which the
    * `-overlay` suffix reaches. Supply this or `name`; neither leaves the root
    * unclassed, as `KeyHintBar` does for `block: ''`.
@@ -98,7 +98,7 @@ export interface OverlayShellProps {
   readonly body: Node;
   /**
    * Siblings appended after the body and before the foot — the session
-   * picker's `__empty` + `__error` notes and the directive picker's preview
+   * picker's `__empty` + `__error` notes and the handoff picker's preview
    * pane, which are siblings of the list today and would lose their `>`
    * selectors inside a wrapper.
    */

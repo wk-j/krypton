@@ -18,7 +18,6 @@ import {
   attachIssueArtifactPrompt,
   createGithubIssuePrompt,
   dailyBriefPrompt,
-  directivePrompt,
   e2eInitPrompt,
   learnCommitPrompt,
   railsInitPrompt,
@@ -137,7 +136,6 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
     description: "distill this session's corrections into global lessons every lane follows",
   },
   { name: 'lessons', args: '', description: 'open the global lessons index in the Markdown Viewer' },
-  { name: 'directive', args: '<what to create/change>', description: 'author a reusable harness directive' },
   { name: 'draw', args: '<request>', description: 'draw in an open tldraw Offline canvas (focused or named)' },
   { name: 'ui', args: '<request>', description: 'ask for an interactive UI card in this conversation' },
   {
@@ -388,11 +386,6 @@ export function commandMeta(): Record<string, CommandMeta> {
       prompt: lessonDistillPrompt('<hint>'),
     },
     lessons: { category: 'surface', badges: [] },
-    directive: {
-      category: 'agent',
-      badges: ['agent'],
-      prompt: directivePrompt('<config-path>', '<intent>'),
-    },
     draw: {
       category: 'agent',
       badges: ['workflow'],

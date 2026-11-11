@@ -756,7 +756,7 @@ class DiffComponent extends GenUiComponent {
 
   protected paint(next: GenUiProps): void {
     const path = asString(next.node.props.path);
-    const block = this.block ?? new DiffBlock('unified');
+    const block = this.block ?? new DiffBlock();
     this.block = block;
     block.update({ mode: 'unified', rows: unifiedDiffRows(asString(next.node.props.patch)), prefix: BLOCK, path });
     setChildren(this.el, [el('div', { class: `${BLOCK}__diff` },

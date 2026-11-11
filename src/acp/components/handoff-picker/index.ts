@@ -5,9 +5,9 @@
 // hand. This overlay lists the same merged local ∪ Xenon rows with the cursor
 // row's detail beside them, so `Enter` resumes without a second command.
 //
-// Composition is the directive picker's: `OverlayShell` + `ListPicker` + a
-// preview with its OWN dependency tuple, so moving the cursor repaints two rows
-// and one preview instead of re-reading every handoff body.
+// Composition: `OverlayShell` + `ListPicker` + a preview with its OWN
+// dependency tuple, so moving the cursor repaints two rows and one preview
+// instead of re-reading every handoff body.
 //
 // The three overlay rules are `>`-less siblings of the root, so the shell runs
 // with `parts.panel: null` and the preview rides in `extras`, as a SIBLING of
