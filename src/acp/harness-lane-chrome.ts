@@ -12,7 +12,7 @@ import type {
   AcpAvailableCommand,
   HarnessLaneStatus,
 } from './types';
-import type { LaneInit, ToolView } from './adapters/types';
+import type { LaneInit, LaneSession, ToolView } from './adapters/types';
 import type { AcpLaneProcMetric } from '../types';
 import type { LaneModelConfig } from '../config';
 import type { KeyHint } from '../ui/kbd';
@@ -32,17 +32,22 @@ import { basename, truncateInline } from './harness-format';
 // reading as a stutter / snap.
 export const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-/** The lane's model label: the configured model, else one the agent reported
- *  in its capabilities, else the session's confirmed current model id. */
+/** The lane's model label: the model Krypton requested after session/new (the
+ *  remembered pick or the configured one, spec 388) by its advertised name,
+ *  else the configured model, else one the agent reported in its capabilities,
+ *  else the session's confirmed current model id. A restored session passes
+ *  `null`, so it keeps the init-only inference. */
 export function inferLaneModelName(
   backendId: string,
   init: LaneInit,
-  currentModelId: string | null,
+  session: Pick<LaneSession, 'models' | 'currentModelId' | 'requestedModelId'> | null,
   laneModels: Record<string, LaneModelConfig>,
 ): string | null {
+  const requested = session?.requestedModelId;
+  if (requested) return session.models.find((m) => m.model_id === requested)?.name ?? requested;
   const configured = laneModels[backendId]?.active;
   if (configured && configured.length > 0) return configured;
-  return init.reportedModel ?? currentModelId;
+  return init.reportedModel ?? session?.currentModelId ?? null;
 }
 
 // Interpreters whose bare process name ("node", "python3") says nothing about

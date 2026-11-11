@@ -80,6 +80,8 @@ ACP backends are code-defined, not configured in `krypton.toml`.
 | `omp` | `omp acp` |
 | `mimo` | `mimo acp` (MiMo-Code, Xiaomi's OpenCode fork — `npm i -g @mimo-ai/cli`; keeps OpenCode's ACP module and advertises model state. Krypton applies `mimo/mimo-auto`, MiMo's anonymous free-for-limited-time channel, via `session/set_model` by default; `lane_models.mimo.active` overrides it) |
 
+**Reasoning effort (spec 388).** Effort is read from the session's `configOptions` select with `category: "thought_level"` — never by id, which differs per adapter — and only when the lane's model is driven through the `configOptions` model select. Probed 2026-11-11: claude-agent-acp 0.106.0 (`effort`: `default, low, medium, high, xhigh, max`; its model is a `configOptions` select, no `models` object) and omp 18.18.8 (`thinking`: `off, auto, low, medium, high, xhigh, max`) get the model picker's effort strip. codex-acp 1.13.0 advertises a `models` object whose ids carry the effort (`gpt-6-sol[high]`), so its effort is chosen and remembered through the model list. cline 3.0.74 offers no effort. A confirmed model/effort pick is remembered per backend in `~/.config/krypton/acp-lane-models.toml`.
+
 **PATH for spawned adapters.** macOS GUI apps launched from `/Applications` inherit only `/usr/bin:/bin:/usr/sbin:/sbin`, so `gemini` (Homebrew) and `npx` (nvm) are typically invisible. At app start, run `sh -lc 'printenv PATH'` once, cache the result in a `OnceCell<String>`, and pass it via `Command::env("PATH", cached)` for every ACP spawn. Reuses the same login-shell trick already used by `get_env_var`.
 
 ### Rust: `AcpRegistry` (`src-tauri/src/acp.rs`)

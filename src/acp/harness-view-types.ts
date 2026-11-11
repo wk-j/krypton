@@ -28,6 +28,7 @@ import type {
   AcpSessionInfo,
   HarnessLaneStatus,
   HarnessMcpLaneStats,
+  LaneEffort,
   MessageResourceGitState,
   ModelInfo,
   PermissionOption,
@@ -807,6 +808,11 @@ export interface HarnessLane {
   /** spec 127: set while a live switch is in flight; cleared on settle/deadline.
    *  Gates re-entry and lets the mode_update handler attribute a downgrade. */
   pendingModelSwitch: PendingModelSwitch | null;
+  /** spec 388: the reasoning-effort control (the model picker's effort strip),
+   *  or null when the lane has none. Refreshed when the picker opens. */
+  effort: LaneEffort | null;
+  /** spec 388: an effort switch is in flight; the picker refuses to open. */
+  effortSwitchInFlight: boolean;
   supportsEmbeddedContext: boolean;
   /** spec 289: what lane policy the current agent session has seen. Null means
    *  not sent yet; `spawnLane` resets it for every fresh or resumed session. */

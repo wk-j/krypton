@@ -19,7 +19,6 @@ Listed by spec number. Older specs remain in this directory.
 
 | # | Spec |
 |---|------|
-| 369 | [Keycap Shortcuts](./0369-keycap-shortcuts.md) |
 | 370 | [OMP Background Subagent Jobs](./0370-harness-omp-background-jobs.md) |
 | 371 | [Harness Notice Rows](./0371-harness-notice-rows.md) |
 | 372 | [Prompt Dialog → Harness Lanes](./0372-prompt-dialog-harness-lanes.md) |
@@ -38,6 +37,7 @@ Listed by spec number. Older specs remain in this directory.
 | 385 | [Connected Computer Command Bypass](./0385-connected-computer-command-bypass.md) |
 | 386 | [Harness Remote Command Component](./0386-harness-remote-command-component.md) |
 | 387 | [Harness System Command Components](./0387-harness-system-command-components.md) |
+| 388 | [ACP Lane Model and Effort Memory](./0388-acp-lane-model-effort-memory.md) |
 | 389 | [Remove ACP Harness Directives](./0389-remove-harness-directives.md) |
 
 ## ADRs (31)

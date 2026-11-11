@@ -1,5 +1,6 @@
 pub mod acp;
 mod acp_install;
+mod acp_lane_models;
 mod acp_updates;
 pub mod acp_wire;
 mod child_process;
@@ -408,6 +409,9 @@ pub fn run() {
             acp::acp_session_resume,
             acp::acp_session_load,
             acp::acp_set_lane_model,
+            acp::acp_lane_effort,
+            acp::acp_set_lane_effort,
+            acp::acp_remember_lane_choice,
             acp::acp_set_session_mode,
             acp::acp_prompt,
             acp::acp_steer,

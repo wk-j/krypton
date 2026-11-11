@@ -3,6 +3,11 @@
 > Status: Implemented
 > Date: 2026-05-29
 > Milestone: M-ACP — Harness convergence
+>
+> **Amended by spec 388** (`docs/0388-acp-lane-model-effort-memory.md`): a confirmed pick is now
+> remembered per backend in `~/.config/krypton/acp-lane-models.toml` and becomes the next fresh
+> lane's starting model, and the picker gained an effort strip (`h`/`l`). The session-scoped
+> statements below are kept as the v1 record and marked where 388 replaced them.
 
 ## Problem
 
@@ -77,7 +82,7 @@ could error).
 short agent-advertised list, matching the existing lane/directive pickers and the cyberpunk chrome).
 Like Zed: optimistic + revert, agent-sourced list, never strict-gate against ids (aliases resolve
 adapter-side — but here the picker only offers ids the agent advertised, so mismatches are rare).
-Unlike Zed: the switch is **session-scoped only** in v1 — it does not rewrite `krypton.toml`, so the
+Unlike Zed: the switch is **session-scoped only** in v1 (superseded by spec 388, which remembers it in a separate Krypton-managed file) — it does not rewrite `krypton.toml`, so the
 config still governs the *spawn* default (documented below).
 
 ## Affected Files
@@ -260,13 +265,18 @@ Consequence documented for users: a picker choice lives until the lane respawns 
 after which the config default returns. (Persisting a picker choice back to config is Out of Scope —
 it reopens the per-backend-shared-vs-per-lane question spec 126 resolved as per-backend.)
 
+*Spec 388 replaced this:* a confirmed pick is remembered **per backend** in
+`~/.config/krypton/acp-lane-models.toml` (never `krypton.toml`) and takes precedence over
+`lane_models.<backend>.active` for fresh harness lanes.
+
 ## Edge Cases
 
 - **Backend advertises no models** (Cursor/Junie/OMP/Pi/Codex today): `availableModels` empty → leader
   `,` disabled (`disabledReason`), or if invoked, `flashChip` explains. No overlay.
 - **Lane not yet started / no session**: no client or no `acp_session_id` → picker disabled / command
   errors cleanly ("lane has no active session"); optimistic update is reverted.
-- **Selecting the already-current model**: no-op (skip the RPC), just close.
+- **Selecting the already-current model**: no-op (skip the RPC), just close. (Spec 388: unless the
+  effort strip moved — then only the effort is switched.)
 - **Rejected / unknown id** (RPC `Err`): revert optimistic update to `prev`, `modelApplyFailed = true`,
   chip shows the amber `⚠` (spec 126's warn style), `flashChip` with the reason. Lane keeps running.
 - **Timeout (Codex-1 #6)**: treated as **uncertain**, NOT a hard failure — the agent may still apply
@@ -301,11 +311,13 @@ it reopens the per-backend-shared-vs-per-lane question spec 126 resolved as per-
 
 None — both candidate questions resolved into the design:
 1. Persist picker choice to config? → No (session-scoped v1; avoids reopening per-backend-vs-per-lane).
+   Spec 388 later chose per-backend persistence in a separate file.
 2. Re-assert mode after a model-induced clamp? → No (adapter owns it; we only surface the downgrade).
 
 ## Out of Scope
 
-- Writing the picked model back to `krypton.toml` (session-scoped only in v1).
+- Writing the picked model back to `krypton.toml` (session-scoped only in v1; spec 388 remembers it in
+  `acp-lane-models.toml` instead, still never in `krypton.toml`).
 - Fuzzy-search text input in the picker (j/k over a short advertised list is enough; lists are small).
 - True per-lane config persistence (spec 126 resolved config as per-backend).
 - Enabling model selection for backends that don't advertise `models` (auto-enables if/when they do).

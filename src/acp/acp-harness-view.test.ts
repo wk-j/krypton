@@ -89,7 +89,7 @@ import {
 import { decodeInit, decodeSession } from './adapters/generic';
 import { permissionEvent, toolEventSource } from './adapters/test-utils';
 import type { LaneEvent, LaneInit, LaneSession, PermissionRequest } from './adapters/types';
-import type { ContentBlock, PermissionOption, StopReason, ToolCall } from './types';
+import type { ContentBlock, LaneEffort, ModelInfo, PermissionOption, StopReason, ToolCall } from './types';
 import type { ComputerApprovalRequest } from './computer-approval';
 import type {
   HarnessLane,
@@ -5525,3 +5525,121 @@ describe('system command snapshots (spec 387)', () => {
     expect(rows[0].text).toContain('output files: /tmp/bg-1.log');
   });
 });
+
+describe('model picker Enter: model, then effort, then memory (spec 388)', () => {
+  type PickedEffort = { value: string; name: string; moved: boolean };
+  type PickerHost = {
+    applyModelPickerChoice(lane: HarnessLane, picked: ModelInfo, effort: PickedEffort | null): Promise<void>;
+  };
+  const proto = AcpHarnessView.prototype as unknown as PickerHost;
+  const haiku: ModelInfo = { model_id: 'haiku', name: 'Haiku' };
+  const opus: ModelInfo = { model_id: 'opus', name: 'Opus' };
+  const effortOf = (current: string | null, values = ['low', 'high', 'max']): LaneEffort => ({
+    options: values.map((value) => ({ value, name: value })),
+    current,
+  });
+
+  function setup(opts: {
+    setModel?: () => Promise<'ok' | 'timed_out_uncertain'>;
+    /** What Rust reports after the model switch. */
+    effortAfter?: LaneEffort | null;
+  } = {}) {
+    const flashes: string[] = [];
+    const client = {
+      setLaneModel: vi.fn(opts.setModel ?? (async () => 'ok' as const)),
+      laneEffort: vi.fn(async () => (opts.effortAfter === undefined ? effortOf('high') : opts.effortAfter)),
+      setLaneEffort: vi.fn(async (value: string) => effortOf(value)),
+    };
+    const lane = {
+      backendId: 'claude', client, modelName: 'Opus', currentModelId: 'opus', currentMode: null,
+      modelApplyFailed: false, modelSwitchEpoch: 0, pendingModelSwitch: null,
+      effort: effortOf('high'), effortSwitchInFlight: false,
+    } as unknown as HarnessLane;
+    const view = viewDouble({ render: vi.fn(), flashChip: (text: string) => flashes.push(text) });
+    return { view, lane, client, flashes };
+  }
+  const remembered = (): unknown[] =>
+    invokeMock.mock.calls.filter(([cmd]) => cmd === 'acp_remember_lane_choice').map(([, args]) => args);
+
+  beforeEach(() => {
+    invokeMock.mockClear();
+    (globalThis as { window?: unknown }).window = globalThis;
+  });
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  it('switches the model, then the moved effort, and remembers both', async () => {
+    const { view, lane, client } = setup();
+
+    await proto.applyModelPickerChoice.call(view, lane, haiku, { value: 'max', name: 'max', moved: true });
+
+    expect(client.setLaneModel).toHaveBeenCalledWith('haiku');
+    expect(client.setLaneEffort).toHaveBeenCalledWith('max');
+    expect(lane.effort?.current).toBe('max');
+    expect(remembered()).toEqual([{ backendId: 'claude', modelId: 'haiku', effort: 'max' }]);
+  });
+
+  it('re-applies an untouched effort the model switch moved, but remembers only the model', async () => {
+    // claude-agent-acp moves xhigh to high when switching to haiku.
+    const { view, lane, client } = setup({ effortAfter: effortOf('high', ['low', 'high', 'xhigh']) });
+
+    await proto.applyModelPickerChoice.call(view, lane, haiku, { value: 'xhigh', name: 'xhigh', moved: false });
+
+    expect(client.setLaneEffort).toHaveBeenCalledWith('xhigh');
+    expect(remembered()).toEqual([{ backendId: 'claude', modelId: 'haiku', effort: null }]);
+  });
+
+  it('changes only the effort when the model is unchanged', async () => {
+    const { view, lane, client } = setup();
+
+    await proto.applyModelPickerChoice.call(view, lane, opus, { value: 'low', name: 'low', moved: true });
+
+    expect(client.setLaneModel).not.toHaveBeenCalled();
+    expect(client.setLaneEffort).toHaveBeenCalledWith('low');
+    expect(remembered()).toEqual([{ backendId: 'claude', modelId: null, effort: 'low' }]);
+  });
+
+  it('does nothing when neither the model nor the effort moved', async () => {
+    const { view, lane, client } = setup();
+
+    await proto.applyModelPickerChoice.call(view, lane, opus, { value: 'high', name: 'high', moved: false });
+
+    expect(client.setLaneModel).not.toHaveBeenCalled();
+    expect(client.laneEffort).not.toHaveBeenCalled();
+    expect(remembered()).toEqual([]);
+  });
+
+  it('remembers the model but not an effort the new model does not offer', async () => {
+    const { view, lane, client, flashes } = setup({ effortAfter: effortOf('high', ['low', 'high']) });
+
+    await proto.applyModelPickerChoice.call(view, lane, haiku, { value: 'max', name: 'max', moved: true });
+
+    expect(client.setLaneEffort).not.toHaveBeenCalled();
+    expect(flashes).toContain('effort max not offered by Haiku');
+    expect(remembered()).toEqual([{ backendId: 'claude', modelId: 'haiku', effort: null }]);
+  });
+
+  it('remembers nothing when the model switch times out or is rejected', async () => {
+    const timedOut = setup({ setModel: async () => 'timed_out_uncertain' });
+    await proto.applyModelPickerChoice.call(timedOut.view, timedOut.lane, haiku, { value: 'max', name: 'max', moved: true });
+    expect(timedOut.client.setLaneEffort).not.toHaveBeenCalled();
+
+    const rejected = setup({ setModel: async () => { throw new Error('unknown model'); } });
+    await proto.applyModelPickerChoice.call(rejected.view, rejected.lane, haiku, null);
+    expect(rejected.lane.currentModelId).toBe('opus');
+
+    expect(remembered()).toEqual([]);
+  });
+
+  it('remembers a model on a lane without an effort control', async () => {
+    const { view, lane, client } = setup({ effortAfter: null });
+    lane.effort = null;
+
+    await proto.applyModelPickerChoice.call(view, lane, haiku, null);
+
+    expect(client.laneEffort).not.toHaveBeenCalled();
+    expect(remembered()).toEqual([{ backendId: 'claude', modelId: 'haiku', effort: null }]);
+  });
+});
+

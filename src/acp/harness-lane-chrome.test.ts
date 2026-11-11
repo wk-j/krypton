@@ -6,8 +6,10 @@
 // agent command turns (`isAgentSlashCommand`, spec 279).
 import { describe, expect, it } from 'vitest';
 
+import { decodeInit } from './adapters/generic';
 import {
   filteredSlashCommands,
+  inferLaneModelName,
   isAgentSlashCommand,
   slashPaletteVisible,
 } from './harness-lane-chrome';
@@ -110,5 +112,38 @@ describe('isAgentSlashCommand — spec 279 bare command turns', () => {
     expect(isAgentSlashCommand('/reviewer', commands)).toBe(false);
     expect(isAgentSlashCommand('please run /review', commands)).toBe(false);
     expect(isAgentSlashCommand('/review', [])).toBe(false);
+  });
+});
+
+describe('inferLaneModelName (spec 388)', () => {
+  const init = decodeInit({});
+  const models = [
+    { model_id: 'opus', name: 'Opus' },
+    { model_id: 'haiku', name: 'Haiku' },
+  ];
+  const config = { claude: { active: 'opus', models: [] } };
+
+  it('names the model Krypton requested, by its advertised name', () => {
+    // A remembered pick (haiku) applied over the configured opus.
+    const session = { models, currentModelId: 'haiku', requestedModelId: 'haiku' };
+    expect(inferLaneModelName('claude', init, session, config)).toBe('Haiku');
+  });
+
+  it('shows a requested id the agent does not list verbatim', () => {
+    const session = { models, currentModelId: null, requestedModelId: 'sonnet' };
+    expect(inferLaneModelName('claude', init, session, config)).toBe('sonnet');
+  });
+
+  it('falls back to the configured model when nothing was requested', () => {
+    const session = { models, currentModelId: 'haiku', requestedModelId: null };
+    expect(inferLaneModelName('claude', init, session, config)).toBe('opus');
+    expect(inferLaneModelName('claude', init, null, config)).toBe('opus');
+  });
+
+  it('then to the reported model, then to the current id', () => {
+    const session = { models, currentModelId: 'haiku', requestedModelId: null };
+    expect(inferLaneModelName('cline', init, session, config)).toBe('haiku');
+    expect(inferLaneModelName('cline', { ...init, reportedModel: 'GPT' }, session, config)).toBe('GPT');
+    expect(inferLaneModelName('cline', init, null, config)).toBeNull();
   });
 });

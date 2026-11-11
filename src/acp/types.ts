@@ -113,6 +113,19 @@ export interface ModelInfo {
   description?: string | null;
 }
 
+/** spec 388: one value of the agent's `thought_level` config option. */
+export interface EffortOption {
+  value: string;
+  name: string;
+}
+
+/** spec 388: the lane's reasoning-effort control — the options in the agent's
+ *  order and the value the agent reports as current. */
+export interface LaneEffort {
+  options: EffortOption[];
+  current: string | null;
+}
+
 /** `acp_initialize` result as Rust returns it. Wire data: `client.ts` and
  *  `adapters/` only — the UI reads `LaneInit` (spec 380). */
 export interface WireInitInfo {
@@ -143,6 +156,11 @@ export interface WireSessionInfo {
   available_models?: ModelInfo[];
   /** spec 127: confirmed current model id, or null/undefined when unverified. */
   current_model_id?: string | null;
+  /** spec 388: the model Krypton requested after session/new (remembered pick
+   *  or `lane_models.<backend>.active`); null on resume/load. */
+  requested_model_id?: string | null;
+  /** spec 388: Rust's `EffortState`, decoded by `decodeEffort`. */
+  effort?: unknown;
   /** ACP `SessionModeState` from the same response, unparsed. */
   modes?: unknown;
 }

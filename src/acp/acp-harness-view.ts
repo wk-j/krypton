@@ -177,7 +177,9 @@ import type {
   DocFeedbackEnvelope,
   HandoffEntry,
   HarnessMemorySession,
+  EffortOption,
   InterLaneEnvelope,
+  LaneEffort,
   LaneSummary,
   ModelInfo,
   PermissionOption,
@@ -963,6 +965,10 @@ const PROMPT_QUEUE_MAX = 10;
  *  is treated as hung and Ctrl+C escalates to a force-restart. */
 const CANCEL_ESCALATION_MS = 10_000;
 
+/** spec 388: the effort-strip value at Enter, and whether the user moved it
+ *  (only a moved effort is remembered). */
+type PickedEffort = EffortOption & { readonly moved: boolean };
+
 const LANE_DEFAULTS = {
   client: null,
   status: 'starting' as const,
@@ -981,6 +987,8 @@ const LANE_DEFAULTS = {
   currentModelId: null,
   modelSwitchEpoch: 0,
   pendingModelSwitch: null,
+  effort: null,
+  effortSwitchInFlight: false,
   supportsEmbeddedContext: false,
   policyDelivery: null,
   error: null,
@@ -1624,6 +1632,12 @@ export class AcpHarnessView implements ContentView {
   private modelPickerCursor = 0;
   /** spec 127: lane the model picker is acting on (captured at open). */
   private modelPickerLaneId: string | null = null;
+  /** spec 388: the effort strip, snapshotted when the picker opens. Null when
+   *  the lane has no effort control — `h`/`l` then do nothing. */
+  private modelPickerEffort: LaneEffort | null = null;
+  private modelPickerEffortCursor = 0;
+  /** spec 388: the effort cursor at open — only moving it remembers an effort. */
+  private modelPickerEffortAtOpen = 0;
   /**
    * spec 307: `#resume list` picker. `rows` is the merged local ∪ Xenon
    * snapshot taken at open, so Enter resumes without a second Xenon read;
@@ -4431,7 +4445,7 @@ export class AcpHarnessView implements ContentView {
         label: 'Switch Model',
         icon: 'cpu',
         group: 'Lane',
-        run: () => this.openModelPicker(),
+        run: () => void this.openModelPicker(),
         isEnabled: () => (this.activeLane()?.availableModels.length ?? 0) > 0,
         disabledReason: () => 'backend advertises no models',
       },
@@ -8200,11 +8214,12 @@ export class AcpHarnessView implements ContentView {
    * init-only inference it always had.
    */
   private configureLaneFromInfo(lane: HarnessLane, init: LaneInit, session: LaneSession | null): void {
-    lane.modelName = inferLaneModelName(lane.backendId, init, session?.currentModelId ?? null, this.laneModels);
+    lane.modelName = inferLaneModelName(lane.backendId, init, session, this.laneModels);
     lane.modelApplyFailed = session?.modelApplyFailed ?? false;
     // spec 127: agent-advertised model list + confirmed current id for the picker.
     lane.availableModels = session ? [...session.models] : [];
     lane.currentModelId = session?.currentModelId ?? null;
+    lane.effort = session?.effort ?? null;
     lane.supportsEmbeddedContext = init.promptEmbeddedContext;
     lane.supportsImages = init.promptImage;
     lane.supportsSteering = init.steering;
@@ -8217,6 +8232,7 @@ export class AcpHarnessView implements ContentView {
     lane.availableModels = [...session.models];
     lane.currentModelId = session.currentModelId;
     lane.modelApplyFailed = session.modelApplyFailed;
+    lane.effort = session.effort;
     this.applyLaneModes(lane, init, session);
   }
 
@@ -10554,25 +10570,39 @@ export class AcpHarnessView implements ContentView {
 
   /** Open the model picker for the focused lane. Disabled when the lane has no
    *  client, advertises no models, or already has a switch in flight. */
-  private openModelPicker(): void {
+  private async openModelPicker(): Promise<void> {
     const lane = this.activeLane();
     if (!lane) {
       this.flashChip('no active lane');
       return;
     }
-    if (!lane.client || lane.availableModels.length === 0) {
+    const client = lane.client;
+    if (!client || lane.availableModels.length === 0) {
       this.flashChip('model picker: backend advertises no models');
       return;
     }
-    if (lane.pendingModelSwitch) {
+    if (lane.pendingModelSwitch || lane.effortSwitchInFlight) {
       this.flashChip('model switch already in flight');
       return;
     }
+    // spec 388: the agent may have moved the effort since spawn (a model switch
+    // does, and can add or drop the control), so read Rust's latest
+    // observation before showing the strip.
+    try {
+      lane.effort = await client.laneEffort();
+    } catch {
+      // Keep the last known state; the Enter path re-reads it anyway.
+    }
+    if (this.modelPickerOpen || lane.client !== client || !this.lanes.includes(lane)) return;
     this.pickerOpen = false;
     this.modelPickerOpen = true;
     this.modelPickerLaneId = lane.id;
     const idx = lane.availableModels.findIndex((m) => m.model_id === lane.currentModelId);
     this.modelPickerCursor = idx >= 0 ? idx : 0;
+    this.modelPickerEffort = lane.effort && lane.effort.options.length > 0 ? lane.effort : null;
+    const effortIdx = this.modelPickerEffort?.options.findIndex((o) => o.value === this.modelPickerEffort?.current) ?? -1;
+    this.modelPickerEffortCursor = effortIdx >= 0 ? effortIdx : 0;
+    this.modelPickerEffortAtOpen = this.modelPickerEffortCursor;
     this.render();
   }
 
@@ -10580,6 +10610,7 @@ export class AcpHarnessView implements ContentView {
     if (!this.modelPickerOpen) return;
     this.modelPickerOpen = false;
     this.modelPickerLaneId = null;
+    this.modelPickerEffort = null;
     this.render();
   }
 
@@ -10612,22 +10643,95 @@ export class AcpHarnessView implements ContentView {
       this.renderModelPicker();
       return;
     }
+    // spec 388: h/l walk the effort strip and stop at both ends (an ordered
+    // scale, not a ring). Nothing is sent until Enter.
+    const effort = this.modelPickerEffort;
+    if (effort && (e.key === 'ArrowLeft' || e.key === 'h' || e.key === 'ArrowRight' || e.key === 'l')) {
+      const step = e.key === 'ArrowLeft' || e.key === 'h' ? -1 : 1;
+      const next = Math.min(Math.max(this.modelPickerEffortCursor + step, 0), effort.options.length - 1);
+      if (next !== this.modelPickerEffortCursor) {
+        this.modelPickerEffortCursor = next;
+        this.renderModelPicker();
+      }
+      return;
+    }
     if (e.key === 'Enter') {
       const picked = lane.availableModels[this.modelPickerCursor];
       if (!picked) return;
+      const option = effort?.options[this.modelPickerEffortCursor];
+      const choice: PickedEffort | null = option
+        ? { ...option, moved: this.modelPickerEffortCursor !== this.modelPickerEffortAtOpen }
+        : null;
       this.closeModelPicker();
-      if (picked.model_id === lane.currentModelId) return; // already current — no-op
-      void this.switchLaneModel(lane, picked);
+      void this.applyModelPickerChoice(lane, picked, choice);
+    }
+  }
+
+  /**
+   * spec 388: Enter in the model picker. The model goes first (spec 127's
+   * optimistic switch), then the effort: a model switch can move the agent's
+   * effort, so the value on the strip is re-applied when it drifted. Only what
+   * succeeded is remembered, and an effort only when the user moved it.
+   */
+  private async applyModelPickerChoice(
+    lane: HarnessLane,
+    picked: ModelInfo,
+    effort: PickedEffort | null,
+  ): Promise<void> {
+    const modelChanged = picked.model_id !== lane.currentModelId;
+    if (!modelChanged && !effort?.moved) return;
+    let rememberModel: string | undefined;
+    if (modelChanged) {
+      if (!(await this.switchLaneModel(lane, picked))) return;
+      rememberModel = picked.model_id;
+    }
+    let rememberEffort: string | undefined;
+    if (effort && (await this.switchLaneEffort(lane, picked, effort)) && effort.moved) {
+      rememberEffort = effort.value;
+    }
+    if (rememberModel === undefined && rememberEffort === undefined) return;
+    try {
+      await AcpClient.rememberLaneChoice(lane.backendId, { modelId: rememberModel, effort: rememberEffort });
+    } catch (err) {
+      this.flashChip(`switched; not remembered: ${errorText(err)}`);
+    }
+  }
+
+  /** spec 388: make the lane's effort match the picker strip. Re-reads the
+   *  control first (the model switch may have changed its options or value).
+   *  True when the lane ends on the chosen value. */
+  private async switchLaneEffort(lane: HarnessLane, picked: ModelInfo, effort: PickedEffort): Promise<boolean> {
+    const client = lane.client;
+    if (!client) return false;
+    lane.effortSwitchInFlight = true;
+    try {
+      const state = await client.laneEffort();
+      lane.effort = state;
+      if (!state?.options.some((o) => o.value === effort.value)) {
+        // Only the user's own choice is worth a message; an untouched strip
+        // whose value the new model lacks just takes the agent's effort.
+        if (effort.moved) this.flashChip(`effort ${effort.name} not offered by ${picked.name}`);
+        return false;
+      }
+      if (state.current === effort.value) return true;
+      lane.effort = await client.setLaneEffort(effort.value);
+      this.flashChip(`effort → ${effort.name}`);
+      return true;
+    } catch (err) {
+      this.flashChip(`effort switch failed: ${errorText(err)}`);
+      return false;
+    } finally {
+      lane.effortSwitchInFlight = false;
     }
   }
 
   /** Perform a live model switch with an epoch-guarded optimistic update
    *  (Zed-style: revert on a rejected id, keep + flag on a timeout). */
-  private async switchLaneModel(lane: HarnessLane, picked: ModelInfo): Promise<void> {
+  private async switchLaneModel(lane: HarnessLane, picked: ModelInfo): Promise<boolean> {
     const client = lane.client;
     if (!client) {
       this.flashChip('lane has no active session');
-      return;
+      return false;
     }
     const epoch = ++lane.modelSwitchEpoch;
     const prev: PendingModelSwitch = {
@@ -10656,7 +10760,7 @@ export class AcpHarnessView implements ContentView {
 
     try {
       const outcome = await client.setLaneModel(picked.model_id);
-      if (lane.modelSwitchEpoch !== epoch) return; // a newer switch superseded us
+      if (lane.modelSwitchEpoch !== epoch) return false; // a newer switch superseded us
       if (outcome === 'timed_out_uncertain') {
         // The agent may still apply it — keep the optimistic chip but flag it
         // unconfirmed, and leave the token live to the deadline for a late
@@ -10664,14 +10768,15 @@ export class AcpHarnessView implements ContentView {
         lane.modelApplyFailed = true;
         this.flashChip('model switch timed out; state uncertain');
         this.render();
-        return;
+        return false;
       }
       // Success: clear the token (deadline timer will no-op).
       window.clearTimeout(deadline);
       lane.pendingModelSwitch = null;
+      return true;
     } catch (err) {
       window.clearTimeout(deadline);
-      if (lane.modelSwitchEpoch !== epoch) return; // a newer switch won — don't revert
+      if (lane.modelSwitchEpoch !== epoch) return false; // a newer switch won — don't revert
       // Rejected id: revert the optimistic update and flag.
       lane.modelName = prev.prevModelName;
       lane.currentModelId = prev.prevModelId;
@@ -10679,6 +10784,7 @@ export class AcpHarnessView implements ContentView {
       lane.pendingModelSwitch = null;
       this.flashChip(`model switch failed: ${errorText(err)}`);
       this.render();
+      return false;
     }
   }
 
@@ -13156,6 +13262,13 @@ export class AcpHarnessView implements ContentView {
       models: lane?.availableModels ?? [],
       currentModelId: lane?.currentModelId ?? null,
       cursor: this.modelPickerCursor,
+      effort: this.modelPickerEffort
+        ? {
+          options: this.modelPickerEffort.options,
+          current: this.modelPickerEffort.current,
+          cursor: this.modelPickerEffortCursor,
+        }
+        : null,
       onAutoClose: (): void => {
         this.modelPickerOpen = false;
       },

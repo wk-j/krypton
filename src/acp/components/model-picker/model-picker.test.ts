@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ModelInfo } from '../../types';
-import { ModelPicker, type ModelPickerProps } from './index';
+import { ModelPicker, type ModelPickerEffort, type ModelPickerProps } from './index';
 
 const MODELS: readonly ModelInfo[] = [
   { model_id: 'sonnet-4-6', name: 'Claude Sonnet 4.6', description: 'balanced' },
@@ -158,5 +158,76 @@ describe('ModelPicker', () => {
     other.update(base());
     expect(other.el.hidden).toBe(false);
     other.dispose();
+  });
+
+  describe('effort strip (spec 388)', () => {
+    const EFFORT: ModelPickerEffort = {
+      options: [
+        { value: 'low', name: 'Low' },
+        { value: 'high', name: 'High' },
+        { value: 'xhigh', name: 'xhigh' },
+      ],
+      current: 'high',
+      cursor: 1,
+    };
+
+    it('adds one strip after the list, its h/l caps on the strip, the head unchanged', () => {
+      const picker = mount(base({ effort: EFFORT }));
+
+      // In the head the extra hint wrapped the title at the 580px plate.
+      expect(picker.el.querySelector('header > span:last-child')?.textContent)
+        .toBe('j/k move · Enter switch · Esc cancel');
+      const strip = picker.el.lastElementChild;
+      expect(strip?.previousElementSibling?.tagName).toBe('UL');
+      expect(strip?.outerHTML).toBe(
+        '<div class="acp-harness__model-effort">' +
+          '<span class="acp-harness__model-effort-label">effort</span>' +
+          '<span class="krypton-key-hint acp-harness__model-effort-keys"><kbd>h</kbd>/<kbd>l</kbd></span>' +
+          '<span class="acp-harness__model-effort-option">Low</span>' +
+          '<span class="acp-harness__model-effort-option acp-harness__model-effort-option--active">High' +
+          '<span class="acp-harness__model-current">✓</span></span>' +
+          '<span class="acp-harness__model-effort-option">xhigh</span>' +
+          '</div>',
+      );
+    });
+
+    it('has no strip and the plain hints without an effort control', () => {
+      const picker = mount(base({ effort: null }));
+
+      expect(picker.el.querySelector('.acp-harness__model-effort')).toBeNull();
+      expect(picker.el.querySelector('header > span:last-child')?.textContent)
+        .toBe('j/k move · Enter switch · Esc cancel');
+    });
+
+    it('moves the cursor and the tick without rebuilding the options', () => {
+      const picker = mount(base({ effort: EFFORT }));
+      const options = [...picker.el.querySelectorAll('.acp-harness__model-effort-option')];
+
+      picker.update(base({ effort: { ...EFFORT, cursor: 2, current: 'xhigh' } }));
+
+      expect([...picker.el.querySelectorAll('.acp-harness__model-effort-option')]).toStrictEqual(options);
+      expect(options[1].className).toBe('acp-harness__model-effort-option');
+      expect(options[1].querySelector('.acp-harness__model-current')).toBeNull();
+      expect(options[2].className)
+        .toBe('acp-harness__model-effort-option acp-harness__model-effort-option--active');
+      expect(options[2].querySelector('.acp-harness__model-current')?.textContent).toBe('✓');
+    });
+
+    it('drops the strip when the lane loses its effort control', () => {
+      const picker = mount(base({ effort: EFFORT }));
+      picker.update(base({ effort: null }));
+
+      expect(picker.el.querySelector('.acp-harness__model-effort')).toBeNull();
+    });
+
+    it('writes nothing when the strip says the same thing', () => {
+      const picker = mount(base({ effort: EFFORT }));
+      const observer = watch(picker.el);
+
+      picker.update(base({ effort: { ...EFFORT, options: [...EFFORT.options] } }));
+
+      expect(observer.takeRecords()).toStrictEqual([]);
+      observer.disconnect();
+    });
   });
 });
