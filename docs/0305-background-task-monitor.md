@@ -146,8 +146,8 @@ pub async fn acp_background_task_status(
 
 ```
 1. Agent calls Bash with run_in_background; adapter emits tool_call / tool_call_update
-2. Claude adapter matches the launch marker in content, accumulated terminal output,
-   then generic rawOutput text sections: `Command running in background with ID: <id>. Output is being written to: <absolute path>`
+2. Claude adapter matches the launch marker — at a line start, never quoted mid-line (spec 384 rev) —
+   in content, accumulated terminal output, then generic rawOutput text sections: `Command running in background with ID: <id>. Output is being written to: <absolute path>`
    → pushes a BackgroundTask onto lane.backgroundTasks (state 'running')
 3. Existing shared 2 s metrics feed: collect tasks in 'running' or 'unknown' state across lanes
 4. invoke('acp_background_task_status', { queries })  — one IPC round trip for all lanes
@@ -160,12 +160,14 @@ pub async fn acp_background_task_status(
 
 ### UI Changes
 
-**Persistent composer strip (spec 384).** Automatically present above draft and permission/question
-controls for the active lane whenever its registry is nonempty, including idle, Zen and concise
-layouts. It shows command, state, elapsed and latest log line with steady LEDs. Three unsettled
-jobs are shown newest-first plus a remaining count; otherwise the most recently started job's
-final result stays visible. Unknown/orphaned states stay explicit, not success. Each lane owns a
-fresh registry; reset/restart clears it. The shared metrics feed patches only this child, never
+**Composer strip (spec 384).** Automatically present above draft and permission/question
+controls for the active lane, including idle, Zen and concise layouts, one line per job with no
+head line. It shows state, command, latest log line and — once settled — the final duration; there
+is no live clock. Unsettled jobs always show; a failure stays until a job starts after it ended; a
+success (`exit 0`) leaves the strip 5 s after it ended. With nothing to show the strip takes no
+height. At most three rows, newest-started first, then `+N more`. Unknown/orphaned states stay
+explicit, not success. Each lane owns a fresh registry; reset/restart clears it, and the registry
+still lists jobs the strip no longer shows. The shared metrics feed patches only this child, never
 the draft or sealed transcript. The strip has no timer or process-control action of its own.
 
 **Lane head chip** (`headChips()`, grid column 4): `bg 2` when ≥1 task is `running`, title `2 background tasks: <commands> — ⌘P = for detail`. Plain `Chip`, tone `on`, no spinner — `Chip` owns its own markup and the count is the signal, not an animation.

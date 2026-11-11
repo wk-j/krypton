@@ -273,11 +273,21 @@ The compositor is a TypeScript module running in the webview that manages worksp
     dance around the old `dashboardEl.innerHTML = ''` is deleted. Panel placement is one table,
     `HARNESS_LAYOUT_DEFAULT` in `harness-layout.ts`, type-checked against the slot union.
 
-    **Visible background work (spec 384).** `Composer` owns a persistent `BackgroundTaskStrip`
-    before its draft or decision controls. It reads the active lane's independent task registry;
-    launch capture and the shared metrics feed patch only this child, even while the lane is idle.
-    The existing log reader supplies progress/exit state. Completed transcript rows, draft focus
-    and scroll containers remain untouched; Lane Metrics stays the detailed observer.
+    **Harness system command rows (spec 387).** `#mcp`, `#bg`, and bare `#assist`
+    attach immutable point-in-time command payloads to `system` transcript items.
+    `SystemCommandRow` presents endpoint/counters, task state/output, or assist
+    mode as source-owned readouts; every item retains its complete `text` for
+    Live Assist, the orchestrator and control API. Plain lifecycle/errors use
+    `SystemRow`, while usage, notices and directive diffs retain their existing
+    dispatch priority. No new command execution or permission path is involved.
+
+    **Visible background work (spec 384).** `Composer` owns a `BackgroundTaskStrip` before its
+    draft or decision controls. It reads the active lane's independent task registry; launch
+    capture and the shared metrics feed patch only this child, even while the lane is idle. It
+    shows unsettled and failed jobs, lets a success go after 5 s, and takes no height when
+    nothing qualifies. The existing log reader supplies progress/exit state. Completed transcript
+    rows, draft focus and scroll containers remain untouched; Lane Metrics stays the detailed
+    observer.
 
     **Execution Inspector (specs 315/319).** The OMP lane adapter (`adapters/omp-execution.ts`) validates and
     bounds current OMP code-cell snapshots before wire retention compacts them; `harness-execution.ts`

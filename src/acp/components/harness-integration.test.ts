@@ -787,6 +787,19 @@ describe('visible background activity (spec 384)', () => {
       call(view, 'renderComposer');
       expect(strip.hidden).toBe(false);
       expect(strip.textContent).toContain('DONE');
+      // A success leaves the strip after its linger window; the registry keeps it.
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 6_000);
+      try {
+        call(view, 'refreshMetricsRender');
+        expect(strip.hidden).toBe(true);
+        expect(lane.backgroundTasks).toHaveLength(1);
+        lane.backgroundTasks[0].exitCode = 3; // a failure has no time limit
+        call(view, 'refreshMetricsRender');
+        expect(strip.hidden).toBe(false);
+        expect(strip.textContent).toContain('FAILED · exit 3');
+      } finally {
+        clock.mockRestore();
+      }
       lane.backgroundTasks = [];
       call(view, 'refreshMetricsRender');
       expect(strip.hidden).toBe(true);

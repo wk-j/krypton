@@ -21,9 +21,13 @@ export function claudeParentToolUseId(meta: unknown): string | null {
 // Moved from `harness-background-tasks.ts` (spec 380 phase 4).
 
 /** The adapter's launch result, verbatim:
- *  `Command running in background with ID: bxs80otkx. Output is being written to: /private/tmp/…` */
+ *  `Command running in background with ID: bxs80otkx. Output is being written to: /private/tmp/…`
+ *  The adapter prints it as a line of its own, so the marker is anchored to a
+ *  line start. A foreground command whose output merely quotes it mid-line —
+ *  `grep -n` of a fixture, `sed` of an indented test, this very comment — must
+ *  not register a job that can never settle (spec 384 rev). */
 const LAUNCH_RE =
-  /Command running in background with ID:\s*(\S+?)\.\s+Output is being written to:\s*(\S+)/;
+  /^[ \t]*Command running in background with ID:\s*(\S+?)\.\s+Output is being written to:\s*(\S+)/m;
 
 export interface BackgroundLaunch {
   readonly id: string;

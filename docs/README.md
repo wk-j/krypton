@@ -19,7 +19,6 @@ Listed by spec number. Older specs remain in this directory.
 
 | # | Spec |
 |---|------|
-| 367 | [Light Scheme Redesign](./0367-light-scheme-redesign.md) (Draft) |
 | 368 | [Rails Manual Checks](./0368-rails-manual-checks.md) |
 | 369 | [Keycap Shortcuts](./0369-keycap-shortcuts.md) |
 | 370 | [OMP Background Subagent Jobs](./0370-harness-omp-background-jobs.md) |
@@ -39,6 +38,7 @@ Listed by spec number. Older specs remain in this directory.
 | 384 | [Visible Background Task Strip](./0384-visible-background-task-strip.md) |
 | 385 | [Connected Computer Command Bypass](./0385-connected-computer-command-bypass.md) |
 | 386 | [Harness Remote Command Component](./0386-harness-remote-command-component.md) |
+| 387 | [Harness System Command Components](./0387-harness-system-command-components.md) |
 
 ## ADRs (31)
 

@@ -24,7 +24,12 @@ interface RowProps {
 
 const block = 'acp-harness__background-strip';
 
-function rowProps(task: BackgroundTask, now: number): RowProps {
+/** A successful job's final row leaves the strip this long after it ended. */
+export const BACKGROUND_DONE_LINGER_MS = 5_000;
+
+/** No live clock: an unsettled row carries no elapsed time, so a poll that
+ *  learns nothing new writes nothing. A settled row shows its final duration. */
+function rowProps(task: BackgroundTask): RowProps {
   let state: string = task.state;
   let label: string;
   switch (task.state) {
@@ -49,16 +54,37 @@ function rowProps(task: BackgroundTask, now: number): RowProps {
     state,
     label,
     command: task.command,
-    elapsed: formatElapsed((task.endedAt ?? now) - task.startedAt),
+    elapsed: task.state === 'exited' && task.endedAt !== null ? formatElapsed(task.endedAt - task.startedAt) : '',
     lastLine: task.lastLine,
   };
 }
 
-function visibleTasks(tasks: readonly BackgroundTask[]): { count: number; shown: BackgroundTask[] } {
-  const unsettled = tasks.filter((task) => task.state !== 'exited');
-  const candidates = unsettled.length > 0 ? unsettled : [...tasks];
-  candidates.sort((a, b) => b.startedAt - a.startedAt);
-  return { count: unsettled.length, shown: candidates.slice(0, unsettled.length > 0 ? 3 : 1) };
+const MAX_ROWS = 3;
+
+/**
+ * Unsettled jobs always qualify. A final result qualifies until a job is started
+ * after it ended; an `exit 0` additionally drops out once its linger window
+ * passes, while a failure (or an exit without a code) stays.
+ */
+function visibleTasks(
+  tasks: readonly BackgroundTask[],
+  now: number,
+): { shown: BackgroundTask[]; overflow: number } {
+  const latestStart = tasks.reduce((latest, task) => Math.max(latest, task.startedAt), -Infinity);
+  const qualifying = tasks.filter((task) => {
+    if (task.state !== 'exited') return true;
+    const endedAt = task.endedAt ?? task.startedAt;
+    if (latestStart > endedAt) return false;
+    return task.exitCode !== 0 || now - endedAt < BACKGROUND_DONE_LINGER_MS;
+  });
+  qualifying.sort((a, b) => b.startedAt - a.startedAt);
+  return { shown: qualifying.slice(0, MAX_ROWS), overflow: Math.max(0, qualifying.length - MAX_ROWS) };
+}
+
+/** Write only a cell whose text changed, so one changed field re-lays out one cell. */
+function setText(node: HTMLElement, text: string, withTitle = false): void {
+  if (node.textContent !== text) node.textContent = text;
+  if (withTitle && node.title !== text) node.title = text;
 }
 
 class TaskRow extends Component<RowProps> {
@@ -83,65 +109,58 @@ class TaskRow extends Component<RowProps> {
   }
 
   protected syncClasses(next: RowProps): void {
-    this.el.className = `${block}-row ${block}-row--${next.state}`;
+    const className = `${block}-row ${block}-row--${next.state}`;
+    if (this.el.className !== className) this.el.className = className;
   }
 
   protected paint(next: RowProps): void {
     this.syncClasses(next);
-    this.el.dataset.taskId = next.id;
-    this.state.textContent = next.label;
-    this.command.textContent = next.command;
-    this.command.title = next.command;
-    this.elapsed.textContent = next.elapsed;
-    this.tail.textContent = next.lastLine;
-    this.tail.title = next.lastLine;
+    if (this.el.dataset.taskId !== next.id) this.el.dataset.taskId = next.id;
+    setText(this.state, next.label);
+    setText(this.command, next.command, true);
+    setText(this.elapsed, next.elapsed);
+    setText(this.tail, next.lastLine, true);
   }
 }
 
 export class BackgroundTaskStrip extends Component<BackgroundTaskStripProps> {
-  private readonly count = el('span', { class: `${block}-count` });
   private readonly rows = el('div', { class: `${block}-rows` });
+  private readonly moreCount = el('span', { class: `${block}-more-count` });
   private readonly more = el('div', { class: `${block}-more` });
 
   constructor() {
     super(el('section', { class: block, attrs: { 'aria-label': 'Background tasks', hidden: true } }));
     this.more.hidden = true;
+    this.more.append(this.moreCount, ' · ', keyHint({
+      keys: ['⌘P', '='], keySeparator: ' then ', label: 'Lane Metrics',
+    }));
     this.el.append(
-      el('div', { class: `${block}-head` },
-        el('span', { class: `${block}-label`, text: 'BACKGROUND' }),
-        this.count,
-        el('span', { class: `${block}-hint` }, keyHint({
-          keys: ['⌘P', '='], keySeparator: ' then ', label: 'Lane Metrics',
-        })),
-      ),
-      this.rows,
-      this.more,
+      el('span', { class: `${block}-label`, text: 'BACKGROUND' }),
+      el('div', { class: `${block}-body` }, this.rows, this.more),
     );
   }
 
   protected readDeps(next: BackgroundTaskStripProps): readonly unknown[] {
-    const { count, shown } = visibleTasks(next.tasks);
+    const { shown, overflow } = visibleTasks(next.tasks, next.now);
     // Snapshot displayed scalars, never mutable task/array identities or raw poll time.
-    return [next.tasks.length === 0, count, ...shown.flatMap((task) => {
-      const row = rowProps(task, next.now);
+    return [overflow, ...shown.flatMap((task) => {
+      const row = rowProps(task);
       return [row.id, row.state, row.label, row.command, row.elapsed, row.lastLine];
     })];
   }
 
   protected syncClasses(next: BackgroundTaskStripProps): void {
-    const hidden = next.tasks.length === 0;
+    const hidden = visibleTasks(next.tasks, next.now).shown.length === 0;
     if (this.el.hidden !== hidden) this.el.hidden = hidden;
   }
 
   protected paint(next: BackgroundTaskStripProps): void {
     this.syncClasses(next);
-    const { count, shown } = visibleTasks(next.tasks);
-    const countText = String(count);
-    if (this.count.textContent !== countText) this.count.textContent = countText;
-    const moreText = count > shown.length ? `+${count - shown.length} more · Lane Metrics` : '';
-    if (this.more.textContent !== moreText) this.more.textContent = moreText;
+    const { shown, overflow } = visibleTasks(next.tasks, next.now);
+    const moreText = overflow > 0 ? `+${overflow} more` : '';
+    if (this.moreCount.textContent !== moreText) this.moreCount.textContent = moreText;
     if (this.more.hidden !== !moreText) this.more.hidden = !moreText;
-    reconcile<RowProps, TaskRow>(this.rows, shown.map((task) => rowProps(task, next.now)), {
+    reconcile<RowProps, TaskRow>(this.rows, shown.map((task) => rowProps(task)), {
       key: (task) => task.id,
       create: (task) => {
         const row = new TaskRow();

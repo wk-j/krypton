@@ -15,7 +15,8 @@ import { InterLaneRow } from '../inter-lane-row';
 import { PermissionRow } from '../permission-row';
 import { ProviderErrorRow } from '../provider-error-row';
 import { QuestionRow } from '../question-row';
-import { SystemRow, systemRowVariant } from '../system-row';
+import { SystemCommandRow } from '../system-command-row';
+import { HIDDEN_INDICATOR_ID, SystemRow, systemRowVariant } from '../system-row';
 import { ThoughtRow } from '../thought-row';
 import { ToolRow } from '../tool-row';
 import { UsageRow } from '../usage-row';
@@ -37,6 +38,7 @@ export const ROW_KINDS = [
   'usage',
   'notice',
   'docCard',
+  'systemCommand',
   'directiveDiff',
   'thought',
   'user',
@@ -61,6 +63,7 @@ export function rowKindFor(item: HarnessTranscriptItem): RowKind {
   if (item.kind === 'artifact' && item.artifact) return 'docCard';
   if (item.kind === 'review' && item.review) return 'docCard';
   if (item.kind === 'system' && item.diff) return 'directiveDiff';
+  if (item.kind === 'system' && item.id !== HIDDEN_INDICATOR_ID && item.systemCommand) return 'systemCommand';
   if (item.kind === 'thought') return 'thought';
   if (item.kind === 'user') return 'user';
   return 'text';
@@ -92,6 +95,8 @@ export function createTranscriptRow(props: RowProps): TranscriptRow {
       return new DocCardRow(props);
     case 'directiveDiff':
       return new DirectiveDiffRow(props);
+    case 'systemCommand':
+      return new SystemCommandRow(props);
     case 'thought':
       return new ThoughtRow(props);
     case 'user':

@@ -86,6 +86,7 @@ import { def as spinner } from './spinner';
 import { def as stagingStrip } from './staging-strip';
 import { def as statList } from './stat-list';
 import { def as subagentCard } from './subagent-card';
+import { def as systemCommandRow } from './system-command-row';
 import { def as systemRow } from './system-row';
 import { def as tabStrip } from './tab-strip';
 import { def as grammarPanel } from './grammar-panel';
@@ -140,6 +141,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   interLaneRow,
   docCardRow,
   usageRow,
+  systemCommandRow,
   systemRow,
   directiveDiffRow,
   imageStrip,

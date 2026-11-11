@@ -5,6 +5,7 @@
 > Milestone: ACP Harness — one rendering for every lane
 > Builds on: [380](./0380-acp-lane-adapters.md) (lane adapters), [313](./0313-genui-component-gallery.md) (GenUI gallery), [341](./0341-loopback-app.md)/[361](./0361-loopback-app-react.md) (loopback app), [301](./0301-harness-ui-components.md)/[302](./0302-harness-component-catalog.md) (components), [379](./0379-connected-transcript-sources.md) (connected sources)
 > Extended by: [386](./0386-harness-remote-command-component.md) — Remote command summaries and a working stage-owned production Details dialog; no backend execution or approval changes.
+> Extended by: [387](./0387-harness-system-command-components.md) — named snapshots of `#mcp`, `#bg` and bare `#assist` system rows; no change to unrelated `#` command surfaces.
 
 ## Problem
 
@@ -91,7 +92,7 @@ export interface GalleryEntry {
 }
 ```
 
-`item` inputs are used only for rows whose item is plain data: assistant, thought, user, fs activity, fs write review, provider error, usage and system notices. Tool, permission and question previews always come from the functions `AcpHarnessView` calls: `toolPayloadFromView` and `permissionPayloadFromRequest` (`harness-transcript-items.ts`), and `payloadFromCard(requestId, questions, createAskUserCardState(questions), wire)` (`ask-user-question.ts`).
+`item` inputs are used for rows whose payload is already plain data: assistant, thought, user, fs activity, fs write review, provider error, usage, system notices and typed system-command snapshots. Tool, permission and question previews always come from the functions `AcpHarnessView` calls: `toolPayloadFromView` and `permissionPayloadFromRequest` (`harness-transcript-items.ts`), and `payloadFromCard(requestId, questions, createAskUserCardState(questions), wire)` (`ask-user-question.ts`).
 
 ### Entries
 
@@ -101,10 +102,10 @@ export interface GalleryEntry {
 | Tools | Command (running, exit 0, exit 1, no exit reported, long output trimmed, git status, git diff, background task, run of three); Remote command (pending, approval in progress, MCP exit 0, CLI nonzero with stderr, empty output, missing exit, declined or expired, unknown with partial output, unknown without output, transport failure, cancellation, backend truncation, UI truncation, long computer and command); Read, Edit (diff, new file), Delete, Move, Search (grep hits), Fetch, Think, Other (each: running, completed, failed); Agents (subagent card: running, mixed, done); Wait (job list); Code cell (execution card); Guardian review; Tool images |
 | Requests | Permission (command, edit, MCP tool, resolved); Question (single, multi-select); Form elicitation |
 | Files | File activity (read, write, failed); Write review (pending, accepted, rejected) |
-| Turn | Usage; Stop and cancel notices; Error; Provider error (rate limit, auth, overloaded) |
+| Turn | Usage; `#mcp` (available/unavailable); `#bg` (populated/empty); bare `#assist` (modes and pause); Stop and cancel notices; Error; Provider error (rate limit, auth, overloaded) |
 | Session | Lane head (model and mode chips, busy, error); Lane stats (usage meter); Plan panel (mixed, collapsed) |
 
-Only components that paint agent-originated data are in scope, including read-only details belonging to those results. Components that render Krypton's own UI look the same in every lane already and are excluded: composer, pickers, unrelated overlays, inter-lane mail, artifact/review cards and directive diffs.
+Only components that paint agent-originated data were in the original scope, including read-only details belonging to those results. Spec 387 adds the explicit exception of harness-owned `system` command snapshots. Other Krypton UI still stays outside the gallery: composer, pickers, unrelated overlays, inter-lane mail, artifact/review cards and directive diffs.
 
 ### Stage
 

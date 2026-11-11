@@ -12136,7 +12136,10 @@ export class AcpHarnessView implements ContentView {
       const action = (task ? second : first)?.toLowerCase() ?? '';
       const extra = task ? parts.length > 3 : parts.length > 2;
       if (action === '') {
-        for (const line of this.assistCtl.describe()) this.appendTranscript(lane, 'system', line);
+        for (const entry of this.assistCtl.describe()) {
+          const item = this.appendTranscript(lane, 'system', entry.text);
+          item.systemCommand = { command: 'assist', task: entry.task };
+        }
         this.render();
         return;
       }
@@ -12781,11 +12784,15 @@ export class AcpHarnessView implements ContentView {
   private async printMcpStatus(lane: HarnessLane): Promise<void> {
     await this.refreshMcpStats();
     const lines: string[] = [];
-    if (!this.harnessMemoryId || !this.harnessMemoryPort) {
+    const endpoint = this.harnessMemoryId && this.harnessMemoryPort
+      ? `http://127.0.0.1:${this.harnessMemoryPort}/mcp/harness/${this.harnessMemoryId}/lane/<laneLabel>`
+      : null;
+    const lanes: { name: string; initialized: number; listed: number; called: number; lastSeenAt: number | null }[] = [];
+    if (!endpoint) {
       lines.push(`mcp: harness memory unavailable${this.harnessMemoryWarning ? ` - ${this.harnessMemoryWarning}` : ''}`);
       lines.push('lanes continue without the krypton-harness-memory MCP server');
     } else {
-      lines.push(`mcp endpoint: http://127.0.0.1:${this.harnessMemoryPort}/mcp/harness/${this.harnessMemoryId}/lane/<laneLabel>`);
+      lines.push(`mcp endpoint: ${endpoint}`);
       lines.push('');
       lines.push('lane                  init  list  call  last');
       for (const l of this.lanes) {
@@ -12795,6 +12802,10 @@ export class AcpHarnessView implements ContentView {
         const call = s?.toolsCallCount ?? 0;
         const last = s?.lastSeenAt ? formatShortTime(s.lastSeenAt) : '—';
         const flag = list > 0 ? '✓' : '—';
+        lanes.push({
+          name: l.displayName, initialized: init, listed: list, called: call,
+          lastSeenAt: s?.lastSeenAt || null,
+        });
         lines.push(
           `${flag} ${l.displayName.padEnd(20).slice(0, 20)} ${String(init).padStart(4)}  ${String(list).padStart(4)}  ${String(call).padStart(4)}  ${last}`,
         );
@@ -12802,14 +12813,26 @@ export class AcpHarnessView implements ContentView {
       lines.push('');
       lines.push('✓ = adapter listed tools at least once. — = adapter never queried this lane.');
     }
-    this.appendTranscript(lane, 'system', lines.join('\n'));
+    const item = this.appendTranscript(lane, 'system', lines.join('\n'));
+    item.systemCommand = { command: 'mcp', endpoint, warning: endpoint ? null : this.harnessMemoryWarning, lanes };
   }
 
   /** spec 305: `#bg` — the task table as transcript text, so the information is
    *  reachable without opening the metrics overlay. */
   private printBackgroundTasks(lane: HarnessLane): void {
-    const lines = formatBackgroundTaskLines(lane.backgroundTasks, Date.now());
-    this.appendTranscript(lane, 'system', lines.join('\n'));
+    const now = Date.now();
+    const lines = formatBackgroundTaskLines(lane.backgroundTasks, now);
+    const tasks = lane.backgroundTasks.map((task) => ({
+      id: task.id,
+      state: task.state === 'exited' ? `exit ${task.exitCode ?? '?'}` : task.state,
+      startedAt: task.startedAt,
+      endedAt: task.endedAt,
+      bytes: task.bytes,
+      command: task.command,
+      outputPath: task.outputPath,
+    }));
+    const item = this.appendTranscript(lane, 'system', lines.join('\n'));
+    item.systemCommand = { command: 'bg', capturedAt: now, tasks };
   }
 
   private async runShellCommand(lane: HarnessLane, command: string): Promise<void> {

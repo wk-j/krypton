@@ -1,6 +1,6 @@
 # Visible Background Task Strip — Implementation Spec
 
-> Status: Implemented — approved and implemented 2026-11-11
+> Status: Implemented — approved and implemented 2026-11-11; revised 2026-11-11 (concise one-line rows, successful results clear themselves, no live clock, line-anchored launch capture)
 > Date: 2026-11-11
 > Builds on: [305](./0305-background-task-monitor.md), [301](./0301-harness-ui-components.md), [302](./0302-harness-component-catalog.md), [380](./0380-acp-lane-adapters.md)
 
@@ -10,7 +10,7 @@ The user cannot tell that Claude is still running a detached command from the ma
 
 ## Solution
 
-Add a compact, automatically visible background-task strip at the top of the active lane's composer. It shows the command, actual job state, elapsed time and latest reported output without opening another surface. Keep it visible after the agent turn ends, during later turns, in Zen/concise layouts and while a permission/question owns the composer.
+Add a compact, automatically visible background-task strip at the top of the active lane's composer. It shows the command, actual job state, elapsed time and latest reported output without opening another surface. Keep it visible while work is unsettled or has failed — after the agent turn ends, during later turns, in Zen/concise layouts and while a permission/question owns the composer. A successful result is shown briefly and then clears itself, so a finished job does not keep taking working area. Each job costs one line; there is no separate head line.
 
 Reuse the existing task registry and log reader. Do not create a second process monitor or mutate the completed launch's transcript row. Extend the existing Claude launch capture to accept the already-supported generic `rawOutput` text sections as well as content and terminal output, so that transport placement alone cannot suppress the strip.
 
@@ -51,19 +51,21 @@ interface BackgroundTaskStripProps {
 ### Placement and content
 
 - First child of the composer in both draft and decision branches, outside transcript scrolling. Never mount it inside a sealed transcript row, optional side panel or metrics overlay.
-- Hide only when the active lane has no registered tasks. Reserve no height while hidden; explicitly author the block's `[hidden]` rule.
-- Head: engraved `BACKGROUND` and an unsettled-task count. Detail hint uses existing semantic keycaps for `⌘P` then `=`; `#bg` remains available. No new focusable control or shortcut is introduced.
-- One flat line per shown job: existing state LED, compact state label, command in its original case, elapsed time and latest output. The latest output is plain text, not HTML or Markdown.
-- Show up to three unsettled tasks, newest first; `+N more` makes hidden jobs explicit and points to Lane Metrics. If there are no unsettled tasks, show only the most recently started task with its final result. Keep that final result until another job starts or lane state is cleared, rather than silently removing all evidence of completion.
+- Hide when the active lane has no task that qualifies for a row (below). Reserve no height while hidden; explicitly author the block's `[hidden]` rule.
+- No head line. An engraved `BACKGROUND` label sits at the start of the first row; there is no count readout and no always-visible detail hint. No new focusable control or shortcut is introduced; `#bg` remains available.
+- One flat line per shown job: existing state LED, compact state label, command in its original case, final duration and latest output. The latest output is plain text, not HTML or Markdown.
+- No live clock. An unsettled row carries no elapsed time; a settled row shows its final duration (`endedAt − startedAt`), which never changes. A ticking clock was the only text that changed on every poll, so each poll re-laid out the composer even when nothing about the job had changed. Rows now change only when the job's state or latest output line does, and each row rewrites only the cell that changed.
+- A job qualifies for a row while it is unsettled. Once it exits, its final result qualifies until a job is started after it ended, or until the lane state is cleared. A successful result (`exit 0`) additionally stops qualifying `BACKGROUND_DONE_LINGER_MS` (5 s) after its recorded end. A failed result, or an exit without a code, has no time limit. The registry keeps every row-less job, so Lane Metrics, the lane-head chip and `#bg` still report it.
+- Show up to three qualifying jobs, newest-started first. Only when more qualify does an extra `+N more` line appear, carrying the semantic keycaps for `⌘P` then `=` Lane Metrics.
 - Unsettled means running, unknown or orphaned. Say `RUNNING`, `OUTPUT UNAVAILABLE` or `NO PROCESS MATCH` respectively; do not present uncertain work as successfully finished. Exited means `DONE · exit 0` or `FAILED · exit N` from the existing exit code.
-- At narrow widths, keep the state visible; ellipsize command and tail with full strings in `title`. Move the tail to a second line only if needed; no horizontal page overflow or fixed-width table.
+- At narrow widths (strip container ≤ 480px), keep the state visible and drop the `BACKGROUND` label so the command keeps its room; ellipsize command and tail with full strings in `title`. Move the tail to a second line only if needed; no horizontal page overflow or fixed-width table.
 - Use existing material/ink tokens and flat rows separated by a groove. No nested cards, colored outlines, infinite spinner/animation or new theme token. Only LEDs may glow. Changing numbers use tabular-nums.
 
 ### Data flow and lifecycle
 
-1. Claude adapter checks existing content, then accumulated terminal output, then generic raw-output sections for the existing validated launch marker. Retain the absolute-path requirement and exact Claude adapter scope. Do not infer jobs from assistant prose or `run_in_background` alone.
+1. Claude adapter checks existing content, then accumulated terminal output, then generic raw-output sections for the existing validated launch marker. The marker must start a line (leading spaces/tabs allowed): the adapter prints it as a line of its own, followed on that line by a notice that it will report completion. Output from a foreground command that only quotes the marker mid-line — for example `grep -n` of a test fixture or `sed` of an indented test — must not register a job. Such a job points at a file that never exists, so it would stay `OUTPUT UNAVAILABLE` forever. Retain the absolute-path requirement and exact Claude adapter scope. Do not infer jobs from assistant prose or `run_in_background` alone.
 2. Existing `captureBackgroundLaunch()` registers the job once by task ID and immediately patches the shown lane's strip.
-3. Existing metrics subscription reads/folds job state and patches the strip even when the lane is idle and the metrics overlay is closed. No new polling interval; elapsed display advances at that cadence.
+3. Existing metrics subscription reads/folds job state and patches the strip even when the lane is idle and the metrics overlay is closed. No new polling interval or timer; a success's 5 s window expires at that 2 s cadence. The window is measured from `endedAt` (the output file's modification time), so a `DONE` row is on screen for roughly 3–5 s.
 4. Switching lanes updates the strip from the selected lane only. Other lanes retain the existing `bg N` header signal; cross-harness/project aggregation is not part of this change.
 5. Completion changes only the strip's owning keyed row and existing task chrome. Never unseal/repaint the original tool or assistant message.
 6. Lane reset/close and view disposal clear/dispose the strip with their existing owners. Permission/question pre-emption never suppresses it. No change to prompt routing, input focus or actual lane status.
@@ -85,6 +87,9 @@ interface BackgroundTaskStripProps {
 
 - Launch a real harmless detached command in a Claude lane. Without opening an overlay, observe the named running job after its launch call and agent turn have completed; observe subsequent log/exit updates. Do not use assistant narration as evidence of job state.
 - Browser smoke production components in draft/decision, Zen/normal and concise modes, dark/light, 320px and wide layouts. Exercise running, missing output, no process match, exit 0/nonzero, multiple jobs, lane switching and reset.
+- A successful result leaves the strip on the first poll at least 5 s after it ended and the strip then reserves no height; a failed result stays until a later-started job or a lane clear; a failure that settles while a job started earlier is still running stays visible beside it.
+- A poll that learns nothing new writes no DOM, however much time has passed; a changed output line rewrites only that row's output cell.
+- Decoder regression: launch text quoted mid-line in content, terminal output or raw output registers nothing; the adapter's real launch line, including its trailing notice, and a fenced launch still register.
 - Confirm draft focus/text and transcript scroll/node identity survive updates. Repeated equal updates write no DOM; in-place task-field changes update the strip.
 - Decoder regression covers raw-output launch capture, existing content/terminal paths, deduplication and another backend's identical text staying outside Claude capture. Permanent tests cover behavior/state transitions, not CSS-source or markup snapshots.
 - Keep native-runtime proof distinct from browser smoke. If the running app has not loaded this code, report that limit instead of claiming the user's native surface was verified.
@@ -98,6 +103,14 @@ interface BackgroundTaskStripProps {
 - Additional browser transitions covered failure exit 7, switching to an empty lane and back, and clearing the lane registry. Component regressions cover missing output/no process match and in-place state changes.
 - Inspection found `LANE_DEFAULTS.backgroundTasks` was shared by newly created lanes. `createLane()` now allocates a fresh registry alongside its other per-lane mutable containers. Restart/fresh-session paths clear their registry; no task-liveness heuristic changed.
 - This is browser/runtime-log proof, not a relaunched native Tauri app or a fresh live Claude SDK launch. The running installed app was not restarted or replaced.
+
+### Revision verified (2026-11-11)
+
+- Trigger: the strip kept a `DONE · exit 0` row indefinitely and a head line above it, and showed rows that never settled. Those rows were foreground `grep`/`sed` calls whose output quoted the launch text from a fixture or test mid-line; their "output file" never existed, so they stayed `OUTPUT UNAVAILABLE` with an elapsed clock that changed on every poll.
+- A real Claude Code background launch was observed to return the marker as the start of its own line, followed by a completion notice on the same line; the anchored pattern reads it, and the trailing `.` is still stripped from the path.
+- Three new decoder cases (mid-line quotes in content, terminal output and raw output) fail against the previous unanchored pattern and pass against the anchored one. Full frontend suite and type-check pass.
+- Browser smoke mounted the production `Composer` with the real stylesheets at 1100px and 320px: one job takes 25px of height (previously about 55px with the head line), the overflow line appears only past three rows, nothing overflows horizontally, and at 320px the label is dropped so commands stay legible.
+- A capture of the installed app's window showed the strip's text changing on each ~2 s poll while the transcript's pixels stayed identical across all 43 frames. The window was off-screen, so this proves the poll rewrote the strip, not that the user-visible flicker came from it; with no live clock and per-cell writes, an unchanged job now writes no DOM at all. The installed app has not loaded this code; native confirmation needs a rebuild.
 
 ## Open Questions
 

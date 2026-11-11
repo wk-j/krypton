@@ -1642,6 +1642,16 @@ cannot see (`clientCapabilities.terminal` is `false` — `src-tauri/src/acp.rs`)
    `#bg` still prints a transcript snapshot; none of these updates repaints a sealed row
 ```
 
+The `#bg` command copies task fields at invocation into a typed `systemCommand`
+payload while keeping its original formatted text. `SystemCommandRow` displays
+that snapshot as a task table, not a view of the continuously polled registry.
+Likewise `#mcp` snapshots the endpoint and per-lane counters after refreshing
+stats; bare `#assist` snapshots each registered task's mode and cooldown on
+its own row. The dispatcher selects these payloads without parsing text.
+Live Assist and control API still consume the unchanged text fallback;
+unstructured system messages continue through `SystemRow` (spec 387).
+
+
 The composer strip uses steady LEDs, not a spinner or a new timer. It stays visible
 after the launch turn ends, shows up to three unsettled jobs and a remaining count,
 and retains the newest-started final result when none remain unsettled. Lane switches

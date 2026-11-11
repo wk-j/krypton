@@ -290,6 +290,35 @@ describe('tool decoding — Claude', () => {
     expect(decode('claude', { ...backgroundCall, rawOutput }).background).toBeNull();
   });
 
+  // Spec 384 rev: a foreground `grep`/`sed` of a fixture printed the launch text
+  // mid-line and registered a job whose file never existed, so it never settled.
+  it.each([
+    `src/loopback/surfaces/harness/examples/tools.ts:179:        sections: [section('${launchText}')],`,
+    `      rawOutput: { stdout: '${launchText}' },`,
+    ` *  \`${launchText}\` */`,
+  ])('does not register a launch that foreground output only quotes mid-line: %s', (text) => {
+    const foreground = { ...backgroundCall, rawInput: { command: 'grep -rn launch src' } };
+    expect(decode('claude', { ...foreground, rawOutput: { stdout: text } }).background).toBeNull();
+    expect(decode('claude', {
+      ...foreground,
+      content: [{ type: 'content' as const, content: { type: 'text' as const, text } }],
+    }).background).toBeNull();
+    expect(decode('claude', {
+      ...foreground,
+      _meta: { terminal_output: { terminal_id: 'c1', data: `match:\n${text}\n` } },
+    }).background).toBeNull();
+  });
+
+  it.each([
+    `${launchText}. You will be notified when it completes. To check interim output, use Read on that file path.`,
+    '```console\n' + launchText + '\n```',
+  ])('reads the launch line as the adapter prints it: %s', (text) => {
+    expect(decode('claude', {
+      ...backgroundCall,
+      content: [{ type: 'content' as const, content: { type: 'text' as const, text } }],
+    }).background).toEqual({ ...background, command: 'npm run watch' });
+  });
+
 });
 
 describe('tool decoding — Codex', () => {

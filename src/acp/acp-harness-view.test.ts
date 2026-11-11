@@ -5589,3 +5589,68 @@ describe('connected computer approval (spec 311)', () => {
     expect(lane.transcript[0].permission?.decision).toBe('accepted');
   });
 });
+
+describe('system command snapshots (spec 387)', () => {
+  const proto = AcpHarnessView.prototype as unknown as {
+    printMcpStatus(lane: HarnessLane): Promise<void>;
+    printBackgroundTasks(lane: HarnessLane): void;
+  };
+
+  it('keeps #mcp lane counters and the portable output from the same refreshed snapshot', async () => {
+    const rows: HarnessTranscriptItem[] = [];
+    const lane = { displayName: 'an-unusually-long-lane-name' } as HarnessLane;
+    const host = {
+      harnessMemoryId: 'hm-2',
+      harnessMemoryPort: 64732,
+      harnessMemoryWarning: null,
+      lanes: [lane],
+      mcpStatsByLane: new Map(),
+      refreshMcpStats: async (): Promise<void> => {
+        host.mcpStatsByLane.set(lane.displayName, {
+          initializeCount: 1, toolsListCount: 0, toolsCallCount: 3, lastSeenAt: 0,
+        });
+      },
+      appendTranscript: (_lane: HarnessLane, kind: string, text: string): HarnessTranscriptItem => {
+        const row = { id: 'mcp', kind, text } as HarnessTranscriptItem;
+        rows.push(row);
+        return row;
+      },
+    };
+    await proto.printMcpStatus.call(host, lane);
+
+    expect(rows[0].systemCommand).toEqual({
+      command: 'mcp',
+      endpoint: 'http://127.0.0.1:64732/mcp/harness/hm-2/lane/<laneLabel>',
+      warning: null,
+      lanes: [{ name: lane.displayName, initialized: 1, listed: 0, called: 3, lastSeenAt: null }],
+    });
+    expect(rows[0].text).toContain('— an-unusually-long-l');
+    expect(rows[0].text).toContain('adapter never queried this lane');
+  });
+
+  it('freezes #bg task facts while the live task registry continues to change', () => {
+    const rows: HarnessTranscriptItem[] = [];
+    const task = {
+      id: 'bg-1', state: 'running', exitCode: null, startedAt: Date.now() - 5_000,
+      endedAt: null, bytes: 1_024, command: 'npm run build', outputPath: '/tmp/bg-1.log',
+    };
+    const lane = { backgroundTasks: [task] } as unknown as HarnessLane;
+    const host = {
+      appendTranscript: (_lane: HarnessLane, kind: string, text: string): HarnessTranscriptItem => {
+        const row = { id: 'bg', kind, text } as HarnessTranscriptItem;
+        rows.push(row);
+        return row;
+      },
+    };
+    proto.printBackgroundTasks.call(host, lane);
+    task.state = 'exited';
+    task.bytes = 2_048;
+
+    expect(rows[0].systemCommand).toMatchObject({
+      command: 'bg',
+      tasks: [{ id: 'bg-1', state: 'running', bytes: 1_024, command: 'npm run build', outputPath: '/tmp/bg-1.log' }],
+    });
+    expect(rows[0].text).toContain('running');
+    expect(rows[0].text).toContain('output files: /tmp/bg-1.log');
+  });
+});

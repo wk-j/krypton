@@ -30,7 +30,7 @@ import type {
 import { followUpReply } from './assist/tasks/follow-up';
 import { userText } from './assist/tasks/grammar';
 import type { HarnessAssistHost } from './harness-view-host';
-import type { HarnessLane, HarnessTranscriptItem } from './harness-view-types';
+import type { HarnessLane, HarnessTranscriptItem, SystemCommandPayload } from './harness-view-types';
 import type { StopReason } from './types';
 
 /** The shortest assistant reply worth post-processing. */
@@ -194,15 +194,24 @@ export class HarnessAssistController {
     }
   }
 
-  /** One line per registered task, for bare `#assist`. */
-  describe(): string[] {
+  /** Point-in-time task facts and the original portable line for bare `#assist`. */
+  describe(): { text: string; task: Extract<SystemCommandPayload, { command: 'assist' }>['task'] }[] {
+    const now = Date.now();
     return this.tasks.map((task) => {
       const cfg = this.configFor(task);
       const cooldown = this.engine.cooldownUntil(task.id);
-      const paused = cooldown > Date.now()
-        ? ` · paused ${Math.ceil((cooldown - Date.now()) / 60_000)}m`
+      const paused = cooldown > now
+        ? ` · paused ${Math.ceil((cooldown - now) / 60_000)}m`
         : '';
-      return `#assist ${task.id} · ${cfg.mode}${paused} — ${task.summary}`;
+      return {
+        text: `#assist ${task.id} · ${cfg.mode}${paused} — ${task.summary}`,
+        task: {
+          id: task.id,
+          mode: cfg.mode,
+          summary: task.summary,
+          pausedUntil: cooldown > now ? cooldown : null,
+        },
+      };
     });
   }
 

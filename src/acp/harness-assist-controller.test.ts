@@ -178,6 +178,21 @@ describe('HarnessAssistController — trigger gates', () => {
 });
 
 describe('HarnessAssistController — manual', () => {
+  it('captures the displayed task mode without changing an earlier command result', () => {
+    const h = setup();
+    const [earlier] = h.ctl.describe();
+    expect(earlier.text).toBe('#assist fake · auto — fake task');
+    expect(earlier.task).toEqual({
+      id: 'fake', mode: 'auto', summary: 'fake task', pausedUntil: null,
+    });
+
+    h.ctl.setMode('fake', 'off');
+    const [later] = h.ctl.describe();
+    expect(later.text).toBe('#assist fake · off — fake task');
+    expect(later.task.mode).toBe('off');
+    expect(earlier.task.mode).toBe('auto');
+  });
+
   it('manual request re-asks on the same turn, and refuses when the task is off', async () => {
     const h = setup();
     h.ctl.onTurnEnd(h.lane, 'end_turn');

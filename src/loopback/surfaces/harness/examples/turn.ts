@@ -68,6 +68,100 @@ export const TURN_ENTRIES: readonly GalleryEntry[] = [
     ],
   },
   {
+    id: 'turn-mcp-status',
+    title: 'Harness MCP status',
+    group: 'turn',
+    summary: 'The endpoint and per-lane activity printed by #mcp.',
+    components: ['system-command-row'],
+    scenario: null,
+    states: [
+      {
+        label: 'connected lanes',
+        inputs: [item({
+          kind: 'system',
+          text: 'mcp endpoint: http://127.0.0.1:64732/mcp/harness/hm-2/lane/<laneLabel>\n\nlane                  init  list  call  last\n✓ OMP-2                   1     1     6  23m ago\n✓ Claude-1                1     1     2  2m ago\n— a-very-long-lane-nam    0     0     0  —\n\n✓ = adapter listed tools at least once. — = adapter never queried this lane.',
+          systemCommand: {
+            command: 'mcp',
+            endpoint: 'http://127.0.0.1:64732/mcp/harness/hm-2/lane/<laneLabel>',
+            warning: null,
+            lanes: [
+              { name: 'OMP-2', initialized: 1, listed: 1, called: 6, lastSeenAt: Date.now() - 23 * 60_000 },
+              { name: 'Claude-1', initialized: 1, listed: 1, called: 2, lastSeenAt: Date.now() - 2 * 60_000 },
+              { name: 'a-very-long-lane-name-without-a-cutoff', initialized: 0, listed: 0, called: 0, lastSeenAt: null },
+            ],
+          },
+        })],
+      },
+      {
+        label: 'server unavailable',
+        inputs: [item({
+          kind: 'system',
+          text: 'mcp: harness memory unavailable - hook server offline\nlanes continue without the krypton-harness-memory MCP server',
+          systemCommand: { command: 'mcp', endpoint: null, warning: 'hook server offline', lanes: [] },
+        })],
+      },
+    ],
+  },
+  {
+    id: 'turn-background-tasks',
+    title: 'Background tasks',
+    group: 'turn',
+    summary: 'A point-in-time #bg task table and its empty state.',
+    components: ['system-command-row'],
+    scenario: null,
+    states: [
+      {
+        label: 'running and exited',
+        inputs: [item({
+          kind: 'system',
+          text: 'task        state     elapsed   output   command\nbg-1        running      2m     18 KB  npm run build\nbg-2        exit 1       6s      1 KB  cargo test\n\noutput files: /tmp/bg-1.log, /tmp/bg-2.log',
+          systemCommand: {
+            command: 'bg', capturedAt: 120_000,
+            tasks: [
+              { id: 'bg-1', state: 'running', startedAt: 0, endedAt: null, bytes: 18_432, command: 'npm run build', outputPath: '/tmp/bg-1.log' },
+              { id: 'bg-2', state: 'exit 1', startedAt: 40_000, endedAt: 46_000, bytes: 1_024, command: 'cargo test', outputPath: '/tmp/bg-2.log' },
+            ],
+          },
+        })],
+      },
+      {
+        label: 'empty',
+        inputs: [item({
+          kind: 'system',
+          text: 'bg: no background tasks on this lane.',
+          systemCommand: { command: 'bg', capturedAt: 120_000, tasks: [] },
+        })],
+      },
+    ],
+  },
+  {
+    id: 'turn-assist-status',
+    title: 'Assist status',
+    group: 'turn',
+    summary: 'One system row per registered #assist task, with mode and pause state.',
+    components: ['system-command-row'],
+    scenario: null,
+    states: [
+      {
+        label: 'manual',
+        inputs: [item({
+          kind: 'system',
+          text: '#assist grammar · manual — Grammar suggestions',
+          systemCommand: { command: 'assist', task: { id: 'grammar', mode: 'manual', summary: 'Grammar suggestions', pausedUntil: null } },
+        })],
+      },
+      {
+        label: 'paused',
+        inputs: [item({
+          kind: 'system',
+          text: '#assist follow-up · auto · paused 2m — Follow-up suggestions',
+          createdAt: 60_000,
+          systemCommand: { command: 'assist', task: { id: 'follow-up', mode: 'auto', summary: 'Follow-up suggestions', pausedUntil: 180_000 } },
+        })],
+      },
+    ],
+  },
+  {
     id: 'turn-stop',
     title: 'Stop and cancel notices',
     group: 'turn',

@@ -97,6 +97,43 @@ export interface SvgFenceEntry {
 
 export type { UiFenceEntry } from './genui/types';
 
+/** Spec 387: point-in-time facts for harness-owned command output. */
+export type SystemCommandPayload =
+  | {
+    readonly command: 'mcp';
+    readonly endpoint: string | null;
+    readonly warning: string | null;
+    readonly lanes: readonly {
+      readonly name: string;
+      readonly initialized: number;
+      readonly listed: number;
+      readonly called: number;
+      readonly lastSeenAt: number | null;
+    }[];
+  }
+  | {
+    readonly command: 'bg';
+    readonly capturedAt: number;
+    readonly tasks: readonly {
+      readonly id: string;
+      readonly state: string;
+      readonly startedAt: number;
+      readonly endedAt: number | null;
+      readonly bytes: number;
+      readonly command: string;
+      readonly outputPath: string;
+    }[];
+  }
+  | {
+    readonly command: 'assist';
+    readonly task: {
+      readonly id: string;
+      readonly mode: 'off' | 'manual' | 'auto';
+      readonly summary: string;
+      readonly pausedUntil: number | null;
+    };
+  };
+
 export interface HarnessTranscriptItem {
   id: string;
   kind: 'system' | 'user' | 'assistant' | 'thought' | 'tool' | 'permission' | 'question' | 'restart' | 'memory' | 'shell' | 'fs_activity' | 'fs_write_review' | 'inter_lane' | 'provider_error' | 'artifact' | 'review';
@@ -147,6 +184,8 @@ export interface HarnessTranscriptItem {
   /** spec 371: the subsystem notice this `system` row draws (label, action
    *  legend, LED, subject). `text` is its portable `noticeText()` line. */
   notice?: HarnessNotice;
+  /** Spec 387: structured command result; text is the portable fallback. */
+  systemCommand?: SystemCommandPayload;
   /** spec 120: first assistant row after coordinator drain. */
   replyingToLaneMail?: LaneMailProvenance;
   /** spec 133: hintable HTML artifact card. */

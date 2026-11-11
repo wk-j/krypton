@@ -1,12 +1,16 @@
-/* Spec 384 — a flat, bounded status strip on the composer plate. */
+/* Spec 384 — a flat, bounded status strip on the composer plate: one line per
+   job, the engraved label riding the first line instead of a head line. */
 @layer krypton.component {
   .acp-harness__background-strip {
-    display: block;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: baseline;
+    column-gap: 10px;
     flex: none;
     container-type: inline-size;
     min-width: 0;
     max-width: 100%;
-    padding: 5px 0;
+    padding: 2px 0 4px;
     color: var(--krypton-ink-2);
     font-family: var(--agent-font, var(--krypton-font-family, monospace));
     font-size: var(--krypton-chrome-font-size, 11px);
@@ -19,26 +23,15 @@
     display: none;
   }
 
-  .acp-harness__background-strip-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px 8px;
-    min-width: 0;
-    margin-bottom: 3px;
-  }
-
-  .acp-harness__background-strip-label,
-  .acp-harness__background-strip-count {
+  .acp-harness__background-strip-label {
     color: var(--mat-silk);
     font-weight: 600;
     letter-spacing: 0.13em;
     text-shadow: var(--mat-engrave);
   }
 
-  .acp-harness__background-strip-hint {
-    margin-left: auto;
-    color: var(--krypton-ink-3);
+  .acp-harness__background-strip-body {
+    min-width: 0;
   }
 
   .acp-harness__background-strip-row {
@@ -47,7 +40,10 @@
     align-items: center;
     gap: 2px 8px;
     min-width: 0;
-    padding: 4px 0;
+    padding: 1px 0;
+  }
+
+  .acp-harness__background-strip-row + .acp-harness__background-strip-row {
     border-top: 1px solid var(--mat-groove-lo);
   }
 
@@ -92,10 +88,20 @@
   }
 
   .acp-harness__background-strip-more {
-    padding-top: 3px;
+    padding-top: 1px;
   }
 
   @container (max-width: 480px) {
+    /* The command identifies the job; the label is chrome. Narrow, the
+       label goes and the rows take the full width. */
+    .acp-harness__background-strip-label {
+      display: none;
+    }
+
+    .acp-harness__background-strip-body {
+      grid-column: 1 / -1;
+    }
+
     .acp-harness__background-strip-row {
       grid-template-columns: 6px max-content minmax(0, 1fr) max-content;
       column-gap: 6px;

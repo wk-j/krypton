@@ -1,0 +1,121 @@
+/* Spec 387 — one faceplate readout well per structured command result. */
+@layer krypton.component {
+  .acp-harness__system-command {
+    min-width: 0;
+    user-select: text;
+    white-space: normal;
+  }
+
+  .acp-harness__system-command-head {
+    margin-bottom: 4px;
+  }
+
+  /* Match TOOL's name readout; a snapshot has no live status to light the LED. */
+  .acp-harness__system-command-kind {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 6px;
+    padding: 1px 7px;
+    border: 0;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    color: rgb(var(--krypton-info-rgb, 74, 158, 255));
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: calc(var(--krypton-font-size, 13px) * 0.72);
+    text-shadow: none;
+  }
+
+  .acp-harness__system-command-glyph {
+    flex: 0 0 6px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.6), 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  /* One inset display for a command result, never one frame per table cell. */
+  .acp-harness__system-command-well {
+    box-sizing: border-box;
+    max-width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--mat-well-wall);
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-depth), 0 1px 0 var(--mat-well-lip);
+  }
+
+  .acp-harness__system-command-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .acp-harness__system-command-table {
+    border-collapse: separate;
+    border-spacing: 0 3px;
+    width: max-content;
+    text-align: left;
+  }
+
+  .acp-harness__system-command-table th,
+  .acp-harness__system-command-table td {
+    padding: 0 16px 0 0;
+    vertical-align: top;
+    white-space: nowrap;
+  }
+
+  .acp-harness__system-command-table th,
+  .acp-harness__system-command-note {
+    color: var(--krypton-ink-3);
+  }
+
+  .acp-harness__system-command-table th {
+    font-weight: 500;
+  }
+
+  .acp-harness__system-command-endpoint,
+  .acp-harness__system-command-warning,
+  .acp-harness__system-command-note,
+  .acp-harness__system-command-assist {
+    overflow-wrap: anywhere;
+  }
+
+  .acp-harness__system-command-endpoint,
+  .acp-harness__system-command-note,
+  .acp-harness__system-command-warning {
+    margin-bottom: 4px;
+  }
+
+  .acp-harness__system-command-warning {
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+  }
+
+  .acp-harness__system-command-assist {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+
+  .acp-harness__system-command-task-id {
+    color: var(--krypton-fg);
+  }
+
+  .acp-harness__system-command-mode {
+    color: var(--krypton-ink-2);
+    text-transform: uppercase;
+  }
+
+  .acp-harness__system-command-summary {
+    flex-basis: 100%;
+  }
+}
+
+@layer krypton.scheme {
+  html[data-theme-scheme='light'] .acp-harness__system-command-warning {
+    color: color-mix(in srgb, rgb(var(--krypton-danger-rgb, 255, 58, 92)) 55%, var(--krypton-fg));
+  }
+}
