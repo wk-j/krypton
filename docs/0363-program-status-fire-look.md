@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-11-06
 > Milestone: Window chrome — program status presentation (extends [0362](./0362-program-status-fire.md))
+> Moved by: [0391](./0391-workspace-fire.md) — the looks now apply to the single workspace fire, which takes the look of the most urgent burning window state; `height` scales from the workspace height
 
 ## Problem
 

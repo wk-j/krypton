@@ -314,7 +314,8 @@ export interface ContentView {
   onTitlebarStatusChange?(cb: () => void): () => void;
   /** The badge was clicked while `actionable`. */
   activateTitlebarStatus?(): void;
-  /** spec 365: a reason for this view's window to burn (`[fire] on`); null → none. */
+  /** spec 365: a reason for this view's window to count toward the workspace fire
+   *  (`[fire] on`, spec 391); null → none. */
   getFireTrigger?(): FireTrigger | null;
   /** Set by the compositor at mount. The view calls it whenever `getFireTrigger()`
    *  may have changed; the compositor repaints the window that holds it now. */

@@ -264,26 +264,64 @@
   color: rgba(var(--krypton-special-rgb, 199, 125, 255), 0.85);
 }
 
-/* spec 284: OSC 7501 — panes blocked / errored / done (`▲1 ✕1 ✓2`). Global and
-   never clipped, like the attention gauge; each count carries its own colour. */
+/* spec 284: OSC 7501 — named status lamps for blocked / errored / done panes.
+   Global and never clipped, like the attention gauge. */
 .krypton-workspace-footer__segment--program-status {
   flex: 0 0 auto;
   display: inline-flex;
-  gap: 0.6em;
+  gap: 0.4em;
   overflow: visible;
 }
 .krypton-workspace-footer__segment--program-status[hidden] {
   display: none;
 }
-.krypton-workspace-footer__program-count[data-state='blocked'],
+
+/* The titlebar program-status lamp at footer height: a state-coloured lens
+   before its named legend, inside tinted glass with no coloured outline. */
+.krypton-workspace-footer__program-count {
+  flex: 0 0 auto;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--krypton-border-radius, 8px);
+  background: linear-gradient(180deg, rgba(var(--x-rgb), 0.2), rgba(var(--x-rgb), 0.06));
+  box-shadow: none;
+  color: rgb(var(--x-rgb));
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.krypton-workspace-footer__program-count::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--mat-glint) 0 12%, rgb(var(--x-rgb)) 45%, rgba(var(--x-rgb), 0.55) 100%);
+  box-shadow: 0 0 4px rgba(var(--x-rgb), 0.9), 0 0 10px rgba(var(--x-rgb), 0.4);
+}
+
+.krypton-workspace-footer__program-count[data-state='blocked'] {
+  --x-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+}
+.krypton-workspace-footer__program-count[data-state='error'] {
+  --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+}
+.krypton-workspace-footer__program-count[data-state='done'] {
+  --x-rgb: var(--krypton-success-rgb, 57, 255, 127);
+}
+
 .krypton-workspace-footer__segment--program[data-state='blocked'] {
   color: rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.92);
 }
-.krypton-workspace-footer__program-count[data-state='error'],
 .krypton-workspace-footer__segment--program[data-state='error'] {
   color: rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.92);
 }
-.krypton-workspace-footer__program-count[data-state='done'],
 .krypton-workspace-footer__segment--program[data-state='done'] {
   color: rgba(var(--krypton-success-rgb, 57, 255, 127), 0.92);
 }
@@ -519,6 +557,16 @@
 }
 
 @media (max-width: 520px) {
+  .krypton-workspace-footer__segment--program-status {
+    gap: 3px;
+  }
+
+  .krypton-workspace-footer__program-count {
+    gap: 4px;
+    padding: 0 4px;
+    font-size: 0.9em;
+  }
+
   .krypton-workspace-footer__left {
     min-width: 0;
     flex: 0 1 auto;

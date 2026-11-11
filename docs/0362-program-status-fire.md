@@ -5,6 +5,7 @@
 > Milestone: Window chrome — program status presentation (extends [0284](./0284-program-status-osc7501.md))
 > Extended by: [0363](./0363-program-status-fire-look.md) — per-state look keys (`height`, `intensity`, `speed`, colours)
 > Extended by: [0365](./0365-harness-tool-error-fire.md) — `tool_error` in `on`: a failed ACP Harness tool call burns its window
+> Moved by: [0391](./0391-workspace-fire.md) — the fire now burns once along the bottom of the workspace, behind every window; windows no longer get a canvas. The per-window trigger rules below still decide whether each window counts
 
 ## Problem
 

@@ -34,7 +34,7 @@ Every compact field today, and where its information already lives:
 | Link `⇄ xenon` (linked) | Nothing, but healthy carries no action | Detail only; `auth` / `offline` stay in compact |
 | `RAILS ✓` / `RAILS …` / `RAILS paused` | The Harness Rails tab | Detail only; `RAILS N`, `RAILS error`, `RAILS ✗ <check>` stay in compact |
 | `◷ N reviews`, `▤ N priority` | Review matrix (`⌘P '`), priority roll-up (`⌘P /`) | Detail only (they mean "inspect", ADR-0009) |
-| `N attention`, `▲1 ✕1 ✓2` | Nothing else is global | **Kept** |
+| `N attention`, `▲1 ✕1 ✓2` | Nothing else is global | **Kept**; a later visual correction labels the program counts `BLOCKED 1`, `ERROR 1`, `DONE 2` in status lamps |
 | Hint `Cmd+P lanes · #cancel running` | which-key per mode; the hint never changes while working | Removed |
 | Music segment | — | **Kept** (only while a track exists) |
 
@@ -72,9 +72,9 @@ Every compact field today, and where its information already lives:
 ### Layout
 
 ```text
-compact  [MODE if ≠ Normal]  git                              attention  ▲✕✓  RAILS fault/findings  ⇄ fault  ♪ music
+compact  [MODE if ≠ Normal]  git                              attention  BLOCKED/ERROR/DONE counts  RAILS fault/findings  ⇄ fault  ♪ music
 detail   MODE  cwd · git · title · counts · process · io · % · state · program
-                                                              attention  ▲✕✓  RAILS any  ⇄ any+latency  ◷ reviews  ▤ priority  ♪ music
+                                                              attention  BLOCKED/ERROR/DONE counts  RAILS any  ⇄ any+latency  ◷ reviews  ▤ priority  ♪ music
 ```
 
 - **Left zone**: the mode chip. **Center zone**: context segments separated by etched grooves — the git ref alone in compact; in detail cwd and git first, then the rest. DESIGN.md 2.3.6 makes git a neutral-ink recessed well; an 8px gap replaces its preceding separator so no groove sits inside the readout. Branch case, amber dirty dot and the 28px rail height are unchanged.

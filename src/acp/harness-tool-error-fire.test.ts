@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Spec 365 — a failed top-level tool call marks its lane for the window fire
+// Spec 365 — a failed top-level tool call marks its lane for the workspace fire
 // until the user acknowledges it by typing while that lane is active.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

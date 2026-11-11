@@ -146,8 +146,8 @@ async function main(): Promise<void> {
   inputRouter.setWorkspaceFooter(workspaceFooter);
   commandScope.setWorkspaceFooter(workspaceFooter);
   // Keyboard overlay (spec 271) docks above the footer rail, or the screen edge when hidden.
-  compositor.setKeyboardOverlayFooterVisible(workspaceFooter.isVisible);
-  workspaceFooter.onVisibleChange((visible) => compositor.setKeyboardOverlayFooterVisible(visible));
+  compositor.setWorkspaceFooterVisible(workspaceFooter.isVisible);
+  workspaceFooter.onVisibleChange((visible) => compositor.setWorkspaceFooterVisible(visible));
 
   // Initialize smart prompt dialog (Cmd+Shift+K → dispatch prompt to Claude tab)
   const promptDialog = new PromptDialog(compositor, () => inputRouter.exitPromptDialog());

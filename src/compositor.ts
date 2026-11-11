@@ -502,9 +502,9 @@ export class Compositor {
   readonly programStatus = new ProgramStatusStore((viewId, _prev, next) =>
     this.handleProgramStatusChange(viewId, next));
 
-  // ─── Program-Status Fire (spec 362) ──────────────────────────────
-  /** Opt-in window fire, lit from the same aggregate `paintProgramStatus` shows. */
-  private readonly fire = new FireController();
+  // ─── Program-Status Fire (specs 362, 391) ────────────────────────
+  /** Opt-in workspace fire, lit from the same per-window aggregate `paintProgramStatus` shows. */
+  private readonly fire: FireController;
 
   // ─── Quick Terminal State ─────────────────────────────────────────
   private qtConfig: QuickTerminalConfig = { ...DEFAULT_QUICK_TERMINAL_CONFIG };
@@ -601,6 +601,7 @@ export class Compositor {
 
   constructor(workspace: HTMLElement) {
     this.workspace = workspace;
+    this.fire = new FireController(workspace, Compositor.FOOTER_HEIGHT);
     this.progressGauge = new ProgressGauge({
       getWindowElement: (windowId) => this.windows.get(windowId)?.element ?? null,
       getQuickTerminalElement: () => this.qtElement,
@@ -776,7 +777,7 @@ export class Compositor {
       this.extensions.setEnabled(config.extensions.enabled);
     }
 
-    // Fire — program states that set a window on fire, and their looks (specs 362, 363)
+    // Fire — program states that set the workspace on fire, and their looks (specs 362, 363, 391)
     this.fire.configure(config.fire);
     for (const win of this.windows.values()) this.paintProgramStatus(win);
 
@@ -1486,7 +1487,7 @@ export class Compositor {
         winTop = tabTop;
       }
     }
-    this.fire.sync(win, winTop?.state ?? null, fireTrigger);
+    this.fire.sync(win.id, winTop?.state ?? null, fireTrigger);
 
     const label = winTop ? programStatusLabel(winTop) : null;
     let chip = win.element.querySelector<HTMLElement>('.krypton-window__program-status');
@@ -5472,10 +5473,12 @@ export class Compositor {
     overlay.setEnabled(!overlay.isEnabled);
   }
 
-  /** Workspace footer visibility, so the overlay docks above the rail or the screen edge. */
-  setKeyboardOverlayFooterVisible(visible: boolean): void {
+  /** Workspace footer visibility, so the keyboard overlay docks and the fire
+   *  burns above the rail or the screen edge (spec 391). */
+  setWorkspaceFooterVisible(visible: boolean): void {
     this.keyboardOverlayFooterVisible = visible;
     this.keyboardOverlay?.setFooterVisible(visible);
+    this.fire.setFloor(visible ? Compositor.FOOTER_HEIGHT : 0);
   }
 
   /** Apply `[keyboard_overlay]` at startup and on reload. `enabled` only changes
@@ -5575,7 +5578,7 @@ export class Compositor {
       this.disposePaneTree(tab.paneTree);
     }
 
-    // Put out and release this window's fire (spec 362)
+    // This window no longer counts toward the workspace fire (spec 391)
     this.fire.remove(win.id);
 
     // Free accent color for reuse

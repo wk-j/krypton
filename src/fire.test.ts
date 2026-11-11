@@ -13,6 +13,7 @@ import {
   type FireLook,
   type FireState,
   type LiveLook,
+  workspaceFireState,
 } from './fire';
 
 const EMBER_FLOATS = FIRE.embers * 8;
@@ -188,5 +189,23 @@ describe('fireLookState (spec 0365)', () => {
     expect(fireLookState('working', 'tool_error', on('working'))).toBe('working');
     expect(fireLookState('working', null, on('working', 'tool_error'))).toBe('working');
     expect(fireLookState('idle', null, on('working', 'tool_error'))).toBeNull();
+  });
+});
+
+describe('workspaceFireState (spec 0391)', () => {
+  it('is null while no window burns, so the workspace fire goes out', () => {
+    expect(workspaceFireState([])).toBeNull();
+    expect(workspaceFireState(new Map<number, FireState>().values())).toBeNull();
+  });
+
+  it('burns with the most urgent window state: blocked > error > done > working', () => {
+    expect(workspaceFireState(['working', 'done'])).toBe('done');
+    expect(workspaceFireState(['done', 'error', 'working'])).toBe('error');
+    expect(workspaceFireState(['working', 'blocked', 'error'])).toBe('blocked');
+  });
+
+  it('does not depend on window order', () => {
+    expect(workspaceFireState(['blocked', 'working'])).toBe('blocked');
+    expect(workspaceFireState(['working', 'blocked'])).toBe('blocked');
   });
 });

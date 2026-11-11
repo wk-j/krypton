@@ -8,6 +8,23 @@
   background: transparent;
 }
 
+/* ─── Workspace Fire (specs 0362, 0391) ───
+   One band along the bottom of the workspace, rising from the footer's top
+   seam. It is the workspace's first child at z-index 0, so every window paints
+   over it and the flames never cover text. `bottom` (the footer height, 0 when
+   the footer is hidden) and `height` (fireBand) are set inline; the canvas
+   shows only while the workspace burns. */
+.krypton-fire-canvas {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 28px;
+  z-index: 0;
+  pointer-events: none;
+  display: none;
+  transform: translateZ(0);
+}
+
 /* ─── Window ───
    DESIGN.md 2.0.0 "Terminal window" (spec 366): a bezel around a screen. The
    window box is the screen — `--mat-screen`, the theme backdrop at `[visual]
@@ -1060,21 +1077,6 @@
 
 .krypton-tab-wrapper--hidden {
   display: none;
-}
-
-/* ─── Program-Status Fire (spec 0362) ─── */
-/* A band pinned to the bottom of the content, under the panes. Its height is
-   set inline from fireBand(); the canvas shows only while a window burns. */
-.krypton-fire-canvas {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 0;
-  pointer-events: none;
-  display: none;
-  /* Force GPU compositing in preserve-3d context (WebKit) */
-  transform: translateZ(0);
 }
 
 /* ─── Pane containers ─── */

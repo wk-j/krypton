@@ -48,7 +48,7 @@ Parsing goes through xterm.js's VT parser rather than a Rust byte scanner. It al
 | `src/view-bus-types.ts` | Add `'view:program-status': { viewId; summary: ProgramStatusSummary \| null }` |
 | `src/compositor.ts` | Owns the store (`programStatus`). `createPane` generates the `viewId` first and calls `wireProgramStatus()` (OSC 7501, OSC 133 and RIS handlers plus `onKey` ack). Disposes the view on pane close. Publishes the signal, paints the tab, window and chip (`paintProgramStatus`, also after `rebuildTabBar`), announces on the rail. Adds `focusNextProgramAttention()` and `programStatusCounts()`. Extracts `focusPaneByViewId()` from the `pane:focus` intent handler |
 | `src/pty-bridge.ts` | New `onShellForeground(viewId)` dep, fired on `process-changed` with `process === null && previous !== null` |
-| `src/workspace-footer.ts` | Global `▲n ✕n ✓n` segment (pulled from `programStatusCounts()`); the focused pane's `app: msg` as a `p3 detail` center segment |
+| `src/workspace-footer.ts`, `src/workspace-footer-program-status.ts` | Global named `BLOCKED` / `ERROR` / `DONE` count lamps (pulled from `programStatusCounts()`); the focused pane's `app: msg` as a `p3 detail` center segment |
 | `src/input-router.ts`, `src/leader-keys.ts`, `src/which-key.ts`, `src/command-palette.ts` | `Leader !` → `focusNextProgramAttention()`; reserve `!`; which-key entry in all three Windows groups; palette command `program-status.next` |
 | `src/main.ts` | Wire `onShellForeground` → `compositor.programStatus.dropTransient` |
 | `src/styles/window.css`, `src/styles/workspace-footer.css` | `[data-program-status]` rules for tab dot, window border/glow/status dot, `.krypton-window__program-status` chip; footer count colours |
@@ -123,7 +123,7 @@ class ProgramStatusStore {
 4. Store recomputes the pane summary; if changed → compositor.handleProgramStatusChange:
    publishSignal('view:program-status', address ?? SYSTEM_SOURCE, { viewId, summary })
 5. Compositor paints tab dot + window border/status dot + titlebar chip (aggregate over panes),
-   and passes the window aggregate to the opt-in window fire (`[fire] on`, spec 0362);
+   and passes the window aggregate to the opt-in workspace fire (`[fire] on`, specs 0362, 0391);
    workspace-footer re-pulls counts and the focused pane's app/msg
 6. Pane not focused and next.state ∈ {blocked, error, done}, entered from a different
    state → console: "W2·<tab> — <msg or phrase>" labelled <APP> (1 per pane per 5 s)
@@ -142,7 +142,7 @@ class ProgramStatusStore {
 - `.krypton-tab[data-program-status]`: the `.krypton-tab__dot` turns warning (`blocked`), danger (`error`) or success (`done`), and pulses for `working`. The value aggregates every pane in that tab.
 - `.krypton-window[data-program-status]`: aggregates across the window's tabs. `blocked`/`error`/`done` set `--krypton-program-status-rgb`, which colours the border, glow and status dot. A dedicated variable is used rather than `--krypton-window-accent-rgb`, so other tabs' dots keep the window accent. `working` only pulses the status dot. `[visual] window_border = false` still hides the border.
 - `.krypton-window__program-status`: a titlebar-end lamp window before `pty-status` — its LED, then the legend, as a Rails check's `PASS` (DESIGN.md "Lamps") — showing the window's top summary: `40%`/`···` (working), `PERMISSION`/`QUESTION`/`AUTH`/`BLOCKED`, `DONE`, `ERROR`, prefixed with `app` when present. Hidden for `idle` or no records.
-- Footer: a segment `▲2 ✕1 ✓3` (counts of views, not records), shown only when non-zero. In detail density the focused pane's `app: msg` is also shown.
+- Footer: one named lamp per nonzero state (`BLOCKED 2`, `ERROR 1`, `DONE 3`), counting views rather than records. Each uses the titlebar lamp's status colour and lens; compact and detail density show the same counts. In detail density the focused pane's `app: msg` is also shown.
 - Any `msg`/`title` shown outside the grid goes through `textContent` with bidi and invisible formatting characters stripped (U+200E/F, U+061C, U+202A–202E, U+2066–2069).
 
 ### Configuration

@@ -1241,13 +1241,6 @@
   box-shadow: 0 1px 0 var(--mat-bevel-hi);
   pointer-events: none;
 }
-/* Spec 365: the window fire burns along the bottom of the window content,
-   right under this strip. While it is lit (`data-fire-lit`, set by
-   `FireAnimation`), the strip drops its plate fill so the flames show through
-   as they do behind terminal text; the seam and bevel stay. */
-.krypton-window[data-fire-lit] .acp-harness__command-center {
-  background: none;
-}
 /* Drop target · `acp-harness-view.ts:6290-6297`. */
 .acp-harness--drag-over {
   outline: 1px dashed var(--mat-lit);

@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-11-06
 > Milestone: Window chrome — program status presentation (extends [0362](./0362-program-status-fire.md), [0363](./0363-program-status-fire-look.md))
+> Moved by: [0391](./0391-workspace-fire.md) — `tool_error` now counts its window toward the workspace fire. `data-fire-lit` and the command-centre / composer thinning described below were removed, since no fire burns inside a window any more
 
 ## Problem
 

@@ -1,15 +1,18 @@
-// Krypton — Program-Status Fire (specs 0362, 0363, 0365).
+// Krypton — Workspace Fire (specs 0362, 0363, 0365, 0391).
 //
-// A window burns while its program-status aggregate (OSC 7501, spec 0284) is
-// one of the states listed in `[fire] on`, or while a content view in it
-// reports a fire trigger listed there (`tool_error`: an ACP Harness tool call
-// failed, spec 0365). The compositor calls `sync` from `paintProgramStatus`,
-// the only driver, so the fire always matches what the window holds.
-// Each burning window gets a WebGL2 canvas pinned to the bottom of its content
-// area, under the panes. The context is created on the first ignite, the loop
-// stops once the fire is out, and a window that never burns allocates nothing.
+// A window counts as burning while its program-status aggregate (OSC 7501,
+// spec 0284) is one of the states listed in `[fire] on`, or while a content
+// view in it reports a fire trigger listed there (`tool_error`: an ACP Harness
+// tool call failed, spec 0365). The compositor calls `sync` from
+// `paintProgramStatus`, the only driver, so each window's entry always matches
+// what the window holds.
+// The workspace burns while any window does, with the look of the most urgent
+// burning state (spec 0391). One WebGL2 canvas is pinned to the bottom of the
+// workspace, above the footer and under every window. The context is created
+// on the first ignite, the loop stops once the fire is out, and a workspace
+// that never burns allocates nothing.
 // Each state has its own look (`[fire]` + `[fire.<state>]`, spec 0363); a lit
-// fire eases to the new look when its state changes.
+// fire eases to the new look when the top state changes.
 //
 // The ember table below ports rune-fx `cpu.rs::embers`; see the MIT notice in
 // `fire-shader.ts`.
@@ -18,7 +21,7 @@ import type { BackgroundAnimation } from './background-animation';
 import type { FireConfig, FireLookConfig } from './config';
 import { FIRE_EMBER_VEC4S, FIRE_FRAGMENT_SHADER, FIRE_VERTEX_SHADER } from './fire-shader';
 import { programStatePriority, type ProgramState } from './program-status';
-import type { KryptonWindow, WindowId } from './types';
+import type { WindowId } from './types';
 
 export type FireState = 'working' | 'blocked' | 'error' | 'done';
 /** A non-program-status reason to burn, reported by a content view (spec 0365). */
@@ -32,9 +35,9 @@ function isFireState(value: string): value is FireState {
 }
 
 /**
- * The look a window burns with: its program state when `on` lists it, or
- * `error` for a listed `tool_error`, whichever ranks higher by program-status
- * priority. Null when nothing listed in `on` applies.
+ * The look a window counts toward the workspace fire with: its program state
+ * when `on` lists it, or `error` for a listed `tool_error`, whichever ranks
+ * higher by program-status priority. Null when nothing listed in `on` applies.
  */
 export function fireLookState(
   state: ProgramState | null,
@@ -47,6 +50,18 @@ export function fireLookState(
     look = 'error';
   }
   return look;
+}
+
+/**
+ * The look the workspace burns with: the highest-priority burn state among
+ * the windows (spec 0391). Null when no window burns.
+ */
+export function workspaceFireState(states: Iterable<FireState>): FireState | null {
+  let top: FireState | null = null;
+  for (const state of states) {
+    if (top === null || programStatePriority(state) > programStatePriority(top)) top = state;
+  }
+  return top;
 }
 
 /** Look constants (rune `FireParams` defaults, Ship-page scale and ember count). */
@@ -375,7 +390,8 @@ const CONTEXT_OPTIONS: WebGLContextAttributes = {
   powerPreference: 'low-power',
 };
 
-/** One window's fire: a WebGL2 band canvas under the panes of `content`. */
+/** The workspace fire: a WebGL2 band canvas along the bottom of `host`, `floor`
+ *  px above its bottom edge (the workspace footer), under every window. */
 export class FireAnimation implements BackgroundAnimation {
   private readonly canvas: HTMLCanvasElement;
   private readonly reduceMotion: MediaQueryList;
@@ -386,9 +402,11 @@ export class FireAnimation implements BackgroundAnimation {
   private vao: WebGLVertexArrayObject | null = null;
   private uniforms: FireUniforms | null = null;
   private band: FireBand = { cssWidth: 0, cssHeight: 0, flameMax: 40 };
-  /** Built-in tallest flame for the current content height; the look scales it. */
+  /** Built-in tallest flame for the current host height; the look scales it. */
   private flameBase = 40;
-  private radius = 8;
+  /** The host under the band is the footer's square seam: flames and embers
+   *  run to both screen edges. */
+  private readonly radius = 0;
   /** The look the window's state asks for. `target` is it with colours
    *  resolved; `live` is what is drawn and eases toward `target`. */
   private look: FireLook = BUILT_IN_LOOK;
@@ -406,12 +424,13 @@ export class FireAnimation implements BackgroundAnimation {
   private disposed = false;
 
   constructor(
-    private readonly content: HTMLElement,
-    private readonly windowEl: HTMLElement,
+    private readonly host: HTMLElement,
+    private floor: number,
     private readonly onFailure: (reason: string) => void,
   ) {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'krypton-fire-canvas';
+    this.canvas.style.bottom = `${floor}px`;
     this.reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.reduceMotion.addEventListener('change', this.onMotionChange);
     this.canvas.addEventListener('webglcontextlost', this.onContextLost);
@@ -440,7 +459,6 @@ export class FireAnimation implements BackgroundAnimation {
       this.resolveTarget();
       copyLook(this.live, this.target);
       this.settled = true;
-      this.radius = parseFloat(getComputedStyle(this.windowEl).borderTopLeftRadius) || 8;
       this.setShown(true);
       this.resize();
     }
@@ -475,11 +493,19 @@ export class FireAnimation implements BackgroundAnimation {
     this.resize();
   }
 
+  /** Move the band's bottom edge: the footer's height while it shows, 0 when hidden. */
+  setFloor(px: number): void {
+    if (this.disposed || px === this.floor) return;
+    this.floor = px;
+    this.canvas.style.bottom = `${px}px`;
+    if (this.running || this.rafId !== 0) this.resize();
+  }
+
   resize(): void {
     // While easing, the band fits the taller of the drawn and the target look,
     // so it grows when a change starts and shrinks once the ease ends.
     const scale = Math.max(this.live.height, this.target.height);
-    const band = fireBand(this.content.clientWidth, this.content.clientHeight, scale);
+    const band = fireBand(this.host.clientWidth, Math.max(0, this.host.clientHeight - this.floor), scale);
     this.band = band;
     this.flameBase = band.flameMax / scale;
     if (this.canvas.width !== band.cssWidth) this.canvas.width = band.cssWidth;
@@ -502,7 +528,6 @@ export class FireAnimation implements BackgroundAnimation {
     this.vao = null;
     this.uniforms = null;
     this.canvas.remove();
-    delete this.windowEl.dataset.fireLit;
   }
 
   private initContext(): boolean {
@@ -580,12 +605,8 @@ export class FireAnimation implements BackgroundAnimation {
     this.setShown(false);
   }
 
-  /** The canvas and the window's `data-fire-lit`, which lets content views
-   *  thin the surfaces that would hide the flames (spec 0365), change together. */
   private setShown(shown: boolean): void {
     this.canvas.style.display = shown ? 'block' : 'none';
-    if (shown) this.windowEl.dataset.fireLit = '';
-    else delete this.windowEl.dataset.fireLit;
   }
 
   /** `target` = the current look with its colours resolved through the cascade. */
@@ -695,7 +716,7 @@ export class FireAnimation implements BackgroundAnimation {
 
 // ─── Controller ─────────────────────────────────────────────────
 
-/** Per-window fires, driven by the compositor's program-status paint. */
+/** The workspace fire, driven by the compositor's per-window program-status paint. */
 export class FireController {
   private on: ReadonlySet<FireState | FireTrigger> = new Set();
   private looks: Record<FireState, FireLook> = {
@@ -704,10 +725,19 @@ export class FireController {
     error: BUILT_IN_LOOK,
     done: BUILT_IN_LOOK,
   };
-  private readonly fires = new Map<WindowId, FireAnimation>();
+  /** Each burning window's look state; the workspace burns with the top one. */
+  private readonly burning = new Map<WindowId, FireState>();
+  /** Created on the first ignite; disposed only when fire is unavailable. */
+  private fire: FireAnimation | null = null;
+  /** The band's bottom edge above the workspace bottom: the footer height, 0 when hidden. */
+  private floor: number;
   /** Config warnings already printed; a Reload Config repeats none of them. */
   private readonly warned = new Set<string>();
   private unavailable = false;
+
+  constructor(private readonly host: HTMLElement, floor: number) {
+    this.floor = floor;
+  }
 
   /** `[fire]`: keep known `on` values and resolve every state's look. */
   configure(cfg: FireConfig | null | undefined): void {
@@ -721,22 +751,40 @@ export class FireController {
     this.looks = resolveFireLooks(cfg, this.warnOnce, (value) => CSS.supports('color', value));
   }
 
-  /** Light or put out `win` for its program-status aggregate and content-view trigger. */
-  sync(win: KryptonWindow, state: ProgramState | null, trigger: FireTrigger | null): void {
+  /** Record whether window `windowId` burns, from its program-status aggregate
+   *  and content-view trigger, then light, re-look or put out the workspace. */
+  sync(windowId: WindowId, state: ProgramState | null, trigger: FireTrigger | null): void {
     const look = fireLookState(state, trigger, this.on);
-    let fire = this.fires.get(win.id);
-    if (look === null) {
-      fire?.stop();
+    if (look === null) this.burning.delete(windowId);
+    else this.burning.set(windowId, look);
+    this.apply();
+  }
+
+  /** A closed window stops counting; the workspace may go out. */
+  remove(windowId: WindowId): void {
+    if (this.burning.delete(windowId)) this.apply();
+  }
+
+  /** Footer shown → its height, hidden → 0. */
+  setFloor(px: number): void {
+    this.floor = px;
+    this.fire?.setFloor(px);
+  }
+
+  private apply(): void {
+    const top = workspaceFireState(this.burning.values());
+    if (top === null) {
+      this.fire?.stop();
       return;
     }
     if (this.unavailable) return;
-    if (!fire) {
-      fire = new FireAnimation(win.contentElement, win.element, (reason) => this.disable(reason));
-      this.fires.set(win.id, fire);
-      win.contentElement.insertBefore(fire.getElement(), win.contentElement.firstChild);
+    if (!this.fire) {
+      this.fire = new FireAnimation(this.host, this.floor, (reason) => this.disable(reason));
+      // First child: every window is painted after it, so none is ever covered.
+      this.host.insertBefore(this.fire.getElement(), this.host.firstChild);
     }
-    fire.setLook(this.looks[look]);
-    fire.start();
+    this.fire.setLook(this.looks[top]);
+    this.fire.start();
   }
 
   private readonly warnOnce = (msg: string): void => {
@@ -745,24 +793,17 @@ export class FireController {
     console.warn(`[Krypton] ${msg}`);
   };
 
-  /** Re-measure after relayout. */
+  /** Re-measure after relayout or a viewport resize. */
   resize(): void {
-    for (const fire of this.fires.values()) {
-      if (fire.isRunning()) fire.resize();
-    }
+    if (this.fire?.isRunning()) this.fire.resize();
   }
 
-  remove(windowId: WindowId): void {
-    this.fires.get(windowId)?.dispose();
-    this.fires.delete(windowId);
-  }
-
-  /** WebGL2 or the shader failed: the cause is the same for every window, so stop trying. */
+  /** WebGL2 or the shader failed: it would fail again, so stop trying for the session. */
   private disable(reason: string): void {
     if (this.unavailable) return;
     this.unavailable = true;
     console.warn(`[Krypton] Program-status fire disabled: ${reason}`);
-    for (const fire of this.fires.values()) fire.dispose();
-    this.fires.clear();
+    this.fire?.dispose();
+    this.fire = null;
   }
 }

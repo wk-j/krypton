@@ -10,17 +10,17 @@ export class FooterProgramStatus {
     this.el.hidden = true;
   }
 
-  /** spec 284: `▲n ✕n ✓n` — panes blocked / errored / done, each part shown
+  /** spec 284: named status lamps — panes blocked / errored / done, each shown
    *  only when non-zero, the whole segment hidden when all are zero. */
   render(counts: { blocked: number; error: number; done: number }): void {
     const { blocked, error, done } = counts;
     const parts: HTMLElement[] = [];
-    for (const [state, glyph, n] of [['blocked', '▲', blocked], ['error', '✕', error], ['done', '✓', done]] as const) {
+    for (const [state, label, n] of [['blocked', 'BLOCKED', blocked], ['error', 'ERROR', error], ['done', 'DONE', done]] as const) {
       if (n === 0) continue;
       const part = document.createElement('span');
       part.className = 'krypton-workspace-footer__program-count';
       part.dataset.state = state;
-      part.textContent = `${glyph}${n}`;
+      part.textContent = `${label} ${n}`;
       parts.push(part);
     }
     if (parts.length === 0) {

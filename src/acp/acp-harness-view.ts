@@ -5159,7 +5159,8 @@ export class AcpHarnessView implements ContentView {
     void this.reconnectRemoteHarness();
   }
 
-  /** spec 365: the window burns while any lane has an unacknowledged failed tool call. */
+  /** spec 365: the window counts toward the workspace fire (spec 391) while any
+   *  lane has an unacknowledged failed tool call. */
   getFireTrigger(): FireTrigger | null {
     return this.toolErrorLanes.size > 0 ? 'tool_error' : null;
   }
@@ -5191,7 +5192,7 @@ export class AcpHarnessView implements ContentView {
     this.element.removeEventListener('focusout', this.dictationFocusOutHandler);
     this.dictationCtl.abort(false);
     this.liveVoiceCtl.dispose();
-    // spec 365: put out this view's share of the window fire.
+    // spec 365: put out this view's share of the workspace fire.
     if (this.toolErrorLanes.size > 0) {
       this.toolErrorLanes.clear();
       this.onFireTriggerChange?.();
@@ -15017,7 +15018,7 @@ export class AcpHarnessView implements ContentView {
       this.scheduleGitBranchRefresh();
     }
     // spec 365: a top-level tool call that just ended failed marks its lane
-    // for the window fire until the user acknowledges it in that lane.
+    // for the workspace fire until the user acknowledges it in that lane.
     if (justEnded && status === 'failed' && !this.toolErrorLanes.has(lane.id)) {
       this.toolErrorLanes.add(lane.id);
       this.onFireTriggerChange?.();
