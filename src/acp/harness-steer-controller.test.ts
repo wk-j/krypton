@@ -62,6 +62,9 @@ function setup(over: Partial<FakeLane> = {}) {
       l.transcript.push(item);
       return item;
     },
+    appendNotice: (l, notice, text) => {
+      l.transcript.push({ id: `row-${nextId++}`, kind: 'system', text, notice });
+    },
     removeTranscriptItem: (l, itemId) => {
       l.transcript = l.transcript.filter((entry) => entry.id !== itemId);
     },
@@ -301,6 +304,9 @@ describe('HarnessSteerController (spec 278)', () => {
     await done;
     expect(lane.queuedPrompts).toEqual([]);
     expect(lane.transcript.map((t) => t.text)).toEqual(['steer not delivered: now']);
+    expect(lane.transcript[0]?.notice).toMatchObject({
+      source: 'steer', action: 'not delivered', tone: 'attention', subject: 'now',
+    });
   });
 
   it('holds for a steer-started turn when the first prompt was a command with no thread status', async () => {

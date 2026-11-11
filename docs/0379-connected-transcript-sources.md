@@ -49,7 +49,7 @@ export type SourceConnectorKey = 'tool' | 'guard' | 'agent' | 'user' | 'fs';
 export function sourceConnectorKey(item: HarnessTranscriptItem): SourceConnectorKey | null;
 ```
 
-`tool` means a tool item with a `tool` payload but no `guardianReview`; `guard` means a tool item with that payload. `agent` is an assistant row without lane-mail provenance. `user` is a user row without steer or voice state. `fs` is a successful file-activity row with an `fsActivity` payload. Other kinds return `null`: thought has an effort meter; system and shell items currently pass through `SystemRow`, whose label is `SYS`; permission, question, file-write review, failed file activity, provider error, document cards, and lane mail keep their individual labels or direction/state cues. A `null` row breaks the run.
+`tool` means a tool item with a `tool` payload but no `guardianReview`; `guard` means a tool item with that payload. `agent` is an assistant row without lane-mail provenance. `user` is a user row without steer or voice state. `fs` is a successful file-activity row with an `fsActivity` payload. Other kinds return `null`: thought has an effort meter; system notices use their source labels, typed system-command snapshots retain `SYS`, and shell fallback rows use `SH`; permission, question, file-write review, failed file activity, provider error, document cards, and lane mail keep their individual labels or direction/state cues. A `null` row breaks the run.
 
 ### Row and CSS flow
 

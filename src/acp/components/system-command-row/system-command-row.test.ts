@@ -93,8 +93,9 @@ describe('SystemCommandRow', () => {
     const plain = { id: 'plain', kind: 'system' as const, text: 'first\nsecond' };
     const plainRow = createTranscriptRow(props(plain));
     plainRow.update(props(plain));
-    expect(plainRow.el.querySelector('.acp-harness__msg-label')?.textContent).toBe('sys');
-    expect(plainRow.el.querySelector('.acp-harness__msg-body')?.textContent).toBe('first\nsecond');
+    expect(plainRow.el.querySelector('.acp-harness__msg-label')?.textContent).toBe('system');
+    expect(plainRow.el.querySelector('.acp-harness__notice-action')?.textContent).toBe('status');
+    expect(plainRow.el.querySelector('.acp-harness__notice-subject')?.textContent).toBe('first\nsecond');
     const notice = { ...item(command), notice: { source: 'triage' as const, subject: 'Needs review', tone: 'attention' as const } };
     const noticeRow = createTranscriptRow(props(notice));
     noticeRow.update(props(notice));

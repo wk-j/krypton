@@ -1,9 +1,9 @@
 // Spec 302 §3.14 — `SystemRow` + `HiddenRowsIndicator`; spec 371 notices.
 //
-// Four shapes of one row, because they are states of the same `system` item
-// rather than separate kinds:
+// Four presentations through one row. The `text` branch also handles fallback
+// kinds such as shell, memory and restart, retaining their own source labels:
 //
-//   plain       `sys    lane restarted — session 4f2a9c`
+//   plain       `system  STATUS  lane restarted — session 4f2a9c`
 //   indicator   `       ↑ 142 earlier rows hidden — [⌃H] show 60 more`  (key cap)
 //   notice      `triage ● FLAGGED  Should the lamp be green?`  (spec 371)
 //   event       `event  peer OMP-2 cancelled`   (an inter-lane notice)
@@ -13,8 +13,9 @@
 // for the human, then the subject. `item.text` is only its portable line for
 // other readers; this row never parses it.
 //
-// The plain shape was ported from `harness-transcript-render.ts:429-431`, the
-// indicator synthesis from `acp-harness-view.ts:12150-12159`.
+// Legacy system text gets a neutral SYSTEM STATUS presentation without parsing
+// it; current producers attach a notice with a source, action and tone. The
+// indicator synthesis came from `acp-harness-view.ts:12150-12159`.
 //
 // The indicator is a SYNTHETIC item: it has no place in `lane.transcript`, it
 // is prepended to the render list while the tail window hides rows, and it must
@@ -91,7 +92,8 @@ export class SystemRow extends TranscriptRow {
 
   protected labelText(next: RowProps): string {
     const notice = next.item.notice;
-    return notice ? NOTICE_LABEL[notice.source] : 'sys';
+    if (notice) return NOTICE_LABEL[notice.source];
+    return next.item.kind === 'system' && !this.indicator ? 'system' : super.labelText(next);
   }
 
   protected bodyClasses(next: RowProps): readonly string[] {
@@ -115,6 +117,14 @@ export class SystemRow extends TranscriptRow {
         body.replaceChildren(text.slice(0, at), keyCap(SHOW_MORE_KEY), text.slice(at + SHOW_MORE_KEY.length));
         return;
       }
+      body.textContent = text;
+      return;
+    }
+    if (next.item.kind === 'system') {
+      // Older/unknown producers have no structured notice. Keep their exact
+      // portable text while giving the row the same visible grammar as notices.
+      body.replaceChildren(...noticeNodes({ source: 'system', action: 'status', tone: 'info', subject: text }));
+      return;
     }
     body.textContent = text;
     // Spec 326: `!shell` output laid out by columns sits on the cell grid. Other

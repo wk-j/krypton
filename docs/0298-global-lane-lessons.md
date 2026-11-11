@@ -66,7 +66,7 @@ Decisions taken:
 | `src-tauri/src/config.rs`, `src/config.ts` | `AcpHarnessConfig.lessons: bool`, default `true`. |
 | `src/acp/lessons.ts` (+test) | **New.** `LessonEntry` / `LessonsSnapshot` types, `renderLessonsBlock()`, the nudge sentences, the `[acp_harness] lessons` flag, and the app-wide cache (`refreshLessons()`, idempotent `watchLessons()`). |
 | `src/acp/lane-context.ts` (+test) | `LaneToolGates.lessons`. Tool-name line adds `lesson_record, lesson_retire`. One tool-index line. |
-| `src/acp/acp-harness-view.ts` (+test) | `watchLessons()` + `refreshLessons()` on start. `renderLanePolicy` appends the block. `#lesson` / `#lessons` dispatch (`#lessons` is remote-unsupported). A per-harness `acp-lessons-changed` listener adds the transcript line and flash. The redirect call passes `lessonNudge`. |
+| `src/acp/acp-harness-view.ts` (+test) | `watchLessons()` + `refreshLessons()` on start. `renderLanePolicy` appends the block. `#lesson` / `#lessons` dispatch (`#lessons` is remote-unsupported). A per-harness `acp-lessons-changed` listener adds the lesson notice and flash. The redirect call passes `lessonNudge`. |
 | `src/acp/harness-review-loop-controller.ts` | Passes `lessonNudge: lessonsEnabled()` to `reviewLoopFixPrompt`. |
 | `src/acp/harness-view-types.ts` | `HarnessToolFamily` gains `'lessons'`, used in the auto-allow reason. |
 | `src/compositor.ts` | `setLessonsEnabled()` on config apply and Reload Config; `openLessons()` for the palette. |
@@ -196,8 +196,9 @@ Lessons update (replaces the matching entries in your Lessons list):
 3. The hook server validates, locks the store, writes <slug>.md atomically, regenerates INDEX.md,
    and emits acp-lessons-changed.
 4. Every open harness view (any tab, any project) runs refreshLessons() → list_lessons → cache.
-   The originating lane gets the transcript line "[lesson] created: <slug> — <title> (N/30)" and a
-   flash chip; a create that raised the count to 24+ also returns a consolidation notice (spec 299).
+   The originating lane gets a `LESSON  CREATED  <slug> — <title> (N/30)` notice
+   and a flash chip. Text-only readers get `[lesson] created: <slug> — <title> (N/30)`.
+   A create that raised the count to 24+ also returns a consolidation notice (spec 299).
 5. The next sendUserPrompt on any lane compares the injectable set with the one that session has
    seen (spec 332). If only lesson text moved, the turn header carries a `Lessons update` block;
    the policy is resent only when lessons turn on/off or the set goes empty/non-empty.

@@ -900,13 +900,20 @@ export const ACP_HARNESS_LEADER_KEYS: readonly LeaderKeySpec[] = [
   { key: '0', label: 'Resume Session', icon: 'rotate-ccw-clock', group: 'Harness', effect: 'important' },
 ];
 
-/** spec 299: the transcript line for a lesson write. The store pressure rides
- *  along so the human sees a filling store without opening `INDEX.md`. */
-export function lessonChangeLine(payload: LessonsChangedPayload): string {
-  const line = `[lesson] ${payload.action}: ${payload.slug} — ${payload.title}`;
+/** spec 299: the store pressure rides along so the human sees a filling store
+ *  without opening `INDEX.md`. Spec 371 renders the write as a lesson notice. */
+function lessonChangeNotice(payload: LessonsChangedPayload): HarnessNotice {
+  let subject = `${payload.slug} — ${payload.title}`;
   const { active, cap } = payload;
-  if (!Number.isFinite(active) || !Number.isFinite(cap) || cap <= 0) return line;
-  return `${line} (${active}/${cap})`;
+  if (Number.isFinite(active) && Number.isFinite(cap) && cap > 0) {
+    subject += ` (${active}/${cap})`;
+  }
+  return { source: 'lesson', action: payload.action, tone: 'info', subject };
+}
+
+/** Portable text for readers that do not render the notice payload. */
+export function lessonChangeLine(payload: LessonsChangedPayload): string {
+  return noticeText(lessonChangeNotice(payload));
 }
 
 
@@ -2599,11 +2606,12 @@ export class AcpHarnessView implements ContentView {
       this.flashChip(`mention partial: failed ${why}`);
     }
     const preview = parsed.body.length > 80 ? `${parsed.body.slice(0, 80)}…` : parsed.body;
-    this.appendTranscript(
-      lane,
-      'system',
-      `mention → ${result.delivered.join(', ')}${result.failed.length ? ` · failed: ${result.failed.map((f) => `${f.displayName} (${f.reason})`).join(', ')}` : ''}\n${preview}`,
-    );
+    const mentionSubject = `${result.delivered.join(', ')}${result.failed.length ? ` · failed: ${result.failed.map((f) => `${f.displayName} (${f.reason})`).join(', ')}` : ''}\n${preview}`;
+    const mentionText = `mention → ${mentionSubject}`;
+    this.appendNotice(lane, {
+      source: 'peer', action: result.failed.length ? 'partial' : 'sent',
+      tone: result.failed.length ? 'attention' : 'info', subject: mentionSubject,
+    }, mentionText);
     if (this.coordinator.pendingPeersFor(lane.id).length > 0) {
       this.setLaneStatus(lane, 'awaiting_peer');
     }
@@ -2706,11 +2714,11 @@ export class AcpHarnessView implements ContentView {
       lane.peerAutoAcceptForTurn = true;
       const granter = drain.primaryPeerDisplayName ?? 'a peer';
       const extra = (drain.envelopeCount ?? 1) > 1 ? ` (+${(drain.envelopeCount ?? 1) - 1} more)` : '';
-      this.appendTranscript(
-        lane,
-        'system',
-        `auto-accept (non-high-risk) armed by ${granter}${extra} for this turn — destructive commands still prompt`,
-      );
+      const autoAcceptText = `auto-accept (non-high-risk) armed by ${granter}${extra} for this turn — destructive commands still prompt`;
+      this.appendNotice(lane, {
+        source: 'peer', action: 'auto-accept', tone: 'attention',
+        subject: `by ${granter}${extra} for this turn — destructive commands still prompt`,
+      }, autoAcceptText);
     }
     this.updateComposerTick();
     this.render();
@@ -2735,7 +2743,9 @@ export class AcpHarnessView implements ContentView {
       lane.peerAutoAcceptForTurn = false;
       lane.acceptAllForTurn = false;
       lane.rejectAllForTurn = false;
-      this.appendTranscript(lane, 'system', `error: ${String(e)}`);
+      this.appendNotice(lane, {
+        source: 'prompt', action: 'failed', tone: 'fault', subject: String(e),
+      }, `error: ${String(e)}`);
       this.render();
     }
   }
@@ -2934,11 +2944,11 @@ export class AcpHarnessView implements ContentView {
         return;
       }
       const n = envelope.comments.length;
-      this.appendTranscript(
-        lane,
-        'system',
-        `${n} comment${n === 1 ? '' : 's'} received on artifact «${p.artifactTitle}»`,
-      );
+      const feedbackText = `${n} comment${n === 1 ? '' : 's'} received on artifact «${p.artifactTitle}»`;
+      this.appendNotice(lane, {
+        source: 'review', action: 'feedback', tone: 'info',
+        subject: `${n} comment${n === 1 ? '' : 's'} on artifact «${p.artifactTitle}»`,
+      }, feedbackText);
       this.scheduleLaneRender(lane);
       reply({ accepted: true });
     });
@@ -2983,11 +2993,11 @@ export class AcpHarnessView implements ContentView {
         return;
       }
       const n = envelope.comments.length;
-      this.appendTranscript(
-        lane,
-        'system',
-        `${n} comment${n === 1 ? '' : 's'} received on docs «${p.docPath}»`,
-      );
+      const feedbackText = `${n} comment${n === 1 ? '' : 's'} received on docs «${p.docPath}»`;
+      this.appendNotice(lane, {
+        source: 'docs', action: 'feedback', tone: 'info',
+        subject: `${n} comment${n === 1 ? '' : 's'} on docs «${p.docPath}»`,
+      }, feedbackText);
       this.scheduleLaneRender(lane);
       reply({ accepted: true });
     });
@@ -3029,7 +3039,10 @@ export class AcpHarnessView implements ContentView {
         reply({ accepted: true, reason: 'duplicate' });
         return;
       }
-      this.appendTranscript(lane, 'system', `Artifact requested for docs «${p.docPath}»`);
+      const requestText = `Artifact requested for docs «${p.docPath}»`;
+      this.appendNotice(lane, {
+        source: 'docs', action: 'requested', tone: 'info', subject: p.docPath,
+      }, requestText);
       this.scheduleLaneRender(lane);
       reply({ accepted: true });
     });
@@ -6830,7 +6843,10 @@ export class AcpHarnessView implements ContentView {
             for (const lane of this.lanes) {
               if (lane.status !== 'stopped') {
                 this.setLaneStatus(lane, 'error');
-                this.appendTranscript(lane, 'system', 'remote connection lost; in-flight outcome is unknown');
+                this.appendNotice(lane, {
+                  source: 'remote', action: 'connection lost', tone: 'fault',
+                  subject: 'in-flight outcome is unknown',
+                }, 'remote connection lost; in-flight outcome is unknown');
               }
             }
             this.render();
@@ -7870,7 +7886,7 @@ export class AcpHarnessView implements ContentView {
   private handleLessonsChanged(payload: LessonsChangedPayload): void {
     const lane = this.lanes.find((l) => l.displayName === payload.laneLabel);
     if (lane) {
-      this.appendTranscript(lane, 'system', lessonChangeLine(payload));
+      this.appendNotice(lane, lessonChangeNotice(payload));
       this.scheduleLaneRender(lane);
     }
     this.flashChip(`lesson ${payload.action}: ${payload.slug}`);
@@ -7927,7 +7943,10 @@ export class AcpHarnessView implements ContentView {
       stagedImages: [],
       imageState: createLaneImageState(),
       subagentChildren: new Map(),
-      transcript: [{ id: makeId(), kind: 'system', text: `starting ${displayName}...` }],
+      transcript: [{
+        id: makeId(), kind: 'system', text: `starting ${displayName}...`,
+        notice: { source: 'session', action: 'starting', tone: 'info', subject: displayName },
+      }],
       toolTranscriptIds: new Map(),
       toolViews: new Map(),
       seenTranscriptIds: new Set(),
@@ -7982,7 +8001,9 @@ export class AcpHarnessView implements ContentView {
             spawnEpoch,
           });
         } catch (error) {
-          this.appendTranscript(lane, 'system', `connected computers unavailable: ${String(error)}`);
+          this.appendNotice(lane, {
+            source: 'device', action: 'unavailable', tone: 'fault', subject: String(error),
+          }, `connected computers unavailable: ${String(error)}`);
         }
       }
       let seedMcp = this.memoryServerForLane(lane);
@@ -8069,7 +8090,10 @@ export class AcpHarnessView implements ContentView {
         const mode: 'resume' | 'load' | null = caps.canResume ? 'resume' : caps.canLoad ? 'load' : null;
         let session: LaneSession | null = null;
         if (!mode) {
-          this.appendTranscript(lane, 'system', 'backend cannot resume sessions - starting fresh session');
+          this.appendNotice(lane, {
+            source: 'session', action: 'resume off', tone: 'attention',
+            subject: 'backend cannot resume sessions; starting fresh session',
+          }, 'backend cannot resume sessions - starting fresh session');
         } else {
           try {
             suppressLoadReplay = mode === 'load';
@@ -8078,7 +8102,10 @@ export class AcpHarnessView implements ContentView {
               : await client.loadSession(resumeSessionId);
           } catch (e) {
             session = null;
-            this.appendTranscript(lane, 'system', `session ${mode} failed: ${errorText(e)} - starting fresh session`);
+            this.appendNotice(lane, {
+              source: 'session', action: `${mode} failed`, tone: 'fault',
+              subject: `${errorText(e)} - starting fresh session`,
+            }, `session ${mode} failed: ${errorText(e)} - starting fresh session`);
           } finally {
             suppressLoadReplay = false;
           }
@@ -8102,13 +8129,13 @@ export class AcpHarnessView implements ContentView {
         this.setLaneStatus(lane, 'idle');
         // spec 370: the old OMP process took its background jobs with it.
         this.markBackgroundCardsLastReported(lane);
-        this.appendTranscript(
-          lane,
-          'system',
-          restored
-            ? `resumed session ${resumeSessionId.slice(0, 8)} - context preserved`
-            : `connected to ${lane.displayName}.`,
-        );
+        const connectionText = restored
+          ? `resumed session ${resumeSessionId.slice(0, 8)} - context preserved`
+          : `connected to ${lane.displayName}.`;
+        this.appendNotice(lane, {
+          source: 'session', action: restored ? 'resumed' : 'connected', tone: 'info',
+          subject: restored ? `${resumeSessionId.slice(0, 8)} - context preserved` : lane.displayName,
+        }, connectionText);
       } else {
         const { init, session } = await client.initialize(async (laneInit) => {
           return this.mcpServersForLane(lane, laneInit);
@@ -8123,10 +8150,15 @@ export class AcpHarnessView implements ContentView {
         });
         this.configureLaneFromInfo(lane, init, session);
         this.setLaneStatus(lane, 'idle');
-        this.appendTranscript(lane, 'system', `connected to ${lane.displayName}.`);
+        this.appendNotice(lane, {
+          source: 'session', action: 'connected', tone: 'info', subject: lane.displayName,
+        }, `connected to ${lane.displayName}.`);
       }
       if (this.harnessMemoryWarning) {
-        this.appendTranscript(lane, 'system', `warning: harness memory unavailable: ${this.harnessMemoryWarning}`);
+        this.appendNotice(lane, {
+          source: 'system', action: 'memory off', tone: 'attention',
+          subject: this.harnessMemoryWarning,
+        }, `warning: harness memory unavailable: ${this.harnessMemoryWarning}`);
       }
     } catch (e) {
       if (lane.spawnEpoch !== spawnEpoch) {
@@ -8135,7 +8167,9 @@ export class AcpHarnessView implements ContentView {
       }
       this.setLaneStatus(lane, 'error');
       lane.error = String(e);
-      this.appendTranscript(lane, 'system', `error: ${String(e)}`);
+      this.appendNotice(lane, {
+        source: 'session', action: 'failed', tone: 'fault', subject: String(e),
+      }, `error: ${String(e)}`);
     }
     this.render();
   }
@@ -8452,11 +8486,11 @@ export class AcpHarnessView implements ContentView {
         // wall-clock window) and surface the downgrade so it isn't silent.
         const pending = lane.pendingModelSwitch;
         if (pending && pending.prevModeId && event.modeId !== pending.prevModeId) {
-          this.appendTranscript(
-            lane,
-            'system',
-            `model switch: mode downgraded to "${lane.currentMode.name}" — "${pending.pickedName}" does not support "${pending.prevModeId}"`,
-          );
+          const downgradeText = `model switch: mode downgraded to "${lane.currentMode.name}" — "${pending.pickedName}" does not support "${pending.prevModeId}"`;
+          this.appendNotice(lane, {
+            source: 'model', action: 'mode downgraded', tone: 'attention',
+            subject: `"${lane.currentMode.name}" — "${pending.pickedName}" does not support "${pending.prevModeId}"`,
+          }, downgradeText);
         }
         this.refreshMetricsRender();
         // The mode chip lives in the lane header, not the metrics panel — leave
@@ -8768,7 +8802,9 @@ export class AcpHarnessView implements ContentView {
         this.setLaneStatus(lane, 'error');
         lane.error = message;
         lane.pendingTurnExtractions = [];
-        this.appendTranscript(lane, 'system', `prompt failed: ${message}`);
+        this.appendNotice(lane, {
+          source: 'prompt', action: 'failed', tone: 'fault', subject: message,
+        }, `prompt failed: ${message}`);
       }
       this.updateComposerTick();
       this.render();
@@ -8792,7 +8828,10 @@ export class AcpHarnessView implements ContentView {
     const next = lane.queuedPrompts.shift();
     if (!next) return;
     const reArm = (): void => {
-      this.appendTranscript(lane, 'system', `queued prompt not sent: ${truncate(next.text, 80)}`);
+      const preview = truncate(next.text, 80);
+      this.appendNotice(lane, {
+        source: 'prompt', action: 'not sent', tone: 'attention', subject: preview,
+      }, `queued prompt not sent: ${preview}`);
       this.render();
       if (lane.status === 'idle' && lane.queuedPrompts.length > 0) {
         queueMicrotask(() => this.maybeDrainPromptQueue(lane));
@@ -8826,7 +8865,9 @@ export class AcpHarnessView implements ContentView {
     if (lane?.status === 'starting') {
       this.setLaneStatus(lane, 'error');
       lane.error = message;
-      this.appendTranscript(lane, 'system', `command failed: ${message}`);
+      this.appendNotice(lane, {
+        source: 'prompt', action: 'command failed', tone: 'fault', subject: message,
+      }, `command failed: ${message}`);
     }
     this.flashChip(message);
     this.render();
@@ -9040,7 +9081,10 @@ export class AcpHarnessView implements ContentView {
       // exited mid-turn) — distinguish that from a user-initiated cancel so a
       // dead lane never reads as "cancelled without reason". The full crash
       // detail (stderr tail) arrives separately on the `prompt failed` line.
-      this.appendTranscript(lane, 'system', reason ? `turn ended — ${reason}` : 'turn cancelled');
+      this.appendNotice(lane, {
+        source: 'turn', action: reason ? 'ended' : 'cancelled',
+        tone: reason ? 'fault' : 'info', subject: reason ?? 'cancelled by user',
+      }, reason ? `turn ended — ${reason}` : 'turn cancelled');
     }
     lane.pendingTurnExtractions = [];
     lane.pendingPermissions = [];
@@ -9102,7 +9146,9 @@ export class AcpHarnessView implements ContentView {
     this.cancelPendingReviewsForLane(lane);
     this.updateComposerTick();
     if (stopReason !== 'end_turn' && stopReason !== 'cancelled') {
-      this.appendTranscript(lane, 'system', `turn ended: ${stopReason}`);
+      this.appendNotice(lane, {
+        source: 'turn', action: 'ended', tone: 'attention', subject: stopReason,
+      }, `turn ended: ${stopReason}`);
     }
     this.patchLaneTurnChrome(lane);
     if (repairPrompt === null && lane.draft.trim() && lane.queuedPrompts.length === 0) {
@@ -9181,7 +9227,9 @@ export class AcpHarnessView implements ContentView {
   ): void {
     if (questions.length === 0) {
       if (lane.client) void lane.client.respondQuestion({ requestId, wire: 'grok' }, { kind: 'cancel' });
-      this.appendTranscript(lane, 'system', 'ask_user_question: no questions provided');
+      this.appendNotice(lane, {
+        source: 'ask', action: 'empty request', tone: 'fault', subject: 'no questions provided',
+      }, 'ask_user_question: no questions provided');
       return;
     }
     // Grok replaces its active question (Rust already answered the old one
@@ -9205,7 +9253,9 @@ export class AcpHarnessView implements ContentView {
     const form = parseElicitationForm(message, schema);
     if (!form) {
       if (lane.client) void lane.client.respondQuestion({ requestId, wire: 'elicitation' }, { kind: 'decline' });
-      this.appendTranscript(lane, 'system', `elicitation declined: unsupported form (${message || 'no message'})`);
+      this.appendNotice(lane, {
+        source: 'ask', action: 'unsupported form', tone: 'attention', subject: message || 'no message',
+      }, `elicitation declined: unsupported form (${message || 'no message'})`);
       return;
     }
     this.queueQuestion(lane, {
@@ -9296,7 +9346,9 @@ export class AcpHarnessView implements ContentView {
         ask.transcriptItem.question.decision = 'failed';
         ask.transcriptItem.question.decisionLabel = 'failed';
       }
-      this.appendTranscript(lane, 'system', `ask reply failed: ${String(e)}`);
+      this.appendNotice(lane, {
+        source: 'ask', action: 'reply failed', tone: 'fault', subject: String(e),
+      }, `ask reply failed: ${String(e)}`);
       this.updateComposerTick();
       this.render();
       this.refreshOrchestratorConsole();
@@ -9403,7 +9455,9 @@ export class AcpHarnessView implements ContentView {
         payload.decision = 'failed';
         payload.decisionLabel = '✗ approval expired';
       }
-      this.appendTranscript(lane, 'system', `remote command approval failed: ${String(e)}`);
+      this.appendNotice(lane, {
+        source: 'remote', action: 'approval failed', tone: 'fault', subject: String(e),
+      }, `remote command approval failed: ${String(e)}`);
       this.render();
     }
   }
@@ -9480,7 +9534,7 @@ export class AcpHarnessView implements ContentView {
       lane.pendingPermissions.unshift(permission);
       this.setLaneStatus(lane, 'needs_permission');
       this.updatePermissionDecision(permission, 'failed', 'permission reply failed');
-      this.appendTranscript(lane, 'system', `permission reply failed: ${String(e)}`);
+      this.appendPermissionReplyFailure(lane, e);
       this.updateComposerTick();
       this.render();
       this.refreshOrchestratorConsole();
@@ -9502,11 +9556,13 @@ export class AcpHarnessView implements ContentView {
     if (!option) {
       const diagnostic = `Timeline tool ${toolName} cannot run: adapter supplied no accept permission option`;
       this.updatePermissionDecision(permission, 'failed', 'Timeline unavailable', diagnostic);
-      this.appendTranscript(lane, 'system', diagnostic);
+      this.appendNotice(lane, {
+        source: 'perm', action: 'timeline off', tone: 'fault', subject: diagnostic,
+      }, diagnostic);
       try {
         await lane.client.respondPermission(permission.requestId, null);
       } catch (e) {
-        this.appendTranscript(lane, 'system', `permission reply failed: ${String(e)}`);
+        this.appendPermissionReplyFailure(lane, e);
       }
       this.render();
       return;
@@ -9520,7 +9576,7 @@ export class AcpHarnessView implements ContentView {
       this.updatePermissionDecision(permission, 'auto_allowed', `✓ ${toolName} (harness auto-allow)`, reason);
     } catch (e) {
       this.updatePermissionDecision(permission, 'failed', 'permission reply failed');
-      this.appendTranscript(lane, 'system', `permission reply failed: ${String(e)}`);
+      this.appendPermissionReplyFailure(lane, e);
     }
     this.render();
   }
@@ -9653,7 +9709,7 @@ export class AcpHarnessView implements ContentView {
       );
     } catch (e) {
       this.updatePermissionDecision(permission, 'failed', 'permission reply failed');
-      this.appendTranscript(lane, 'system', `permission reply failed: ${String(e)}`);
+      this.appendPermissionReplyFailure(lane, e);
     }
     this.render();
   }
@@ -9881,7 +9937,7 @@ export class AcpHarnessView implements ContentView {
       );
     } catch (e) {
       this.updatePermissionDecision(permission, 'failed', 'permission reply failed');
-      this.appendTranscript(lane, 'system', `permission reply failed: ${String(e)}`);
+      this.appendPermissionReplyFailure(lane, e);
     }
     this.render();
   }
@@ -11085,7 +11141,10 @@ export class AcpHarnessView implements ContentView {
     const lane = this.createLane(this.nextLaneIndex++, state.backendId, `${label}-${nextLaneNumber(label)}`);
     lane.client = client;
     this.setLaneStatus(lane, 'starting');
-    lane.transcript = [{ id: makeId(), kind: 'system', text: `${mode === 'resume' ? 'resuming' : 'loading'} ${shortId(session.sessionId)}...` }];
+    lane.transcript = [{
+      id: makeId(), kind: 'system', text: `${mode === 'resume' ? 'resuming' : 'loading'} ${shortId(session.sessionId)}...`,
+      notice: { source: 'session', action: mode === 'resume' ? 'resuming' : 'loading', tone: 'info', subject: shortId(session.sessionId) },
+    }];
     this.lanes.push(lane);
     this.publishStream(lane, 'lane_opened', {
       backendId: lane.backendId,
@@ -11122,7 +11181,10 @@ export class AcpHarnessView implements ContentView {
       this.setLaneStatus(lane, 'idle');
       this.sealStreaming(lane);
       this.markBackgroundCardsLastReported(lane); // spec 370: replay is over
-      this.appendTranscript(lane, 'system', `${mode === 'resume' ? 'resumed' : 'loaded'} ${shortId(session.sessionId)}.`);
+      this.appendNotice(lane, {
+        source: 'session', action: mode === 'resume' ? 'resumed' : 'loaded',
+        tone: 'info', subject: shortId(session.sessionId),
+      }, `${mode === 'resume' ? 'resumed' : 'loaded'} ${shortId(session.sessionId)}.`);
     } catch (e) {
       if (lane.spawnEpoch !== spawnEpoch) {
         await client.dispose();
@@ -11130,7 +11192,9 @@ export class AcpHarnessView implements ContentView {
       }
       this.setLaneStatus(lane, 'error');
       lane.error = errorText(e);
-      this.appendTranscript(lane, 'system', `session ${mode} failed: ${errorText(e)}`);
+      this.appendNotice(lane, {
+        source: 'session', action: `${mode} failed`, tone: 'fault', subject: errorText(e),
+      }, `session ${mode} failed: ${errorText(e)}`);
     }
     this.render();
   }
@@ -11325,10 +11389,14 @@ export class AcpHarnessView implements ContentView {
     lane.pendingTurnExtractions = [];
     try {
       await lane.client.cancel();
-      this.appendTranscript(lane, 'system', 'cancel requested');
+      this.appendNotice(lane, {
+        source: 'turn', action: 'cancel requested', tone: 'info', subject: 'waiting for acknowledgement',
+      }, 'cancel requested');
       this.armCancelEscalation(lane);
     } catch (e) {
-      this.appendTranscript(lane, 'system', `cancel failed: ${String(e)}`);
+      this.appendNotice(lane, {
+        source: 'turn', action: 'cancel failed', tone: 'fault', subject: String(e),
+      }, `cancel failed: ${String(e)}`);
     }
     this.render();
   }
@@ -11347,11 +11415,11 @@ export class AcpHarnessView implements ContentView {
       if (!this.lanes.includes(lane) || lane.cancelRequestedAt !== stamp) return;
       if (lane.status !== 'busy' && lane.status !== 'needs_permission') return;
       lane.cancelUnacked = true;
-      this.appendTranscript(
-        lane,
-        'system',
-        `cancel not acknowledged for ${CANCEL_ESCALATION_MS / 1000}s - Ctrl+C again to force-restart (resumes this session)`,
-      );
+      const cancellationText = `cancel not acknowledged for ${CANCEL_ESCALATION_MS / 1000}s - Ctrl+C again to force-restart (resumes this session)`;
+      this.appendNotice(lane, {
+        source: 'turn', action: 'cancel stalled', tone: 'attention',
+        subject: `${CANCEL_ESCALATION_MS / 1000}s - Ctrl+C again to force-restart (resumes this session)`,
+      }, cancellationText);
       this.render();
     }, CANCEL_ESCALATION_MS);
   }
@@ -11379,7 +11447,9 @@ export class AcpHarnessView implements ContentView {
     const resumeSessionId = lane.sessionId;
     this.uiGenerations.delete(lane.id);
     lane.spawnEpoch += 1;
-    this.appendTranscript(lane, 'system', 'force restart: cancel unacknowledged');
+    this.appendNotice(lane, {
+      source: 'session', action: 'force restart', tone: 'attention', subject: 'cancel unacknowledged',
+    }, 'force restart: cancel unacknowledged');
     // The hung turn dies with the process — seal its streaming rows and drop
     // this-turn pointers, the work the orphaned prompt handler now skips.
     this.sealStreaming(lane);
@@ -11519,7 +11589,10 @@ export class AcpHarnessView implements ContentView {
     clearToolTranscriptRetention(lane);
     this.updateToolTick();
     this.imageViewer.refresh();
-    lane.transcript.push({ id: makeId(), kind: 'system', text: `starting fresh ${lane.displayName}...` });
+    lane.transcript.push({
+      id: makeId(), kind: 'system', text: `starting fresh ${lane.displayName}...`,
+      notice: { source: 'session', action: 'starting fresh', tone: 'info', subject: lane.displayName },
+    });
     lane.usage = null;
     lane.lastTurnTokens = null;
     lane.sessionId = null;
@@ -11738,11 +11811,11 @@ export class AcpHarnessView implements ContentView {
       bail(`handoff bind failed: ${errorText(e)}`);
       return;
     }
-    this.appendTranscript(
-      lane,
-      'system',
-      `resumed ${resolved.id} · ${resolved.author}@${resolved.host} · ${formatHandoffAge(Date.now() - resolved.updatedAt)} · ${resolved.source}`,
-    );
+    const handoffSubject = `${resolved.id} · ${resolved.author}@${resolved.host} · ${formatHandoffAge(Date.now() - resolved.updatedAt)} · ${resolved.source}`;
+    const handoffText = `resumed ${handoffSubject}`;
+    this.appendNotice(lane, {
+      source: 'handoff', action: 'resumed', tone: 'info', subject: handoffSubject,
+    }, handoffText);
     this.scheduleLaneRender(lane);
     // Lane is already reserved (busy) — send directly, as #review does.
     await this.dispatchTurn(lane, handoffResumePrompt(resolved));
@@ -12651,7 +12724,9 @@ export class AcpHarnessView implements ContentView {
       }
     } catch (e) {
       const label = this.remoteRuntimeId ? 'shell_kill' : 'kill_shell';
-      this.appendTranscript(lane, 'system', `${label} failed: ${String(e)}`);
+      this.appendNotice(lane, {
+        source: 'shell', action: `${label} failed`, tone: 'fault', subject: String(e),
+      }, `${label} failed: ${String(e)}`);
       this.render();
     }
   }
@@ -14149,11 +14224,19 @@ export class AcpHarnessView implements ContentView {
     return item;
   }
 
-  /** Spec 371: append a subsystem notice — its portable line as `text`, the payload for the row. */
-  private appendNotice(lane: HarnessLane, notice: HarnessNotice): HarnessTranscriptItem {
-    const item = this.appendTranscript(lane, 'system', noticeText(notice));
+  /** Spec 371: append a subsystem notice. Legacy call sites can preserve their
+   *  existing portable text while supplying the visual source/action payload. */
+  private appendNotice(lane: HarnessLane, notice: HarnessNotice, portableText = noticeText(notice)): HarnessTranscriptItem {
+    const item = this.appendTranscript(lane, 'system', portableText);
     item.notice = notice;
     return item;
+  }
+
+  private appendPermissionReplyFailure(lane: HarnessLane, error: unknown): void {
+    const reason = String(error);
+    this.appendNotice(lane, {
+      source: 'perm', action: 'reply failed', tone: 'fault', subject: reason,
+    }, `permission reply failed: ${reason}`);
   }
 
   /** spec 278: drop a transcript row (a steer that missed and was re-queued). */
@@ -14185,7 +14268,9 @@ export class AcpHarnessView implements ContentView {
       this.appendProviderError(lane, providerError);
       return;
     }
-    this.appendTranscript(lane, 'system', fallbackText);
+    this.appendNotice(lane, {
+      source: 'system', action: 'error', tone: 'fault', subject: raw,
+    }, fallbackText);
   }
 
   private appendProviderError(lane: HarnessLane, payload: ProviderErrorPayload): HarnessTranscriptItem {
@@ -14290,7 +14375,9 @@ export class AcpHarnessView implements ContentView {
     try {
       await lane.client.respondFsWrite(item.fsReview.requestId, decision === 'accepted');
     } catch (e) {
-      this.appendTranscript(lane, 'system', `fs_write reply failed: ${String(e)}`);
+      this.appendNotice(lane, {
+        source: 'write', action: 'reply failed', tone: 'fault', subject: String(e),
+      }, `fs_write reply failed: ${String(e)}`);
     }
     this.publishStream(lane, 'permission_resolved', {
       requestId: item.fsReview.requestId,
@@ -16623,8 +16710,8 @@ export class AcpHarnessView implements ContentView {
       flashChip: (text) => view.flashChip(text),
       subscribeLaneBus: (handler) => view.laneBus.subscribe(handler),
       invalidate: (region) => view.invalidate(region),
-      appendTranscript: (lane, kind, text) => {
-        view.appendTranscript(lane, kind, text);
+      appendNotice: (lane, notice, text) => {
+        view.appendNotice(lane, notice, text);
         view.scheduleLaneRender(lane);
       },
       reserveCommandTurn: (lane, label) => view.reserveCommandTurn(lane, label),
@@ -16681,6 +16768,7 @@ export class AcpHarnessView implements ContentView {
       invalidate: (region) => view.invalidate(region),
       sealStreaming: (lane) => view.sealStreaming(lane),
       appendTranscript: (lane, kind, text, metadata) => view.appendTranscript(lane, kind, text, metadata),
+      appendNotice: (lane, notice, text) => { view.appendNotice(lane, notice, text); },
       removeTranscriptItem: (lane, itemId) => view.removeTranscriptItem(lane, itemId),
       steerBlocks: (text, images) => view.buildUserBlocks(text, images),
       finishTurn: (lane, stopReason, reason) => view.finishTurn(lane, stopReason, reason),

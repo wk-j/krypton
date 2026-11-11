@@ -50,8 +50,8 @@ function providerError(raw: string): GalleryInput {
   return item({ kind: 'provider_error', text: payload.headline, providerError: payload });
 }
 
-function system(text: string): GalleryInput {
-  return item({ kind: 'system', text });
+function system(text: string, notice?: HarnessNotice): GalleryInput {
+  return item({ kind: 'system', text, ...(notice ? { notice } : {}) });
 }
 
 export const TURN_ENTRIES: readonly GalleryEntry[] = [
@@ -165,24 +165,41 @@ export const TURN_ENTRIES: readonly GalleryEntry[] = [
     id: 'turn-stop',
     title: 'Stop and cancel notices',
     group: 'turn',
-    summary: 'The line a turn leaves when it does not end normally.',
+    summary: 'The notice a turn leaves when it does not end normally.',
     components: ['system-row'],
     scenario: null,
     states: [
-      { label: 'cancelled', inputs: [system('turn cancelled')] },
-      { label: 'agent exited', inputs: [system('turn ended — the agent process exited (code 1)')] },
-      { label: 'max tokens', inputs: [system('turn ended: max_tokens')] },
-      { label: 'refusal', inputs: [system('turn ended: refusal')] },
+      { label: 'cancelled', inputs: [system('turn cancelled', { source: 'turn', action: 'cancelled', tone: 'info', subject: 'cancelled by user' })] },
+      { label: 'agent exited', inputs: [system('turn ended — the agent process exited (code 1)', { source: 'turn', action: 'ended', tone: 'fault', subject: 'the agent process exited (code 1)' })] },
+      { label: 'max tokens', inputs: [system('turn ended: max_tokens', { source: 'turn', action: 'ended', tone: 'attention', subject: 'max_tokens' })] },
+      { label: 'refusal', inputs: [system('turn ended: refusal', { source: 'turn', action: 'ended', tone: 'attention', subject: 'refusal' })] },
     ],
   },
   {
     id: 'turn-error',
     title: 'Error',
     group: 'turn',
-    summary: 'A turn error no provider rule recognises, as plain text.',
+    summary: 'An unclassified turn error and an older untyped system line.',
     components: ['system-row'],
     scenario: null,
-    states: [{ label: 'unclassified', inputs: [system('error: session/prompt failed: no session 7f3a')] }],
+    states: [
+      { label: 'unclassified', inputs: [system('error: session/prompt failed: no session 7f3a', { source: 'system', action: 'error', tone: 'fault', subject: 'session/prompt failed: no session 7f3a' })] },
+      { label: 'older system text', inputs: [system('[legacy] status: no structured payload')] },
+    ],
+  },
+  {
+    id: 'turn-lesson',
+    title: 'Lesson write',
+    group: 'turn',
+    summary: 'A lesson update at the store limit, as the writing lane sees it.',
+    components: ['system-row'],
+    scenario: null,
+    states: [
+      { label: 'updated', inputs: [system('[lesson] updated: thai-tech-docs-no-kateeka — ตอบเป็นภาษาไทย (30/30)', {
+        source: 'lesson', action: 'updated', tone: 'info',
+        subject: 'thai-tech-docs-no-kateeka — ตอบเป็นภาษาไทย (30/30)',
+      })] },
+    ],
   },
   {
     id: 'turn-provider-error',

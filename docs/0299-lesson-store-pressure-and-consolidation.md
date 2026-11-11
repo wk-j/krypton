@@ -48,8 +48,9 @@ before it hits the wall and what it injects is always a whole rule.
    the policy and listed in `INDEX.md` as oversized with the fix, instead of
    being truncated. A half-sentence rule can invert its own meaning.
 5. **Visible count.** `acp-lessons-changed` carries `active` / `cap`, so the
-   transcript line reads `[lesson] created: slug — title (27/30)` and the human
-   sees pressure without opening `INDEX.md`.
+   transcript notice reads `LESSON  CREATED  slug — title (27/30)` and the human
+   sees pressure without opening `INDEX.md`. Text-only readers get
+   `[lesson] created: slug — title (27/30)`.
 
 Consolidation stays model-driven. Krypton decides *when* to consolidate; the lane
 decides *what* to merge. `#lesson` remains the human-triggered path and gains
@@ -179,7 +180,7 @@ at the wall.
 4. The lane reads the notice in the same tool result and, on this turn,
    re-records onto an existing slug or retires one — that write carries no
    second notice.
-5. The transcript line shows `(27/30)`; the policy hash changes, so every lane
+5. The transcript notice shows `(27/30)`; the policy hash changes, so every lane
    sees the consolidated set on its next turn.
 6. At 30, a new slug is still refused — now with the whole store listed.
 ```

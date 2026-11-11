@@ -17,20 +17,22 @@ recognised; its prefix is parsed out and the label becomes `event`.
 ## Solution
 
 A subsystem row carries a structured `notice` — `{ source, action, tone, subject }` — set by the
-caller. The row label names the source (`TRIAGE`, `XENON`, `REVIEW`, `USAGE`, `EVENT`) in the
-engraved silk every row label uses. The body opens with the action as a flat-ink legend, with a
+caller. The row label names the source (`TRIAGE`, `XENON`, `REVIEW`, `USAGE`, `LESSON`, `EVENT`,
+and other producer-owned sources) in the engraved silk every row label uses. The body opens with the action as a flat-ink legend, with a
 status LED before it when the tone asks for the human (amber: weigh in; fault: it failed), then the
 subject in body ink. This is the tool row's grammar (label · LED · kind legend · subject). One
-builder writes `item.text` as `[source] action: subject`, so Live Assist, the orchestrator feed and
-the control API keep a complete line. `[inter-lane]` moves onto the payload and prefix parsing goes.
+builder writes `item.text` as `[source] action: subject` for new notices; migrated
+producers retain their exact previous text, so Live Assist, the orchestrator feed and
+the control API keep complete lines. `[inter-lane]` moves onto the payload and prefix parsing goes.
 
 ## Research
 
-- **Call sites** (all in `src/acp/acp-harness-view.ts`): `[inter-lane]` 2032 (from
+- **Original call sites** (all in `src/acp/acp-harness-view.ts`): `[inter-lane]` 2032 (from
   `inter-lane.ts` `appendSystemNotice`: `peer X cancelled` / `closed`); `[review] recorded` 3311;
   `[triage] flagged for review` 3361; `[review thread]` 3642; `[triage] redirect failed` 5733;
   `[xenon]` push 7205 / push failed 7213 / token 7468 / status 7502 / handoff auto-push 9833 /
   review auto-push 9865; `[usage]` 7423; unbracketed `xenon: … - local handoffs only` 11872.
+  A later lesson-write fix added `acp-lessons-changed` to this notice path.
 - **Renderer**: `system-row/index.ts:33-49` recognises only `[inter-lane]`; `:98` writes
   `body.textContent = text`. `transcript/rows.ts:53` routes the event variant before the
   `item.diff` branch.
@@ -69,12 +71,13 @@ transcript).
 
 | File | Change |
 |------|--------|
-| `src/acp/harness-notice.ts` (new) | `HarnessNotice` types, `NOTICE_LABEL`, `noticeText()` |
+| `src/acp/harness-notice.ts` (new) | `HarnessNotice` types, `NOTICE_LABEL` (including the later `lesson` source), `noticeText()` |
 | `src/acp/harness-view-types.ts` | `HarnessTranscriptItem.notice?: HarnessNotice` |
-| `src/acp/acp-harness-view.ts` | `appendNotice()`; the 13 call sites above use it |
+| `src/acp/acp-harness-view.ts` | `appendNotice()`; the original 13 call sites and the later lesson-write event use it |
 | `src/acp/components/system-row/index.ts` | Paint the notice; drop the `[inter-lane]` parse |
 | `src/acp/components/system-row/system-row.css` | Action legend, LED, subject; light scheme |
 | `src/acp/components/system-row/system-row.test.ts` | Event tests on the payload; notice tests |
+| `src/loopback/surfaces/harness/examples/turn.ts` | Preview turn, error and lesson notices alongside the older untyped fallback |
 | `src/acp/components/transcript/rows.ts` | Route `notice` rows where `event` rows went |
 | `src/acp/xenon-push.ts` | `pushTone(report)` beside `describePush()` |
 | `src/acp/review-auto-push.test.ts` | Assert the auto-push notice (source, action, tone) |
@@ -86,7 +89,10 @@ transcript).
 
 ```ts
 // src/acp/harness-notice.ts
-export type NoticeSource = 'inter-lane' | 'triage' | 'xenon' | 'review' | 'usage';
+export type NoticeSource = 'inter-lane' | 'triage' | 'xenon' | 'review' | 'usage'
+  | 'lesson' | 'system' | 'peer' | 'docs' | 'remote' | 'session' | 'device'
+  | 'model' | 'prompt' | 'turn' | 'ask' | 'perm' | 'steer' | 'handoff'
+  | 'shell' | 'write';
 /** info: no LED. attention: amber LED, the human should weigh in. fault: fault LED, it failed. */
 export type NoticeTone = 'info' | 'attention' | 'fault';
 export interface HarnessNotice {
@@ -100,9 +106,9 @@ export const NOTICE_LABEL: Record<NoticeSource, string>; // 'inter-lane' → 'ev
 export function noticeText(n: HarnessNotice): string;   // `[source] action: subject` / `[source] subject`
 ```
 
-`AcpHarnessView.appendNotice(lane, notice)` calls `appendTranscript(lane, 'system',
-noticeText(notice))` and sets `item.notice` before the row's first paint. A notice is immutable
-once appended.
+`AcpHarnessView.appendNotice(lane, notice, portableText?)` calls `appendTranscript(lane,
+'system', portableText ?? noticeText(notice))` and sets `item.notice` before the row's first
+paint. A notice is immutable once appended.
 
 ### Call-site mapping
 
@@ -120,6 +126,16 @@ once appended.
 | handoff / review auto-push | xenon | `handoff auto-push` / `review auto-push` | fault on error or a failed/blocked item; attention when Xenon is not ready; else info | as today |
 | resume with Xenon unreachable | xenon | `resume` | fault | `<reason> — local handoffs only` |
 | `#usage` | usage | — | info | `describeUsage(rollup)` |
+| `acp-lessons-changed` | lesson | `created` / `updated` / `retired` | info | `<slug> — <title> (active/cap)` when counts are usable |
+| Lane start, connection, resume/load, restart | session | lifecycle verb | info; attention on fallback; fault on failure | lane or session identity, with reason where needed |
+| Mention and peer auto-accept | peer | `sent` / `partial` / `auto-accept` | info or attention | recipients, failed recipients, and prompt preview |
+| Browser feedback and artifact request | review / docs | `feedback` / `requested` | info | comment count and target |
+| Remote connection and approval | remote | `connection lost` / `approval failed` | fault | outcome or error |
+| Computer capability and model change | device / model | `unavailable` / `mode downgraded` | fault or attention | reason |
+| Prompt, turn, question, permission and steer paths | prompt / turn / ask / perm / steer | operation and result | info, attention or fault | result detail |
+| Handoff resume, shell kill, file-write reply | handoff / shell / write | operation and result | info or fault | target or error |
+| Unclassified transport error and harness memory warning | system | `error` / `memory off` | fault or attention | diagnostic |
+| Review pass lifecycle and round result | review | stage or result | info, attention or fault | reviewers and verdict summary |
 
 `#usage` with a recorded rollup still renders `UsageRow` (`item.usage` routes first).
 
@@ -127,7 +143,7 @@ once appended.
 
 ```
 1. A subsystem calls appendNotice(lane, { source, action, tone, subject })
-2. appendTranscript stores text = noticeText(notice); appendNotice sets item.notice
+2. appendTranscript stores the portable text; appendNotice sets item.notice
 3. rowKindFor: kind 'system' with notice → SystemRow (before the item.diff branch, as event did)
 4. SystemRow: label = NOTICE_LABEL[source]; body = [action legend][subject]
 5. Live Assist, orchestrator feed, control API read item.text unchanged in shape
@@ -140,8 +156,10 @@ once appended.
   XENON  ● PUSH FAILED  network unreachable
   XENON  PUSH  krypton: 3 pushed · 1 unchanged
  REVIEW  RECORDED  auth refactor — 0 blockers, 2 warnings across 2 reviewers
+ LESSON  UPDATED  thai-tech-docs-no-kateeka — ตอบเป็นภาษาไทย (30/30)
   EVENT  peer OMP-2 cancelled
-    SYS  turn ended — max_tokens
+   TURN  ● ENDED  max_tokens
+ SYSTEM  STATUS  older system message without a notice payload
 ```
 
 - Label: the shared `.acp-harness__msg-label` with `NOTICE_LABEL[source]`; no new label style.
@@ -162,18 +180,21 @@ once appended.
 - **No action** (`inter-lane`, `usage`): the body is the subject alone, under the source label.
 - **Multi-line subject** (`#xenon status`, a push with failed items): the first line follows the
   legend, the rest start at the body's left edge.
-- **System rows with no subsystem** (`turn ended …`, `permission reply failed: …`): no notice; the
-  plain `sys` row is unchanged.
+- **Lifecycle and error rows** (`turn ended …`, `permission reply failed: …`): their
+  producers supply a source, action and tone while preserving their original `text`.
 - **Hidden-rows indicator**: unchanged; it is synthetic and has no notice.
 - **Sealed rows**: a notice row is static (`live = false`) and the notice never changes, so the row
   paints once (AGENTS.md constraint 10). `bodyDeps` lists `item.notice`.
-- **Remote runtime on an older build**: its rows arrive without `notice` and render as plain `sys`
-  rows with the bracket text, as today.
+- **Remote runtime on an older build**: its rows may arrive without `notice`. The shared
+  row renders `SYSTEM STATUS` plus the original text as a neutral fallback; it never parses
+  a bracket tag. The hidden-rows indicator and typed command rows retain their own UI.
+- **Lesson writes**: `lessonChangeLine()` keeps the portable `[lesson] action: subject`
+  text. The local transcript uses `item.notice` for the `LESSON` label and action legend;
+  unusable `active` / `cap` values omit the count from both forms.
 
 ## Out of Scope
 
 - Live Assist styling: it keeps printing `text` under `SYSTEM`.
-- Giving a notice to system lines no subsystem raises (`turn ended …`, `permission reply failed: …`).
 - New keys or actions on a notice row (for example opening the triage queue from it).
 - Changing what any subsystem reports; only how the row presents it.
 
@@ -183,7 +204,7 @@ once appended.
   auto-pushes share one rule.
 - `deliverRedirect()` may return no `reason`; the triage `redirect failed` subject then reads
   `not delivered` instead of the old `undefined`.
-- Verified by rendering real `SystemRow` DOM with the shipped sheets in `WKWebView`, dark and light.
+- The original notice treatment was verified with real `SystemRow` DOM in `WKWebView`, dark and light. The later lesson/lifecycle expansion has DOM tests and a frontend build; its new states have not had another native visual pass.
 
 ## Resources
 

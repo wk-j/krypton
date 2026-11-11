@@ -658,7 +658,7 @@
   cursor: zoom-in;
 }
 
-/* Card-ish rows shrink to 0.88em. A plain `sys` row does NOT — it is prose the
+/* Card-ish rows shrink to 0.88em. A fallback `system` row does NOT — it is prose the
    user reads, so it keeps the transcript's body size. Variants that carry
    `--system` as their base class and want to be smaller set their own size:
    `--usage` 0.88em, `--harness-event` 0.86em, `--hidden-indicator` 0.78em. */

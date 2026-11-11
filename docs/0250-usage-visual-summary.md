@@ -125,8 +125,8 @@ Live Assist, diagnostics, and any renderer that does not understand `usage`.
 5. The renderer creates semantic DOM; CSS supplies the responsive layout.
 6. Live Assist and other plain-text projections continue reading `item.text`.
 
-No-turn and recording-disabled responses remain plain system messages. They do
-not render a large empty card.
+No-turn and recording-disabled responses render as compact `USAGE` notices.
+They do not render a large empty card.
 
 ### UI
 

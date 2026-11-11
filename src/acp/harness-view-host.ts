@@ -7,6 +7,7 @@
 
 import type { CoordinatorDrainContext, MentionFanOutResult, MentionFanOutTarget } from './inter-lane';
 import type { JournalKind } from './journal';
+import type { HarnessNotice } from './harness-notice';
 import type { GithubTicketReference, IssueBinding } from './harness-view-types';
 import type { HarnessLane, HarnessTranscriptItem, StagedImage } from './harness-view-types';
 import type { ReviewSubject } from './review';
@@ -106,7 +107,7 @@ export interface HarnessReviewLoopHost extends HarnessViewHost {
   readonly projectDir: string | null;
   subscribeLaneBus(handler: (event: LaneBusEvent) => void): () => void;
   invalidate(region: HarnessRegion): void;
-  appendTranscript(lane: HarnessLane, kind: HarnessTranscriptItem['kind'], text: string): void;
+  appendNotice(lane: HarnessLane, notice: HarnessNotice, portableText: string): void;
   reserveCommandTurn(lane: HarnessLane, label: string): void;
   releaseReservedTurn(lane: HarnessLane, next?: 'idle' | 'awaiting_peer'): void;
   enqueueSystemPrompt(
@@ -186,6 +187,7 @@ export interface HarnessSteerHost extends HarnessViewHost {
     text: string,
     metadata?: Pick<HarnessTranscriptItem, 'steer' | 'voice'> & { stagedImages?: StagedImage[] },
   ): HarnessTranscriptItem;
+  appendNotice(lane: HarnessLane, notice: HarnessNotice, portableText: string): void;
   removeTranscriptItem(lane: HarnessLane, itemId: string): void;
   /** The user's own blocks (images, then text) — no lane-context packet. */
   steerBlocks(text: string, images: StagedImage[]): ContentBlock[];

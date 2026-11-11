@@ -267,13 +267,17 @@ export function roundVerdict(summary: ReviewRoundSummary): 'pass' | 'fail' | 'pa
 }
 
 /** `round 2/3: FAIL · 2 blockers (Grok-1 FAIL 2 · Codex-1 PASS)` */
-export function roundResultLine(summary: ReviewRoundSummary, maxRounds: number): string {
+export function roundResultSubject(summary: ReviewRoundSummary, maxRounds: number): string {
   const overall = roundVerdict(summary).toUpperCase();
   const blockers = blockerCount(summary);
   const per = summary.results.map((r) => `${r.reviewer} ${verdictWord(r)}`).join(' · ');
-  return `review pass · round ${summary.round}/${maxRounds}: ${overall} · ${blockers} blocker${
+  return `round ${summary.round}/${maxRounds}: ${overall} · ${blockers} blocker${
     blockers === 1 ? '' : 's'
   } (${per})`;
+}
+
+export function roundResultLine(summary: ReviewRoundSummary, maxRounds: number): string {
+  return `review pass · ${roundResultSubject(summary, maxRounds)}`;
 }
 
 function formatFinding(f: ReviewFinding): string {

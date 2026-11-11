@@ -33,7 +33,8 @@ spot-checked by hand:
 - **No directive state is persisted.** `activeDirectiveId`, `pendingDirectiveChange`,
   `turnDirectiveOverride` and `previousDirectiveId` live only on the in-memory `HarnessLane`. No
   session store, snapshot or telemetry record carries them, so there is nothing to migrate. Old
-  transcript lines such as `directive set: x` are plain system text and still render.
+  transcript lines such as `directive set: x` remain portable system text and render
+  through the neutral `SYSTEM STATUS` fallback.
 - **Already-dead directive code.** `DirectiveDiffRow` rendered the spec-124 approval card from
   `item.diff`. Its only producer, the `directive_apply` MCP tool, was removed by spec 161, and
   nothing sets `item.diff` any more. `DiffBlock` itself stays, because `tool-row` and

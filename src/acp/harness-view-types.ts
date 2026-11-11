@@ -182,7 +182,8 @@ export interface HarnessTranscriptItem {
    *  `text` remains the portable fallback for projections such as Live Assist. */
   usage?: UsageRollup;
   /** spec 371: the subsystem notice this `system` row draws (label, action
-   *  legend, LED, subject). `text` is its portable `noticeText()` line. */
+   *  legend, LED, subject). `text` remains portable; newer producers derive it
+   *  with `noticeText()`, migrated legacy producers preserve their exact line. */
   notice?: HarnessNotice;
   /** Spec 387: structured command result; text is the portable fallback. */
   systemCommand?: SystemCommandPayload;

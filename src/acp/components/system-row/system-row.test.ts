@@ -26,15 +26,27 @@ function mount(item: HarnessTranscriptItem, isNew = false): SystemRow {
 }
 
 describe('SystemRow — plain', () => {
-  it('emits the system chrome and the raw text', () => {
+  it('gives an older untyped system message a readable fallback notice', () => {
     const row = mount(sys('lane restarted — session 4f2a9c'));
 
     expect(row.el.className).toBe('acp-harness__msg acp-harness__msg--system');
     expect(row.el.dataset.msgId).toBe('s1');
-    expect(row.el.querySelector('.acp-harness__msg-label')?.textContent).toBe('sys');
+    expect(row.el.querySelector('.acp-harness__msg-label')?.textContent).toBe('system');
     const body = row.el.querySelector('.acp-harness__msg-body');
     expect(body?.className).toBe('acp-harness__msg-body');
-    expect(body?.textContent).toBe('lane restarted — session 4f2a9c');
+    expect(body?.querySelector('.acp-harness__notice-action')?.textContent).toBe('status');
+    expect(body?.querySelector('.acp-harness__notice-subject')?.textContent)
+      .toBe('lane restarted — session 4f2a9c');
+  });
+
+  it('keeps the actual source label for shell, memory, and restart fallback rows', () => {
+    for (const [kind, label] of [
+      ['shell', 'sh'], ['memory', 'mem'], ['restart', 'restart'],
+    ] as const) {
+      const row = mount({ id: kind, kind, text: 'details' });
+      expect(row.el.querySelector('.acp-harness__msg-label')?.textContent).toBe(label);
+      expect(row.el.querySelector('.acp-harness__msg-body')?.textContent).toBe('details');
+    }
   });
 
   it('plays the entrance animation and releases it on animationend', () => {
@@ -93,6 +105,18 @@ describe('SystemRow — hidden rows indicator', () => {
 });
 
 describe('SystemRow — notice (spec 371)', () => {
+  it('labels a lesson write and separates its action from the subject', () => {
+    const row = mount(notice({
+      source: 'lesson', action: 'updated', tone: 'info',
+      subject: 'thai-tech-docs-no-kateeka — ตอบเป็นภาษาไทย (30/30)',
+    }));
+
+    expect(row.el.querySelector('.acp-harness__msg-label')?.textContent).toBe('lesson');
+    expect(row.el.querySelector('.acp-harness__notice-action')?.textContent).toBe('updated');
+    expect(row.el.querySelector('.acp-harness__notice-subject')?.textContent)
+      .toBe('thai-tech-docs-no-kateeka — ตอบเป็นภาษาไทย (30/30)');
+  });
+
   it('labels the row with its source and draws the action legend before the subject', () => {
     const row = mount(notice({ source: 'triage', action: 'flagged', tone: 'attention', subject: 'Green or amber?' }));
 
@@ -127,8 +151,9 @@ describe('SystemRow — notice (spec 371)', () => {
   it('never parses a bracket tag out of plain text', () => {
     const row = mount(sys('[triage] flagged: Green or amber?'));
 
-    expect(row.el.querySelector('.acp-harness__msg-label')?.textContent).toBe('sys');
-    expect(row.el.querySelector('.acp-harness__msg-body')?.textContent).toBe('[triage] flagged: Green or amber?');
+    expect(row.el.querySelector('.acp-harness__msg-label')?.textContent).toBe('system');
+    expect(row.el.querySelector('.acp-harness__notice-subject')?.textContent)
+      .toBe('[triage] flagged: Green or amber?');
   });
 
   it('writes the portable line other readers get from item.text', () => {
@@ -157,7 +182,7 @@ describe('SystemRow — inter-lane event', () => {
 
     row.update(props(sys('lane restarted')));
     expect(row.el.className).toBe('acp-harness__msg acp-harness__msg--system');
-    expect(row.el.querySelector('.acp-harness__msg-label')?.textContent).toBe('sys');
+    expect(row.el.querySelector('.acp-harness__msg-label')?.textContent).toBe('system');
     expect(row.el.querySelector('.acp-harness__msg-body')?.className).toBe('acp-harness__msg-body');
   });
 

@@ -14,6 +14,7 @@ import {
 import { harnessAutoAllowToolName, permissionArgsPreview } from './adapters/permission';
 import { ToolCallDecoder } from './adapters/tool';
 import { viewTargetsArtifactScratch } from './harness-permission-scan';
+import { rowKindFor } from './components/transcript/rows';
 import { loadProjectMcpServers } from './mcp-bridge';
 import type * as McpBridge from './mcp-bridge';
 
@@ -1549,6 +1550,34 @@ describe('local ticket pointer and GitHub-ref helpers', () => {
 });
 
 describe('lesson transcript line (spec 299)', () => {
+  it('renders a lesson write as a labelled notice instead of a plain SYS row', () => {
+    const lane = { displayName: 'Codex-1' };
+    const item = { id: 'lesson-1', kind: 'system' as const, text: '' };
+    const host = Object.assign(Object.create(AcpHarnessView.prototype), {
+      lanes: [lane],
+      appendTranscript: vi.fn((_lane: unknown, _kind: string, text: string) => {
+        item.text = text;
+        return item;
+      }),
+      scheduleLaneRender: vi.fn(),
+      flashChip: vi.fn(),
+    }) as { handleLessonsChanged(payload: unknown): void };
+
+    host.handleLessonsChanged({
+      harnessId: 'h1', laneLabel: 'Codex-1', action: 'updated',
+      slug: 'thai-tech-docs-no-kateeka', title: 'ตอบเป็นภาษาไทย', active: 30, cap: 30,
+    });
+
+    expect(rowKindFor(item)).toBe('notice');
+    expect(item).toMatchObject({
+      text: '[lesson] updated: thai-tech-docs-no-kateeka — ตอบเป็นภาษาไทย (30/30)',
+      notice: {
+        source: 'lesson', action: 'updated', tone: 'info',
+        subject: 'thai-tech-docs-no-kateeka — ตอบเป็นภาษาไทย (30/30)',
+      },
+    });
+  });
+
   it('appends the store pressure after the write', () => {
     expect(
       lessonChangeLine({
@@ -1575,6 +1604,28 @@ describe('lesson transcript line (spec 299)', () => {
         cap: 0,
       }),
     ).toBe('[lesson] retired: stale-rule — Stale rule');
+  });
+});
+
+describe('system notice compatibility', () => {
+  it('keeps the original portable text while adding source, action and fault state', () => {
+    const item = { id: 'fault-1', kind: 'system' as const, text: '' };
+    const host = Object.assign(Object.create(AcpHarnessView.prototype), {
+      appendTranscript: vi.fn((_lane: unknown, _kind: string, text: string) => {
+        item.text = text;
+        return item;
+      }),
+    }) as { appendNotice(lane: unknown, notice: unknown, text: string): void };
+
+    host.appendNotice({}, {
+      source: 'prompt', action: 'failed', tone: 'fault', subject: 'connection closed',
+    }, 'prompt failed: connection closed');
+
+    expect(rowKindFor(item)).toBe('notice');
+    expect(item).toMatchObject({
+      text: 'prompt failed: connection closed',
+      notice: { source: 'prompt', action: 'failed', tone: 'fault', subject: 'connection closed' },
+    });
   });
 });
 
@@ -1954,7 +2005,7 @@ describe('Timeline permission execution without human gates', () => {
       describePermission: vi.fn(() => ({})),
       appendPermissionTranscript: vi.fn(() => ({})),
       updatePermissionDecision: vi.fn(),
-      appendTranscript: vi.fn(),
+      appendTranscript: vi.fn((_lane: HarnessLane, kind: HarnessTranscriptItem['kind'], text: string) => ({ id: 'system-1', kind, text })),
       setLaneStatus: vi.fn(),
       render: vi.fn(),
       refreshOrchestratorConsole: vi.fn(),
@@ -4794,6 +4845,7 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
     const host = {
       lanes: [lane],
       appendTranscript: (_l: EscLane, _kind: string, text: string) => rows.push(text),
+      appendNotice: (_l: EscLane, _notice: unknown, text: string) => rows.push(text),
       render: () => {},
     };
     return { host, rows };
@@ -4919,6 +4971,7 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
       reviewLoopCtl: { onLaneCancelled: () => {} },
       steerCtl: { onCancel: () => {} },
       appendTranscript: (_l: EscLane, _kind: string, text: string) => rows.push(text),
+      appendNotice: (_l: EscLane, _notice: unknown, text: string) => rows.push(text),
       render: () => {},
       armCancelEscalation: arm,
       forceRestartLane: async () => { forced++; },
@@ -4968,6 +5021,7 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
       lanes: [lane],
       uiGenerations: new Map(),
       appendTranscript: (_l: EscLane, _kind: string, text: string) => rows.push(text),
+      appendNotice: (_l: EscLane, _notice: unknown, text: string) => rows.push(text),
       sealStreaming: () => {},
       dropVeiledThoughtRow: () => {},
       cancelPendingArtifactsForLane: () => {},

@@ -34,8 +34,8 @@ svg{--fg:#b0c4d8;--muted:#6b8299;--border:#2a4a6c;--surface:#10131a;--accent:#00
 <text x="26" y="473" xml:space="preserve">       <tspan fill="var(--accent)">$0.4412 USD</tspan></text>
 <text x="12" y="508" font-size="11" fill="var(--accent)" xml:space="preserve">3.14  SystemRow + HiddenRowsIndicator</text>
 <rect x="12" y="514" width="956" height="72" rx="3" fill="none" stroke="var(--border)"/>
-<text x="26" y="537" xml:space="preserve"><tspan fill="var(--muted)">sys</tspan>    lane restarted — session 4f2a9c</text>
-<text x="26" y="555" xml:space="preserve"><tspan fill="var(--muted)">sys</tspan>    <tspan fill="var(--muted)">↑ 142 earlier rows hidden — Ctrl+H show 60 more</tspan></text>
+<text x="26" y="537" xml:space="preserve"><tspan fill="var(--muted)">session</tspan>  RESTARTED  session 4f2a9c</text>
+<text x="26" y="555" xml:space="preserve">         <tspan fill="var(--muted)">↑ 142 earlier rows hidden — Ctrl+H show 60 more</tspan></text>
 <text x="26" y="573" xml:space="preserve"><tspan fill="var(--muted)">event</tspan>  reviewer-1 finished round 2</text>
 <text x="12" y="608" font-size="11" fill="var(--accent)" xml:space="preserve">3.15 · 3.16  ImageStrip · ResourceRail   — late Git/thumbnail state patches only this component</text>
 <rect x="12" y="614" width="956" height="54" rx="3" fill="none" stroke="var(--border)"/>

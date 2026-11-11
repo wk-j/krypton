@@ -847,10 +847,11 @@ reached the page falls back to the built-in krypton-dark values, scoped to
    new slug. Under the store mutex it writes
    ~/.config/krypton/lessons/<slug>.md atomically (or moves the file to
    retired/), regenerates INDEX.md, and emits
-   `acp-lessons-changed { harnessId, laneLabel, action, slug, title }`.
+   `acp-lessons-changed { harnessId, laneLabel, action, slug, title, active, cap }`.
 4. The app-wide lessons cache (src/acp/lessons.ts) re-invokes `list_lessons`.
-   The writing harness appends `[lesson] <action>: <slug> — <title>` to the
-   lane and flashes a chip.
+   The writing harness appends a `LESSON` notice with the action and
+   `<slug> — <title> (active/cap)` to the lane and flashes a chip. Text-only
+   readers receive `[lesson] <action>: <slug> — <title> (active/cap)`.
 5. The next sendUserPrompt on any lane in any Harness compares the lessons
    with the set that agent session has already seen (spec 332). A session
    that already holds the policy gets a `Lessons update` block in that turn's

@@ -527,9 +527,10 @@ break a run. At a clipped tail boundary the first visible row shows its label wi
 Owns: the `--enter` class and its `animationend` release (replacing the rescue at `acp-harness-view.ts:12219-12221`),
 and **`data-render-signature` disappears entirely** — deps live on each subclass.
 
-Label vocabulary (`harness-lane-chrome.ts:536-551`), unchanged:
+Base label vocabulary (`harness-lane-chrome.ts`):
 `sys · user · agent · thought · tool · perm · ask · mem · sh · fs · write · mail · html · review · restart`,
-plus the in-renderer overrides `usage` and `event`.
+plus notice source labels (`session`, `turn`, `lesson`, and others) and `event`.
+The `sys` label remains on typed command snapshots; untyped older system text uses `system`.
 
 Source-label ink (DESIGN.md 2.3.3): user cyan; agent, permission, question, artifact and review
 amber; tool, shell and file activity blue; Guardian magenta; thought, system, memory, restart and
@@ -862,9 +863,10 @@ usage  2026-10-15                                                 14 turns
 **Example UI**
 
 ```
-   sys  lane restarted — session 4f2a9c
-   sys  ↑ 142 earlier rows hidden — Ctrl+H show 60 more
+session  RESTARTED  session 4f2a9c
+        ↑ 142 earlier rows hidden — Ctrl+H show 60 more
 triage  ● FLAGGED  Should the CLEAN lamp be green like PASS?
+lesson  UPDATED  thai-tech-docs-no-kateeka — ตอบเป็นภาษาไทย (30/30)
  event  peer OMP-2 cancelled
 ```
 
@@ -872,7 +874,9 @@ triage  ● FLAGGED  Should the CLEAN lamp be green like PASS?
 event variant adds `--harness-event` + `.acp-harness__harness-event-body`. A notice
 (`item.notice`, spec 371) labels the row with its source and paints
 `.acp-harness__notice-action--{info|attention|fault}` + `.acp-harness__notice-subject`;
-an `inter-lane` notice is the event variant. The row never parses `item.text`.
+an `inter-lane` notice is the event variant. An untyped system item renders as
+`SYSTEM STATUS` plus its unchanged text. `shell`, `memory` and `restart` fallback
+items retain their own labels. The row never parses `item.text`.
 **Replaces** `harness-transcript-render.ts:383-387` · `acp-harness-view.ts:12120-12129`.
 
 ## 3.14a `SystemCommandRow` (spec 387)
@@ -880,10 +884,11 @@ an `inter-lane` notice is the event variant. The row never parses `item.text`.
 Typed `systemCommand` rows render the `#mcp` endpoint and lane counters as a real
 table; `#bg` tasks as a status/elapsed/output/command table; and each bare
 `#assist` task as its own mode/summary readout. Each producer retains the original
-portable `item.text` for Live Assist and control API. Plain lifecycle and error
-messages stay in `SystemRow`; usage, notices and the synthetic
-hidden-rows indicator keep their existing precedence. The source label is `sys`
-for both plain and typed system rows; typed results show `MCP`, `BG`, or `ASSIST`
+portable `item.text` for Live Assist and control API. Lifecycle and error
+messages stay in `SystemRow` as typed notices; unknown older messages use a
+neutral `SYSTEM STATUS` fallback. Usage, notices and the synthetic hidden-rows
+indicator keep their existing precedence. Typed results keep `sys` as their source
+label and show `MCP`, `BG`, or `ASSIST`
 in a blue command-kind readout like `TOOL EXECUTE`, with an unlit LED because
 the snapshot has no running tool status. `#mcp` and `#bg` use one recessed
 `--mat-well` per result (not a frame per cell); assist task names, modes and

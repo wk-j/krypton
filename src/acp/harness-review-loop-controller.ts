@@ -27,6 +27,7 @@ import {
   reviewLoopSummaryPrompt,
   roundFindings,
   roundResultLine,
+  roundResultSubject,
   roundVerdict,
   subjectFingerprint,
   subjectLabel,
@@ -192,13 +193,13 @@ export class HarnessReviewLoopController {
     this.ended.delete(lane.id);
     this.host.loopChanged();
     const names = loop.reviewers.map((r) => r.displayName).join(', ');
-    this.host.appendTranscript(
-      lane,
-      'system',
-      `review pass → ${names} · up to ${args.maxRounds} round${args.maxRounds === 1 ? '' : 's'}${
-        skipped.length > 0 ? ` · skipped: ${skipped.join(', ')}` : ''
-      }`,
-    );
+    const startText = `review pass → ${names} · up to ${args.maxRounds} round${args.maxRounds === 1 ? '' : 's'}${
+      skipped.length > 0 ? ` · skipped: ${skipped.join(', ')}` : ''
+    }`;
+    this.host.appendNotice(lane, {
+      source: 'review', action: 'pass started', tone: skipped.length ? 'attention' : 'info',
+      subject: `${names} · up to ${args.maxRounds} round${args.maxRounds === 1 ? '' : 's'}${skipped.length ? ` · skipped: ${skipped.join(', ')}` : ''}`,
+    }, startText);
     await this.startRound(loop);
     return true;
   }
@@ -232,7 +233,9 @@ export class HarnessReviewLoopController {
     // round's requests here — otherwise they stay live with no loop to read them.
     this.withdrawRequests(loop, lane);
     this.drop(loop);
-    if (lane) this.host.appendTranscript(lane, 'system', 'review pass · cancelled');
+    if (lane) this.host.appendNotice(lane, {
+      source: 'review', action: 'pass cancelled', tone: 'info', subject: 'cancelled by user',
+    }, 'review pass · cancelled');
     this.host.invalidate('transcript');
     this.host.invalidate('composer');
   }
@@ -332,11 +335,11 @@ export class HarnessReviewLoopController {
     loop.packetId = result.packetId;
     this.setPhase(loop, 'reviewing');
     this.host.releaseReservedTurn(lane, 'awaiting_peer');
-    this.host.appendTranscript(
-      lane,
-      'system',
-      `review pass · round ${loop.round}/${loop.maxRounds} → ${loop.reviewers.map((r) => r.displayName).join(', ')}`,
-    );
+    const roundText = `review pass · round ${loop.round}/${loop.maxRounds} → ${loop.reviewers.map((r) => r.displayName).join(', ')}`;
+    this.host.appendNotice(lane, {
+      source: 'review', action: `round ${loop.round}/${loop.maxRounds}`, tone: 'info',
+      subject: loop.reviewers.map((r) => r.displayName).join(', '),
+    }, roundText);
     this.host.invalidate('transcript');
     this.host.invalidate('composer');
   }
@@ -368,7 +371,12 @@ export class HarnessReviewLoopController {
       warnings: warningCount(summary),
       findings: findings.length > 0 ? findings : undefined,
     });
-    this.host.appendTranscript(lane, 'system', roundResultLine(summary, loop.maxRounds));
+    const resultText = roundResultLine(summary, loop.maxRounds);
+    this.host.appendNotice(lane, {
+      source: 'review', action: 'result',
+      tone: blockerCount(summary) > 0 ? 'attention' : 'info',
+      subject: roundResultSubject(summary, loop.maxRounds),
+    }, resultText);
     this.host.invalidate('transcript');
     this.host.invalidate('composer');
     const decision = evaluateRound(summary, previous, loop.maxRounds);
@@ -416,18 +424,21 @@ export class HarnessReviewLoopController {
     const label = reviewLoopStopLabel(reason);
     if (!lane || reason === 'cancelled' || reason === 'lane_lost' || rounds === 0) {
       this.drop(loop);
-      if (lane) this.host.appendTranscript(lane, 'system', `review pass · ended: ${label}`);
+      if (lane) this.host.appendNotice(lane, {
+        source: 'review', action: 'pass ended', tone: reason === 'reviewer_lost' ? 'fault' : 'info',
+        subject: label,
+      }, `review pass · ended: ${label}`);
       this.host.flashChip(`review pass: ${label}`);
       this.host.invalidate('transcript');
       this.host.invalidate('composer');
       return;
     }
     this.setPhase(loop, 'summarizing');
-    this.host.appendTranscript(
-      lane,
-      'system',
-      `review pass · stopped: ${label} (round ${rounds}/${loop.maxRounds}) — writing the summary`,
-    );
+    const stoppedText = `review pass · stopped: ${label} (round ${rounds}/${loop.maxRounds}) — writing the summary`;
+    this.host.appendNotice(lane, {
+      source: 'review', action: 'pass stopped', tone: 'info',
+      subject: `${label} (round ${rounds}/${loop.maxRounds}) — writing the summary`,
+    }, stoppedText);
     this.host.invalidate('transcript');
     this.host.invalidate('composer');
     const prompt = reviewLoopSummaryPrompt({

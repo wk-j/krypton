@@ -12,8 +12,8 @@
    reads at the ink tiers, never via opacity, and the hidden-content note
    carries no left-edge rule (ADR-0027).
 
-   The plain variant has no rules of its own — it is `.acp-harness__msg` and
-   `.acp-harness__msg-body`, which belong to the row chrome, not to this kind.
+   Legacy system text uses the same flat action/subject notice rules with a
+   neutral STATUS legend. Other fallback kinds retain their shared row chrome.
 
    Spec 371 adds the notice body: an action legend, then the subject in body
    ink. The legend is flat ink like the tool kind legend (DESIGN.md "Chips": no

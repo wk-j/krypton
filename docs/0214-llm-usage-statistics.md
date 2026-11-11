@@ -297,7 +297,7 @@ unmeasured turns, and unsent rows remain explicit footer notices. The card has n
 or animation; it is a one-shot render of the existing rollup. At narrow widths metrics reflow from
 four columns to `2 × 2`, model values stack below the model name, and the bar moves below the hit
 rate. The item still stores `describeUsage()` as plain text for Live Assist and any generic
-projection. Recording-off and empty-day results remain plain system messages.
+projection. Recording-off and empty-day results render as compact `USAGE` notices.
 
 The lane cell, card, fallback text, and `#daily` all use
 `cachedRead / (input + cachedRead + cachedWrite)`.

@@ -3,6 +3,7 @@ import { HarnessReviewLoopController } from './harness-review-loop-controller';
 import type { HarnessReviewLoopHost, ReviewSubjectResult } from './harness-view-host';
 import type { HarnessLane } from './harness-view-types';
 import { LaneBus } from './lane-bus';
+import type { HarnessNotice } from './harness-notice';
 import type { HarnessLaneStatus } from './types';
 
 interface FakeLane {
@@ -41,6 +42,7 @@ function setup(subjects: ReviewSubjectResult[] = [diffResult('+a'), diffResult('
     bus.emit({ type: 'lane:status', payload: { laneId: lane.id, prev, next, at: Date.now() } });
   };
   const rows: string[] = [];
+  const notices: HarnessNotice[] = [];
   const flashes: string[] = [];
   const bodies: string[] = [];
   const turns: Array<{ label: string | undefined; text: string }> = [];
@@ -57,7 +59,7 @@ function setup(subjects: ReviewSubjectResult[] = [diffResult('+a'), diffResult('
     flashChip: (text) => flashes.push(text),
     subscribeLaneBus: (handler) => bus.subscribe(handler),
     invalidate: () => {},
-    appendTranscript: (_lane, _kind, text) => rows.push(text),
+    appendNotice: (_lane, notice, text) => { notices.push(notice); rows.push(text); },
     reserveCommandTurn: (lane, label) => {
       (lane as unknown as FakeLane).activeSystemLabel = label;
       setStatus(lane as unknown as FakeLane, 'busy');
@@ -106,6 +108,7 @@ function setup(subjects: ReviewSubjectResult[] = [diffResult('+a'), diffResult('
     reviewer,
     setStatus,
     rows,
+    notices,
     flashes,
     bodies,
     turns,
@@ -149,6 +152,9 @@ describe('HarnessReviewLoopController (spec 276)', () => {
     await t.answer(PASS);
 
     expect(t.outcomes.map((o) => o.blockers)).toEqual([1, 0]);
+    expect(t.notices).toContainEqual(expect.objectContaining({
+      source: 'review', action: 'result', tone: 'attention',
+    }));
     expect(t.turns.map((turn) => turn.label)).toEqual(['fixing 1/3', 'review pass summary']);
     expect(t.ctl.isRunning(t.author.id)).toBe(false);
   });

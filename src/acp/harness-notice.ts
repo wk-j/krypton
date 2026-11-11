@@ -6,7 +6,10 @@
 // Live Assist, the orchestrator feed and the control API (which read `text`
 // only) keep a whole sentence.
 
-export type NoticeSource = 'inter-lane' | 'triage' | 'xenon' | 'review' | 'usage';
+export type NoticeSource =
+  | 'inter-lane' | 'triage' | 'xenon' | 'review' | 'usage' | 'lesson' | 'system'
+  | 'peer' | 'docs' | 'remote' | 'session' | 'device' | 'model' | 'prompt'
+  | 'turn' | 'ask' | 'perm' | 'steer' | 'handoff' | 'shell' | 'write';
 
 /** `info`: no LED. `attention`: amber LED, the human should weigh in. `fault`: fault LED, it failed. */
 export type NoticeTone = 'info' | 'attention' | 'fault';
@@ -26,6 +29,22 @@ export const NOTICE_LABEL: Readonly<Record<NoticeSource, string>> = {
   xenon: 'xenon',
   review: 'review',
   usage: 'usage',
+  lesson: 'lesson',
+  system: 'system',
+  peer: 'peer',
+  docs: 'docs',
+  remote: 'remote',
+  session: 'session',
+  device: 'device',
+  model: 'model',
+  prompt: 'prompt',
+  turn: 'turn',
+  ask: 'ask',
+  perm: 'perm',
+  steer: 'steer',
+  handoff: 'handoff',
+  shell: 'shell',
+  write: 'write',
 };
 
 /** `[source] action: subject`, or `[source] subject` when there is no action. */

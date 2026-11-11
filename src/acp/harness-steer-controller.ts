@@ -105,7 +105,9 @@ export class HarnessSteerController {
         if (cancelled) {
           // The user cancelled while this steer waited for the old turn to end;
           // stop the turn it started instead of letting it run.
-          this.host.appendTranscript(lane, 'system', 'steer cancelled');
+          this.host.appendNotice(lane, {
+            source: 'steer', action: 'cancelled', tone: 'info', subject: 'turn stopped',
+          }, 'steer cancelled');
           void client.cancel().catch((e: unknown) => console.warn('[acp-harness] steer cancel failed', e));
         }
       }
@@ -200,7 +202,10 @@ export class HarnessSteerController {
     if (lane.pendingUserEcho?.itemId === itemId) lane.pendingUserEcho = null;
     if (isMethodNotFound(error)) lane.supportsSteering = false;
     if (cancelled) {
-      this.host.appendTranscript(lane, 'system', `steer not delivered: ${truncate(text, 80)}`);
+      const preview = truncate(text, 80);
+      this.host.appendNotice(lane, {
+        source: 'steer', action: 'not delivered', tone: 'attention', subject: preview,
+      }, `steer not delivered: ${preview}`);
       return;
     }
     // Head of the queue, behind missed steers typed earlier. The cap (spec 136)
