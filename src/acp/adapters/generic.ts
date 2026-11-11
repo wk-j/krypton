@@ -18,6 +18,8 @@ import type {
   AcpSessionInfo,
   AcpSessionListResult,
   ContentBlock,
+  EffortOption,
+  LaneEffort,
   ModelInfo,
   SteerOutcome,
   StopReason,
@@ -637,6 +639,21 @@ function parseModels(value: unknown): ModelInfo[] {
   return out;
 }
 
+/** spec 388: Rust's `EffortState` (`{config_id, options, current}`) as lane
+ *  data. Null for anything that is not one — the lane then has no effort strip.
+ *  The config id stays in Rust, which sends the switch. */
+export function decodeEffort(raw: unknown): LaneEffort | null {
+  const effort = asRecord(raw);
+  if (!effort || !Array.isArray(effort.options)) return null;
+  const options: EffortOption[] = [];
+  for (const item of effort.options) {
+    const option = asRecord(item);
+    if (!option || typeof option.value !== 'string') continue;
+    options.push({ value: option.value, name: typeof option.name === 'string' ? option.name : option.value });
+  }
+  return { options, current: typeof effort.current === 'string' ? effort.current : null };
+}
+
 export function decodeSession(raw: unknown): LaneSession {
   const session = asRecord(raw);
   const modes = asRecord(session?.modes);
@@ -645,6 +662,10 @@ export function decodeSession(raw: unknown): LaneSession {
     sessionId: typeof session?.session_id === 'string' ? session.session_id : '',
     models: parseModels(session?.available_models),
     currentModelId: typeof session?.current_model_id === 'string' ? session.current_model_id : null,
+    requestedModelId: typeof session?.requested_model_id === 'string' && session.requested_model_id.length > 0
+      ? session.requested_model_id
+      : null,
+    effort: decodeEffort(session?.effort),
     modes: parseModes(modes?.availableModes),
     currentModeId: typeof currentModeId === 'string' && currentModeId.length > 0 ? currentModeId : null,
     modelApplyFailed: session?.model_apply_failed === true,

@@ -22,6 +22,7 @@ import type {
   AcpSessionCapabilities,
   AcpSessionListResult,
   ContentBlock,
+  LaneEffort,
   ModelInfo,
   PermissionOption,
   PlanEntry,
@@ -242,6 +243,10 @@ export interface LaneSession {
   /** spec 127: Rust's parsed model list, already Krypton-shaped. */
   readonly models: readonly ModelInfo[];
   readonly currentModelId: string | null;
+  /** spec 388: the model Krypton requested after session/new, if any. */
+  readonly requestedModelId: string | null;
+  /** spec 388: the reasoning-effort control, or null when the lane has none. */
+  readonly effort: LaneEffort | null;
   /** ACP `modes.availableModes` of the session. */
   readonly modes: readonly AcpAgentMode[];
   readonly currentModeId: string | null;

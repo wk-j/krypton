@@ -264,7 +264,9 @@ Both questions from the draft were resolved during Codex-1 review:
    succeeds. `session/set_model` returns `{}` and the agent canonicalizes aliases internally, so
    Krypton cannot reliably know the final canonical id without another agent signal. v1 keeps today's
    chip behavior ("configured `active` wins; else capabilities/opencode fallback"). True canonical
-   display needs a separate follow-up (query/subscribe to final model state).
+   display needs a separate follow-up (query/subscribe to final model state). (Spec 388: the chip
+   now names the model Krypton requested after `session/new` — a remembered picker choice, else
+   `active` — by its advertised name when the agent lists it.)
 
 ## Out of Scope
 
@@ -275,6 +277,9 @@ Both questions from the draft were resolved during Codex-1 review:
 - **Accurate post-switch chip display** via the agent's canonical `currentModelId` — deferred per
   Open Question 2; needs a follow-up design to query/subscribe to final model state.
 - True **per-lane** model override (distinct model for two lanes of the same backend).
+- Remembering the picker's choice across respawns — **implemented per backend in spec 388**
+  (`~/.config/krypton/acp-lane-models.toml`, which takes precedence over `active` for fresh harness
+  lanes; `krypton.toml` is still never written).
 - Applying a model on **session resume/load** (resumed sessions keep their saved model in v1).
 - Enabling Cursor/Junie/OMP/Pi model selection (they don't advertise model state yet; this spec
   auto-enables them if/when they do, with no further code — but docs promise application only "for

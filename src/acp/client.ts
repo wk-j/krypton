@@ -9,7 +9,7 @@ import { type UnlistenFn } from '@tauri-apps/api/event';
 
 import { setupListener } from '../util/listener';
 import { createLaneDecoder } from './adapters/decoder';
-import { steerOutcome } from './adapters/generic';
+import { decodeEffort, steerOutcome } from './adapters/generic';
 import type { LaneDecoder, LaneEvent, LaneInit, LaneSession, RawAcpEvent } from './adapters/types';
 import { skipInterviewDecision, type AskUserReply } from './ask-user-question';
 import { elicitationResponse, type QuestionTarget } from './elicitation';
@@ -19,6 +19,7 @@ import type {
   AcpSessionListResult,
   AcpMcpServerDescriptor,
   ContentBlock,
+  LaneEffort,
   SteerOutcome,
   StopReason,
   WireInitInfo,
@@ -146,6 +147,31 @@ export class AcpClient {
     return invoke<'ok' | 'timed_out_uncertain'>('acp_set_lane_model', {
       session: this.session,
       modelId,
+    });
+  }
+
+  /** spec 388: the lane's reasoning-effort control as Rust last observed it
+   *  (it refreshes after every model switch). Null when the lane has none. */
+  async laneEffort(): Promise<LaneEffort | null> {
+    return decodeEffort(await invoke<unknown>('acp_lane_effort', { session: this.session }));
+  }
+
+  /** spec 388: set the live lane's reasoning effort. Rejects (throws) when the
+   *  value is not offered, the agent refuses it, or it does not answer in time. */
+  async setLaneEffort(value: string): Promise<LaneEffort | null> {
+    return decodeEffort(await invoke<unknown>('acp_set_lane_effort', { session: this.session, value }));
+  }
+
+  /** spec 388: remember a confirmed model-picker choice for `backendId` in
+   *  `~/.config/krypton/acp-lane-models.toml`. Only the picker calls this. */
+  static async rememberLaneChoice(
+    backendId: string,
+    choice: { modelId?: string; effort?: string },
+  ): Promise<void> {
+    await invoke('acp_remember_lane_choice', {
+      backendId,
+      modelId: choice.modelId ?? null,
+      effort: choice.effort ?? null,
     });
   }
 

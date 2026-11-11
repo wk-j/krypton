@@ -798,7 +798,7 @@ See `docs/0069-acp-agent-support.md` for the original ACP design, `docs/0084-acp
 | `[[acp_harness.remote_profiles]]` | `host` | string | — | OpenSSH host alias; user, port, identity and ProxyJump remain in `~/.ssh/config` |
 | `[[acp_harness.remote_profiles]]` | `project_dir` | absolute path | — | Remote project root sent through the runtime protocol, never a shell command |
 | `[[acp_harness.remote_profiles]]` | `connect_timeout_seconds` | integer | `15` | Bounded hello-handshake timeout |
-| `[acp_harness.lane_models.<backend>]` | `active` | string | `""` | Model id/alias applied to the lane (CLI flag at spawn, or `session/set_model`/`set_config_option` after `session/new`). Empty = use the adapter default, except MiMo uses its anonymous free `mimo/mimo-auto` model |
+| `[acp_harness.lane_models.<backend>]` | `active` | string | `""` | Model id/alias applied to the lane (CLI flag at spawn, or `session/set_model`/`set_config_option` after `session/new`). Empty = use the adapter default, except MiMo uses its anonymous free `mimo/mimo-auto` model. A model remembered from the picker in `acp-lane-models.toml` takes precedence for harness lanes (spec 388) |
 | `[acp_harness.lane_models.<backend>]` | `models` | array | `[]` | Informational allow-list (not enforced). The in-harness picker (spec 127) sources its options from the agent-advertised `availableModels`, not this array |
 | `[acp_wire]` | `capture` | string | `"off"` | ACP wire tap mode: `off`, `meta` (size, method, id, timing), or `full` (also message bodies — prompts, file contents, tool output). Applied at launch and on Reload Config; the palette `ACP Wire: Capture …` commands change it at runtime without writing back (spec 288) |
 | `[acp_wire]` | `ring_events` | int | `20000` | In-memory ring size in events, clamped to 1000–200000. Oldest evicted first |
@@ -834,7 +834,7 @@ connect_timeout_seconds = 15
 
 **Respawn-to-apply.** `active` is snapshotted into the lane at spawn. Editing `krypton.toml` updates the stored config and the chip inference, but does **not** re-apply to a live lane — the agent model changes only on the next spawn / `#new` / `#new!` / lane restart. Resumed and loaded sessions keep whatever model they were saved with and are not forced to the current config.
 
-**In-harness model picker (spec 127).** Press the harness leader key then `,` (`⌘P` then `,`) to open a keyboard-driven model picker for the focused lane (`j`/`k` move, `↵` switch, `esc` cancel). It lists the models the agent advertised in `session/new` (so you can't pick an unsupported id) and switches the **live** lane via `session/set_model`. The picker is **session-scoped**: it does **not** rewrite `krypton.toml`, so `active` still governs the spawn default and the picker choice resets on respawn. The picker is disabled for lanes whose backend advertises no model state (the chip explains why). A switch that the agent rejects reverts the chip; a timeout keeps the choice but flags it unconfirmed (the agent may still apply it). When the new model doesn't support the lane's current mode, the adapter clamps it (e.g. `auto` → `default` on Haiku) and the lane notes the downgrade in its transcript.
+**In-harness model picker (specs 127, 388).** Press the harness leader key then `,` (`⌘P` then `,`) to open a keyboard-driven model picker for the focused lane (`j`/`k` move, `h`/`l` effort, `↵` switch, `esc` cancel). It lists the models the agent advertised in `session/new` (so you can't pick an unsupported id) and switches the **live** lane via `session/set_model` (or `session/set_config_option` for `configOptions` lanes). When the lane's model is driven through the `configOptions` model select and the agent also offers a `category: "thought_level"` select, an **effort strip** sits under the list: `h`/`l` move along the agent's own values (Claude: `default`…`max`; OMP: `off`, `auto`, `low`…`max`) and stop at both ends. Codex has no strip because its model list already carries the effort (`6 Sol (high)`); Cline offers no effort. Enter switches the model first, then the effort: a model switch can move the agent's effort, so the value on the strip is re-applied when it drifted. Enter on the current model with a moved effort switches only the effort. A confirmed choice is **remembered per backend** in `acp-lane-models.toml` (below) and becomes the next fresh lane's starting model/effort; `krypton.toml` is never rewritten. The picker is disabled for lanes whose backend advertises no model state (the chip explains why). A switch that the agent rejects reverts the chip; a timeout keeps the choice but flags it unconfirmed (the agent may still apply it) and is not remembered. When the new model doesn't support the lane's current mode, the adapter clamps it (e.g. `auto` → `default` on Haiku) and the lane notes the downgrade in its transcript.
 
 Example:
 
@@ -895,6 +895,36 @@ count = 3
 | `[acp_harness.rails]` | `min_interval_ms` | int | `0` | Shortest time from the start of the newest recorded run (auto or manual) to the start of the next auto run, clamped to 0–3600000; `0` = off. A run due inside the window is held and starts once when it ends, if the harness is quiet; the dock head shows `auto run held until HH:MM`. `#rails now` ignores it; `#rails manual` drops a held run (spec 339) |
 
 The clamps live in the frontend, so an out-of-range value in TOML is corrected, not rejected. The trust store is `~/.config/krypton/rails-trust.toml`, written only by `#rails trust` or the Rails dock's Trust button (spec 344), both a human action; deleting an entry makes that project's checks wait for trust again.
+
+### ACP Lane Model Memory (`acp-lane-models.toml`, spec 388)
+
+The model and reasoning effort last confirmed in the harness model picker are remembered **per backend** in a separate Krypton-managed file, **not** in `krypton.toml`:
+
+| File | `~/.config/krypton/acp-lane-models.toml` |
+|------|-------------------------------------------|
+
+```toml
+# Managed by Krypton (spec 388): …
+version = 1
+
+[model]
+cline = "gpt-5.6-terra"
+claude = "opus"
+
+[effort]
+claude = "xhigh"
+omp = "high"
+```
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `version` | int | Schema version (`1`) |
+| `[model].<backend>` | string | An advertised model id. Applied after `session/new` when the agent still advertises it; otherwise `lane_models.<backend>.active` applies |
+| `[effort].<backend>` | string | A value of the agent's `thought_level` select, spelled as the agent spells it. Applied after the model, when offered; otherwise the agent default stays |
+
+Precedence for a **fresh harness lane**: remembered model > `lane_models.<backend>.active` > agent default; remembered effort > agent default. There is no effort key in `krypton.toml`. The file is read on every harness spawn, so neither Reload Config nor a restart is needed. Resumed/loaded sessions, Inline AI, Commit Explainer, Assist, Rails judges and session probes never read it; only the picker writes it — model switches from the control API (`lane.model`), Inline AI, Commit Explainer and Assist are not remembered.
+
+Krypton creates the file on the first confirmed pick and rewrites it atomically (with its header comment; other comments are not kept). Edit or delete it by hand: deleting a line or the file brings back the `krypton.toml` / agent default for that backend. An unparseable file is ignored at spawn (logged), and Krypton refuses to overwrite it — the picker flashes `switched; not remembered` until it is fixed. See `docs/0388-acp-lane-model-effort-memory.md`.
 
 ### ACP Harness Directives (`acp-harness.toml`)
 

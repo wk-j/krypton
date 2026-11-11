@@ -182,6 +182,12 @@ describe('LaneDecoder — command results', () => {
       model_apply_failed: true,
       available_models: [{ model_id: 'opus', name: 'Opus', description: null }],
       current_model_id: 'opus',
+      requested_model_id: 'opus',
+      effort: {
+        config_id: 'effort',
+        options: [{ value: 'high', name: 'High' }, { value: 'max' }, { name: 'no value' }],
+        current: 'high',
+      },
       modes: {
         currentModeId: 'acceptEdits',
         availableModes: [{ id: 'default', name: 'Default', description: 'Ask first' }, { id: 'acceptEdits', name: 'Accept edits' }],
@@ -190,6 +196,10 @@ describe('LaneDecoder — command results', () => {
       sessionId: 'ses-1',
       models: [{ model_id: 'opus', name: 'Opus', description: null }],
       currentModelId: 'opus',
+      requestedModelId: 'opus',
+      // spec 388: the config id stays in Rust; a value-less option is dropped
+      // and a nameless one is named by its value.
+      effort: { options: [{ value: 'high', name: 'High' }, { value: 'max', name: 'max' }], current: 'high' },
       modes: [
         { id: 'default', name: 'Default', description: 'Ask first' },
         { id: 'acceptEdits', name: 'Accept edits', description: undefined },
@@ -201,7 +211,16 @@ describe('LaneDecoder — command results', () => {
 
   it('decodes a session without model or mode state', () => {
     expect(decoder.session({ session_id: 'ses-2', available_models: [], current_model_id: null, modes: null }))
-      .toEqual({ sessionId: 'ses-2', models: [], currentModelId: null, modes: [], currentModeId: null, modelApplyFailed: false });
+      .toEqual({
+        sessionId: 'ses-2',
+        models: [],
+        currentModelId: null,
+        requestedModelId: null,
+        effort: null,
+        modes: [],
+        currentModeId: null,
+        modelApplyFailed: false,
+      });
   });
 
   it('decodes a session list without vendor metadata', () => {

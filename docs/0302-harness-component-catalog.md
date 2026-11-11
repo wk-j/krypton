@@ -996,7 +996,7 @@ cursor math, its own shell, or its own empty state.
 |---|---|---|---|---|
 | 7.1 | `LanePicker` | Shell + ListPicker | `// add lane · directive: 0301-impl` | `acp-harness-view.ts:12669-12712` |
 | 7.2 | `DirectivePicker` | Shell + ListPicker + preview pane | `// directive · claude-1` | `:12715-12777` |
-| 7.3 | `ModelPicker` | Shell + ListPicker | `// model · claude-1` | `:12779-12818` |
+| 7.3 | `ModelPicker` | Shell + ListPicker + effort strip (spec 388: a sibling well, `h`/`l`) | `// model · claude-1` | `:12779-12818` |
 | 7.4 | `SessionPicker` | Shell + ListPicker, 4 phases (`backend · loading · error · list`) | `// claude-code sessions` | `:12820-12894` |
 | 7.5 | `TicketPicker` | Shell + TabStrip + filter + ListPicker + ActionButton row | `GitHub + local tickets   target: codex-1 · idle` | `harness-ticket-controller.ts:678-783` |
 | 7.6 | `RemotePicker` | Shell + ListPicker | `remote harness` | `remote-harness-picker.ts:69-170` |

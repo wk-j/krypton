@@ -480,6 +480,24 @@ pub struct ModelInfo {
     pub description: Option<String>,
 }
 
+/// One value of the agent's `thought_level` config option (spec 388).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct EffortOption {
+    pub value: String,
+    pub name: String,
+}
+
+/// The lane's reasoning-effort control (spec 388): the `configOptions` select
+/// with `category: "thought_level"`. Its id differs per agent (`effort`,
+/// `reasoning_effort`, `thinking`, …), so it is found by category and the id
+/// is kept here for `session/set_config_option`.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct EffortState {
+    pub config_id: String,
+    pub options: Vec<EffortOption>,
+    pub current: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentSessionInfo {
     pub session_id: String,
@@ -498,6 +516,14 @@ pub struct AgentSessionInfo {
     /// running model, not the pre-switch default). `None` when unverified (e.g. an
     /// alias was applied — we don't assert a guessed canonical id).
     pub current_model_id: Option<String>,
+    /// spec 388: the model Krypton asked for after `session/new` — the
+    /// remembered pick or `lane_models.<backend>.active`. `None` when nothing
+    /// was requested (and on resume/load, which never force a model).
+    pub requested_model_id: Option<String>,
+    /// spec 388: the reasoning-effort control after spawn-time apply. `None`
+    /// when the lane's model is not driven through `configOptions` or the agent
+    /// offers no `thought_level` select.
+    pub effort: Option<EffortState>,
     /// The response's ACP `modes` (`SessionModeState`), forwarded unparsed: the
     /// frontend's lane adapter decodes it (spec 380).
     pub modes: Option<Value>,
@@ -642,6 +668,97 @@ fn parse_config_select_value(entry: &Value) -> Option<ModelInfo> {
     })
 }
 
+/// spec 388: the `thought_level` select of a `configOptions` list, flattened
+/// like the model select (flat or grouped options). `None` when absent.
+fn parse_effort_state(config_options: Option<&Value>) -> Option<EffortState> {
+    let option = config_options?.as_array()?.iter().find(|o| {
+        o.get("category").and_then(Value::as_str) == Some("thought_level")
+            && o.get("type").and_then(Value::as_str) == Some("select")
+    })?;
+    let config_id = option.get("id")?.as_str()?.to_string();
+    let mut options = Vec::new();
+    for entry in option
+        .get("options")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        match entry.get("options").and_then(Value::as_array) {
+            Some(group) => options.extend(group.iter().filter_map(parse_effort_option)),
+            None => options.extend(parse_effort_option(entry)),
+        }
+    }
+    let current = option
+        .get("currentValue")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    Some(EffortState {
+        config_id,
+        options,
+        current,
+    })
+}
+
+fn parse_effort_option(entry: &Value) -> Option<EffortOption> {
+    let value = entry.get("value")?.as_str()?.to_string();
+    let name = entry
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or(&value)
+        .to_string();
+    Some(EffortOption { value, name })
+}
+
+/// spec 388: effort is offered only when the session's model is driven through
+/// the `configOptions` model select, where model and effort sit in one option
+/// set. A `models`-object lane (Codex, Cline) keeps whatever effort its model
+/// ids carry — a separate effort switch there leaves the picker's `✓` stale.
+fn session_effort_state(response: &Value, control: Option<&ModelControl>) -> Option<EffortState> {
+    match control {
+        Some(ModelControl::ConfigOption(_)) => parse_effort_state(response.get("configOptions")),
+        _ => None,
+    }
+}
+
+/// spec 388: the remembered model for this session, when the agent advertises
+/// it. A stale id is logged and dropped so the configured model still applies.
+fn remembered_model(
+    memory: &crate::acp_lane_models::LaneModelMemory,
+    backend_id: &str,
+    state: &SessionModelState,
+) -> Option<String> {
+    let id = memory.model.get(backend_id)?;
+    if state.available.iter().any(|m| &m.model_id == id) {
+        Some(id.clone())
+    } else {
+        log::info!(
+            "remembered model {id} is not advertised by backend {backend_id}; using the configured model"
+        );
+        None
+    }
+}
+
+/// spec 388: the remembered effort value to send, or `None` when there is
+/// nothing to do (no entry, no effort control, not offered, already current).
+fn remembered_effort(
+    memory: &crate::acp_lane_models::LaneModelMemory,
+    backend_id: &str,
+    state: Option<&EffortState>,
+) -> Option<String> {
+    let value = memory.effort.get(backend_id)?;
+    let Some(state) = state else {
+        log::info!("backend {backend_id} offers no effort option; remembered effort ignored");
+        return None;
+    };
+    if !state.options.iter().any(|o| &o.value == value) {
+        log::warn!(
+            "remembered effort {value} is not offered by backend {backend_id}; keeping the agent default"
+        );
+        return None;
+    }
+    (state.current.as_deref() != Some(value.as_str())).then(|| value.clone())
+}
+
 /// Parse the ACP `models` value into the frontend-facing
 /// `(available_models, current_model_id)` pair. Tolerates a
 /// missing/garbage `models` value and filters malformed entries (an entry missing
@@ -772,6 +889,9 @@ struct AcpClient {
     /// How this session switches models; set from the session/new, resume, or
     /// load response. `None` until then or when no model state is advertised.
     model_control: RwLock<Option<ModelControl>>,
+    /// spec 388: the reasoning-effort control, refreshed from session/new,
+    /// resume/load, every `set_config_option` reply and `config_option_update`.
+    effort_state: RwLock<Option<EffortState>>,
     /// Present only for remote lanes. Filesystem callbacks use the same runtime
     /// as the agent so a remote path can never fall through to local `std::fs`.
     remote_workspace: RwLock<Option<Arc<RemoteRuntimeClient>>>,
@@ -841,6 +961,7 @@ impl AcpClient {
             mcp_servers: RwLock::new(Vec::new()),
             model_override: RwLock::new(None),
             model_control: RwLock::new(None),
+            effort_state: RwLock::new(None),
             remote_workspace: RwLock::new(None),
             disposed: std::sync::atomic::AtomicBool::new(false),
             wire,
@@ -2114,6 +2235,7 @@ fn handle_notification(client: &Arc<AcpClient>, app: &AppHandle, method: &str, p
                 if models.control.is_some() {
                     client.observe_models(&models);
                 }
+                refresh_effort_from(client, &update);
             }
             match update_kind {
                 "agent_message_chunk"
@@ -2791,11 +2913,44 @@ pub async fn acp_session_new(
     let model_state = parse_session_model_state(&new_session);
     client.observe_models(&model_state);
     set_client_model_control(&client, model_state.control.clone());
+    set_client_effort(
+        &client,
+        session_effort_state(&new_session, model_state.control.as_ref()),
+    );
+
+    // spec 388: a harness lane's remembered pick replaces the configured model
+    // when the agent advertises it.
+    let memory = harness_lane_memory(&client);
+    if let Some(model) = memory
+        .as_ref()
+        .and_then(|m| remembered_model(m, &client.backend_id, &model_state))
+    {
+        if let Ok(mut g) = client.model_override.write() {
+            *g = Some(model);
+        }
+    }
 
     // Apply the configured model AFTER session/new (never as a session/new field),
     // awaited inline so the switch completes before the frontend can send the first
     // prompt. Non-fatal: a rejected or unavailable model leaves the agent default.
     let apply = apply_session_model(&client, &acp_session_id, &model_state).await;
+
+    // spec 388: effort AFTER the model — a model switch can move the agent's
+    // effort. Non-fatal: a failure keeps the agent default.
+    if let Some(memory) = &memory {
+        let effort = client_effort(&client);
+        if let (Some(value), Some(state)) = (
+            remembered_effort(memory, &client.backend_id, effort.as_ref()),
+            effort.as_ref(),
+        ) {
+            if let Err(e) = send_effort(&client, &acp_session_id, &state.config_id, &value).await {
+                log::warn!(
+                    "remembered effort {value} for backend {}: {e}",
+                    client.backend_id
+                );
+            }
+        }
+    }
 
     // Do not restore the pre-switch default after an alias or timed-out change.
     let current_model_id = client
@@ -2804,12 +2959,15 @@ pub async fn acp_session_new(
         .unwrap_or_else(|p| p.into_inner())
         .confirmed_model_id
         .clone();
+    let requested_model_id = client.model_override.read().ok().and_then(|g| g.clone());
 
     Ok(AgentSessionInfo {
         session_id: acp_session_id,
         model_apply_failed: apply.failed,
         available_models: model_state.available,
         current_model_id,
+        requested_model_id,
+        effort: client_effort(&client),
         modes: new_session.get("modes").cloned(),
     })
 }
@@ -2817,6 +2975,77 @@ pub async fn acp_session_new(
 fn set_client_model_control(client: &AcpClient, control: Option<ModelControl>) {
     if let Ok(mut g) = client.model_control.write() {
         *g = control;
+    }
+}
+
+fn client_model_control(client: &AcpClient) -> Option<ModelControl> {
+    client.model_control.read().ok().and_then(|g| g.clone())
+}
+
+fn set_client_effort(client: &AcpClient, effort: Option<EffortState>) {
+    if let Ok(mut g) = client.effort_state.write() {
+        *g = effort;
+    }
+}
+
+fn client_effort(client: &AcpClient) -> Option<EffortState> {
+    client.effort_state.read().ok().and_then(|g| g.clone())
+}
+
+/// spec 388: re-read the effort control from a payload that carries the full
+/// `configOptions` (a `set_config_option` reply or a `config_option_update`).
+/// A payload without `configOptions` (e.g. `session/set_model`'s empty reply)
+/// leaves the state alone.
+fn refresh_effort_from(client: &AcpClient, payload: &Value) {
+    if payload.get("configOptions").is_none() {
+        return;
+    }
+    let control = client_model_control(client);
+    set_client_effort(client, session_effort_state(payload, control.as_ref()));
+}
+
+/// spec 388: the remembered picks, only for harness lanes — Inline AI, Commit
+/// Explainer, Assist, Rails judges and session probes never read them.
+fn harness_lane_memory(client: &AcpClient) -> Option<crate::acp_lane_models::LaneModelMemory> {
+    let role = client
+        .instance
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .owner
+        .role;
+    (role == AcpInstanceRole::HarnessLane).then(crate::acp_lane_models::load)
+}
+
+/// spec 388: send `session/set_config_option` for the effort control (10 s).
+/// Refreshes the stored state from the reply; when the reply carries no
+/// `configOptions`, the accepted value becomes current.
+async fn send_effort(
+    client: &AcpClient,
+    acp_session_id: &str,
+    config_id: &str,
+    value: &str,
+) -> Result<(), String> {
+    let params = json!({ "sessionId": acp_session_id, "configId": config_id, "value": value });
+    match tokio::time::timeout(
+        Duration::from_secs(10),
+        client.request("session/set_config_option", params),
+    )
+    .await
+    {
+        Ok(Ok(reply)) => {
+            if reply.get("configOptions").is_some() {
+                refresh_effort_from(client, &reply);
+            } else if let Ok(mut g) = client.effort_state.write() {
+                if let Some(state) = g.as_mut() {
+                    state.current = Some(value.to_string());
+                }
+            }
+            Ok(())
+        }
+        Ok(Err(e)) => Err(format!("session/set_config_option {config_id} failed: {e}")),
+        Err(_) => Err(format!(
+            "session/set_config_option {config_id} timed out; state uncertain"
+        )),
     }
 }
 
@@ -2866,12 +3095,17 @@ async fn acp_session_restore(
     // model state, available_models is empty and the picker stays disabled.
     let model_state = parse_session_model_state(&response);
     client.observe_models(&model_state);
+    let effort = session_effort_state(&response, model_state.control.as_ref());
     set_client_model_control(&client, model_state.control);
+    // spec 388: the effort strip works on restored lanes, but nothing is forced.
+    set_client_effort(&client, effort.clone());
     Ok(AgentSessionInfo {
         session_id,
         model_apply_failed: false,
         available_models: model_state.available,
         current_model_id: model_state.current,
+        requested_model_id: None,
+        effort,
         modes: response.get("modes").cloned(),
     })
 }
@@ -2941,7 +3175,11 @@ pub async fn acp_set_lane_model(
         .unwrap_or(ModelControl::SetModel);
     let (method, params) = control.request(&acp_session_id, &model_id);
     match tokio::time::timeout(Duration::from_secs(10), client.request(method, params)).await {
-        Ok(Ok(_)) => Ok(SetModelOutcome::Ok),
+        Ok(Ok(reply)) => {
+            // spec 388: the model switch may have moved the agent's effort.
+            refresh_effort_from(&client, &reply);
+            Ok(SetModelOutcome::Ok)
+        }
         Ok(Err(e)) => Err(format!("{method} failed: {e}")),
         Err(_) => {
             log::warn!(
@@ -2951,6 +3189,59 @@ pub async fn acp_set_lane_model(
             Ok(SetModelOutcome::TimedOutUncertain)
         }
     }
+}
+
+/// spec 388: the live lane's reasoning-effort control, as last observed. The
+/// picker reads it on open and again after a model switch.
+#[tauri::command]
+pub fn acp_lane_effort(
+    session: u64,
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<Option<EffortState>, String> {
+    let client = registry
+        .get(session)
+        .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+    Ok(client_effort(&client))
+}
+
+/// spec 388: set the live lane's reasoning effort. A value the lane does not
+/// offer, a rejection and a timeout are all `Err` (nothing is remembered).
+#[tauri::command]
+pub async fn acp_set_lane_effort(
+    session: u64,
+    value: String,
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<EffortState, String> {
+    let client = registry
+        .get(session)
+        .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+    let acp_session_id = client
+        .acp_session_id
+        .read()
+        .ok()
+        .and_then(|g| g.clone())
+        .ok_or_else(|| "lane has no active session".to_string())?;
+    let state = client_effort(&client).ok_or_else(|| "lane offers no effort option".to_string())?;
+    if !state.options.iter().any(|o| o.value == value) {
+        return Err(format!("effort {value} is not offered by this lane"));
+    }
+    send_effort(&client, &acp_session_id, &state.config_id, &value).await?;
+    client_effort(&client).ok_or_else(|| "effort option disappeared after the switch".to_string())
+}
+
+/// spec 388: remember a confirmed picker choice for a backend in
+/// `~/.config/krypton/acp-lane-models.toml`. Only the harness model picker
+/// calls this; other model switches are never remembered.
+#[tauri::command]
+pub fn acp_remember_lane_choice(
+    backend_id: String,
+    model_id: Option<String>,
+    effort: Option<String>,
+) -> Result<(), String> {
+    if resolve_backend(&backend_id).is_none() {
+        return Err(format!("Unknown ACP backend: {backend_id}"));
+    }
+    crate::acp_lane_models::remember(&backend_id, model_id.as_deref(), effort.as_deref())
 }
 
 /// Switch the agent-side mode of the live session (`session/set_mode`, spec
@@ -3008,7 +3299,11 @@ async fn apply_session_model(
     let (method, params) = control.request(acp_session_id, &model);
     let res = tokio::time::timeout(Duration::from_secs(10), client.request(method, params)).await;
     match res {
-        Ok(Ok(_)) => ModelApplyResult { failed: false },
+        Ok(Ok(reply)) => {
+            // spec 388: the model switch may have moved the agent's effort.
+            refresh_effort_from(client, &reply);
+            ModelApplyResult { failed: false }
+        }
         Ok(Err(e)) => {
             log::warn!(
                 "{method} modelId={model} failed for backend {}: {e}",
@@ -4096,9 +4391,10 @@ mod tests {
         advertise_read_text_file, advertises_auth_method, binary_read_error, client_capabilities,
         disconnect_detail, effective_spawn_model, elicitation_reply, fs_path_in_scope,
         grok_ask_user_ext_response, grok_ask_user_skip, grok_session_dir_for_cwd, is_auth_required,
-        is_under_grok_session_dir, parse_session_model_state, parse_task_tail, percent_encode_path,
-        resolve_backend, sniff_binary_kind, startup_hint, steering_supported, turn_marker_event,
-        with_request_id, FsAccess, ModelControl,
+        is_under_grok_session_dir, parse_effort_state, parse_session_model_state, parse_task_tail,
+        percent_encode_path, remembered_effort, remembered_model, resolve_backend,
+        session_effort_state, sniff_binary_kind, startup_hint, steering_supported,
+        turn_marker_event, with_request_id, EffortOption, FsAccess, ModelControl,
     };
     use serde_json::{json, Value};
     use std::path::{Path, PathBuf};
@@ -4766,6 +5062,132 @@ mod tests {
         assert_eq!(state.control, Some(ModelControl::SetModel));
         assert_eq!(state.current.as_deref(), Some("default"));
         assert_eq!(state.available.len(), 1);
+    }
+
+    // spec 388: claude-agent-acp 0.106.0 session/new (probed 2026-11-11):
+    // no `models` object, a `model` select and an `effort` thought_level select.
+    fn claude_config_options() -> Value {
+        json!({
+            "sessionId": "s",
+            "configOptions": [
+                { "id": "mode", "category": "mode", "type": "select", "currentValue": "auto",
+                  "options": [{ "value": "auto", "name": "Auto" }] },
+                { "id": "model", "category": "model", "type": "select", "currentValue": "default",
+                  "options": [{ "value": "default", "name": "Default" },
+                              { "value": "opus", "name": "Opus" },
+                              { "value": "haiku", "name": "Haiku" }] },
+                { "id": "effort", "category": "thought_level", "type": "select",
+                  "currentValue": "xhigh",
+                  "options": [{ "value": "default", "name": "Default" },
+                              { "value": "low", "name": "Low" },
+                              { "value": "high", "name": "High" },
+                              { "value": "xhigh", "name": "Extra high" },
+                              { "value": "max", "name": "Max" }] },
+                { "id": "fast", "category": "model_config", "type": "select", "currentValue": "off",
+                  "options": [{ "value": "on", "name": "On" }, { "value": "off", "name": "Off" }] }
+            ]
+        })
+    }
+
+    #[test]
+    fn effort_is_found_by_category_not_by_id() {
+        let state = parse_effort_state(claude_config_options().get("configOptions")).unwrap();
+        assert_eq!(state.config_id, "effort");
+        assert_eq!(state.current.as_deref(), Some("xhigh"));
+        assert_eq!(
+            state
+                .options
+                .iter()
+                .map(|o| o.value.as_str())
+                .collect::<Vec<_>>(),
+            ["default", "low", "high", "xhigh", "max"]
+        );
+        assert_eq!(state.options[3].name, "Extra high");
+
+        // omp 18.18.8 names it `thinking`, with `off`/`auto` values.
+        let omp = json!([{ "id": "thinking", "category": "thought_level", "type": "select",
+            "currentValue": "auto",
+            "options": [{ "value": "off" }, { "group": "g", "name": "G",
+                          "options": [{ "value": "auto", "name": "Auto" }] }] }]);
+        let state = parse_effort_state(Some(&omp)).unwrap();
+        assert_eq!(state.config_id, "thinking");
+        assert_eq!(
+            state.options[0],
+            EffortOption {
+                value: "off".into(),
+                name: "off".into()
+            }
+        );
+        assert_eq!(state.options[1].value, "auto");
+    }
+
+    #[test]
+    fn effort_is_offered_only_on_config_option_model_lanes() {
+        let claude = claude_config_options();
+        let models = parse_session_model_state(&claude);
+        assert!(session_effort_state(&claude, models.control.as_ref()).is_some());
+
+        // codex-acp 1.13.0: a `models` object (ids carry the effort) wins, so
+        // its `reasoning_effort` select is not offered as a separate strip.
+        let codex = json!({
+            "models": { "currentModelId": "gpt-6-sol[xhigh]", "availableModels": [
+                { "modelId": "gpt-6-sol[xhigh]", "name": "6 Sol (xhigh)" }] },
+            "configOptions": [
+                { "id": "model", "category": "model", "type": "select", "currentValue": "gpt-6-sol",
+                  "options": [{ "value": "gpt-6-sol", "name": "6 Sol" }] },
+                { "id": "reasoning_effort", "category": "thought_level", "type": "select",
+                  "currentValue": "xhigh", "options": [{ "value": "xhigh", "name": "xhigh" }] }
+            ]
+        });
+        let models = parse_session_model_state(&codex);
+        assert_eq!(models.control, Some(ModelControl::SetModel));
+        assert!(session_effort_state(&codex, models.control.as_ref()).is_none());
+
+        // cline 3.0.74: no thought_level select at all.
+        let cline = json!({ "configOptions": [
+            { "id": "model", "category": "model", "type": "select", "currentValue": "m",
+              "options": [{ "value": "m", "name": "M" }] }] });
+        let models = parse_session_model_state(&cline);
+        assert!(session_effort_state(&cline, models.control.as_ref()).is_none());
+    }
+
+    #[test]
+    fn remembered_model_applies_only_when_advertised() {
+        let mut memory = crate::acp_lane_models::LaneModelMemory::default();
+        let state = parse_session_model_state(&claude_config_options());
+        assert_eq!(remembered_model(&memory, "claude", &state), None);
+
+        memory.model.insert("claude".into(), "haiku".into());
+        assert_eq!(
+            remembered_model(&memory, "claude", &state).as_deref(),
+            Some("haiku")
+        );
+        assert_eq!(remembered_model(&memory, "omp", &state), None);
+
+        memory.model.insert("claude".into(), "retired-model".into());
+        assert_eq!(remembered_model(&memory, "claude", &state), None);
+    }
+
+    #[test]
+    fn remembered_effort_skips_absent_unoffered_and_current_values() {
+        let effort = parse_effort_state(claude_config_options().get("configOptions"));
+        let mut memory = crate::acp_lane_models::LaneModelMemory::default();
+        assert_eq!(remembered_effort(&memory, "claude", effort.as_ref()), None);
+
+        memory.effort.insert("claude".into(), "max".into());
+        assert_eq!(
+            remembered_effort(&memory, "claude", effort.as_ref()).as_deref(),
+            Some("max")
+        );
+        // Already current: nothing to send.
+        memory.effort.insert("claude".into(), "xhigh".into());
+        assert_eq!(remembered_effort(&memory, "claude", effort.as_ref()), None);
+        // Not offered (another adapter's vocabulary): ignored.
+        memory.effort.insert("claude".into(), "ultra".into());
+        assert_eq!(remembered_effort(&memory, "claude", effort.as_ref()), None);
+        // No effort control on this lane.
+        memory.effort.insert("claude".into(), "max".into());
+        assert_eq!(remembered_effort(&memory, "claude", None), None);
     }
 
     #[test]
