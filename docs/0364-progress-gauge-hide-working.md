@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-11-06
 > Milestone: Window chrome — progress presentation (amends [0018](./0018-progress-bar.md))
+> Amended by: [0390](./0390-header-band-progress.md) — the ring is no longer the default display (`[visual] progress_display`). This key still applies only to the ring; the header band shows busy regardless
 
 ## Problem
 

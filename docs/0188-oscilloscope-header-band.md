@@ -5,7 +5,8 @@
 > Milestone: M-chrome — window chrome polish
 >
 > **Removed (2026-11-11):** the live band, `src/header-scope.ts` and the
-> `chrome.header_accent.style` key are gone; every window draws the static striped band.
+> `chrome.header_accent.style` key are gone; every window draws the static striped band
+> (since 2026-11-11 a flat accent tint, no ticks).
 > Profiling the installed app showed the trace kept a 2D canvas redrawing every frame while
 > any window had output, and each redraw made WebKit repaint the gradient chrome under it.
 > The rest of this document records the original design.

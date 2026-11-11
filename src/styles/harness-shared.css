@@ -1223,11 +1223,12 @@
    gradient ends on `--mat-plate-lo`, so this strip holds that stop (and the
    plated foot carries it on). Plate meets plate under the rail, so the seam
    and its lit lip run only along the screen's bottom edge, from the rail's
-   width on (`::before`); the rail's left bevel carries on down this strip. */
+   width on (`::before`). Like the rail, this strip has no left bevel, so the
+   window's left frame runs unbroken from the titlebar to the bottom. */
 .acp-harness:not(.acp-harness--left-panel-hidden) > .acp-harness__body:has(> .acp-harness__dashboard > .acp-harness__rail) + .acp-harness__command-center {
   --acp-command-center-plate: var(--mat-brush), var(--mat-plate-lo);
   border-top: 0;
-  box-shadow: inset 1px 0 0 var(--mat-bevel-hi);
+  box-shadow: none;
 }
 .acp-harness:not(.acp-harness--left-panel-hidden) > .acp-harness__body:has(> .acp-harness__dashboard > .acp-harness__rail) + .acp-harness__command-center::before {
   content: '';

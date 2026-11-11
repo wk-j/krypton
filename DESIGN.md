@@ -1,6 +1,6 @@
 ---
 name: Krypton Console
-version: 2.3.9
+version: 2.4.0
 description: Skeuomorphic instrument faceplate — brushed graphite (aluminium in the light scheme) with engraved labels, recessed display wells, raised keys and lit lamps, over a transparent desktop
 appliesTo: "Every surface in the Tauri webview and the live-assist webview. Materials: src/styles/materials.css (--mat-*)."
 colors:
@@ -340,10 +340,17 @@ A gauge is a 4px well track with a flat fill in `--mat-silk` or the state colour
 highlight; no glow, no sweep. Its label is engraved above it, its value a readout at the right end.
 Indeterminate work shows a steady lit lamp and a label saying what is running.
 
+Terminal progress (OSC 9;4) draws in the header band, the centre ring or both (`[visual]
+progress_display`, default band). The header band is then a gauge by the rule above: its track drops
+to an unlit tint of the state colour (the window accent, warning when paused, fault on error) and a
+flat fill grows from the left to the percentage, with the 1px inset top highlight and no glow. Busy
+work lights the whole band steadily at half strength. Completion is one lamp flash, then a fade back
+to the idle tint.
+
 The terminal progress ring (OSC 9;4, centred behind the terminal text) is the one glowing gauge. Its
-arc is lit in the state colour (the window accent, warning when paused, fault on error) with a soft
-halo of its own colour, over an unlit ring of that colour at the same width: no well, so no dark
-edge. Its percentage readout and label never glow, and it has no sweep and no orbit.
+arc is lit in the state colour with a soft halo of its own colour, over an unlit ring of that colour
+at the same width: no well, so no dark edge. Its percentage readout and label never glow, and it has
+no sweep and no orbit.
 
 ## States
 
@@ -371,7 +378,9 @@ Links use the theme link colour, underlined with a 2px offset; no glow. Inline c
   instant.
 - **Config effects** keep their own behaviour and are not part of the chrome: `[shader]`, cursor
   trail, `[fire]`, the `[music]` circuit trace, perspective tilt. The header band is a static
-  display well with an accent graticule; it does not animate (the spec 188 oscilloscope was removed).
+  display well filled with one flat accent tint; it does not animate (the spec 188 oscilloscope was removed).
+  While a program reports progress it is a gauge whose fill moves only when the reported value
+  changes (spec 390).
 
 ## Elevation and z-index
 
@@ -442,6 +451,9 @@ selector, and nothing in it bleeds out of that selector.
 
 ## Changelog
 
+- **2.4.0** — The header band is the terminal progress gauge (spec 390): an unlit track and a flat
+  fill in the state colour from the left, busy as a steady half-lit band, no glow. The centre ring
+  becomes optional (`[visual] progress_display`).
 - **2.3.9** — Tool names use the BYPASS readout well, with compact type and existing identity/status
   ink. The named exception applies only to operation/name labels; rows, subjects, outputs, source
   gutters and decision labels stay flat.

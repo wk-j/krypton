@@ -231,7 +231,7 @@ margin_horizontal = 20              # Left/right margin in pixels
 | `color` | color | `"rgba(0, 200, 255, 0.15)"` | Stripe color (unfocused) |
 | `margin_horizontal` | int | `20` | Horizontal margin (px) |
 
-The band is always the static striped well. The `style` key (`"oscilloscope"` / `"ticks"`) was removed with the live oscilloscope on 2026-11-11 (spec 0188). A theme file that still sets `style` loads normally; the key is ignored.
+The band is always a static well filled with one flat tint of the window accent (no tick pattern since 2026-11-11). The `style` key (`"oscilloscope"` / `"ticks"`) was removed with the live oscilloscope on 2026-11-11 (spec 0188). A theme file that still sets `style` loads normally; the key is ignored.
 
 #### `[chrome.corner_accents]`
 

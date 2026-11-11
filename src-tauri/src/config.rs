@@ -337,7 +337,24 @@ pub struct VisualConfig {
     pub window_border: bool,
     /// Show the centred progress ring while a program reports OSC 9;4 busy
     /// (state 3). false = hidden; other progress states still show (spec 364).
+    /// Applies to the ring only; the header band shows busy regardless.
     pub progress_gauge_working: bool,
+    /// Where OSC 9;4 progress is drawn: the header band, the centre ring, or
+    /// both (spec 390).
+    pub progress_display: ProgressDisplay,
+}
+
+/// `[visual] progress_display` — which surface draws OSC 9;4 progress (spec 390).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ProgressDisplay {
+    /// The header band under the titlebar fills to the percentage.
+    #[default]
+    Band,
+    /// The centred ring behind the terminal text (spec 18).
+    Ring,
+    /// Band and ring together.
+    Both,
 }
 
 impl Default for VisualConfig {
@@ -351,6 +368,7 @@ impl Default for VisualConfig {
             glow_intensity: 0.8,
             window_border: true,
             progress_gauge_working: true,
+            progress_display: ProgressDisplay::Band,
         }
     }
 }
@@ -1406,6 +1424,22 @@ min_confidence = 0.65
     fn sanitize_drops_path_chars() {
         assert_eq!(sanitize_theme_name("Foo/Bar.toml"), "foobartoml");
         assert_eq!(sanitize_theme_name("Legacy-Radiance"), "legacy-radiance");
+    }
+
+    #[test]
+    fn visual_progress_display_defaults_to_band_and_parses_each_value() {
+        let cfg: KryptonConfig = toml::from_str("[visual]\nopacity = 0.5\n").unwrap();
+        assert_eq!(cfg.visual.progress_display, ProgressDisplay::Band);
+        for (raw, want) in [
+            ("band", ProgressDisplay::Band),
+            ("ring", ProgressDisplay::Ring),
+            ("both", ProgressDisplay::Both),
+        ] {
+            let src = format!("[visual]\nprogress_display = \"{raw}\"\n");
+            let cfg: KryptonConfig = toml::from_str(&src).unwrap();
+            assert_eq!(cfg.visual.progress_display, want);
+        }
+        assert!(toml::from_str::<KryptonConfig>("[visual]\nprogress_display = \"bar\"\n").is_err());
     }
 
     #[test]

@@ -146,11 +146,17 @@ glow_intensity = 0.8           # Top-line glow brightness boost (0.0 = off, 3.0 
 window_border = true           # Show the window's 1px bezel edge and, when
                                # focused, its accent ring. false makes both
                                # transparent (geometry unchanged). Default: true
+progress_display = "band"      # Where OSC 9;4 progress shows: "band" (the header
+                               # band under the titlebar fills to the percentage),
+                               # "ring" (the centre ring behind the text) or "both".
+                               # The titlebar progress lamp lights in every mode
+                               # (spec 390). Default: "band"
 progress_gauge_working = true  # Show the centre progress ring while a program
                                # reports busy (OSC 9;4 state 3, label "working").
                                # false hides only that ring; percent, error and
-                               # paused rings and the titlebar progress lamp still show
-                               # (spec 364). Default: true
+                               # paused rings, the header band and the titlebar
+                               # progress lamp still show (spec 364). Ring only.
+                               # Default: true
 blur = 12                      # reserved: parsed, not applied
 
 # --- Keyboard Overlay (spec 271) ---
@@ -1135,7 +1141,8 @@ Shader presets can be cycled at runtime via `Leader g` (per-pane) or toggled glo
 | `[visual]` | `opacity` | float | `0.5` | Screen opacity (0.0 = fully transparent, 1.0 = fully opaque): the alpha of the terminal and Quick Terminal screens. Overrides the theme's backdrop alpha. Plates (titlebar, tab bar, footers, panels, overlays) keep their own 0.9 / 0.94 alpha ([spec 366](./0366-console-faceplate-ui.md)). Under a light-scheme theme the effective value is at least 0.94 ([spec 321](./0321-light-scheme-legibility.md)). Diff View (dark scheme) lets this show through the code surface. |
 | `[visual]` | `glow_intensity` | float | `0.8` | Top-line glow brightness boost. 0.0 disables the glow, higher = stronger. Clamped to 0.0–3.0. |
 | `[visual]` | `window_border` | bool | `true` | Show the window's 1px bezel edge and, when focused, its accent ring. `false` makes both transparent, so window geometry is unchanged; plates, screen and LEDs stay. The Quick Terminal overlay keeps its own chrome. |
-| `[visual]` | `progress_gauge_working` | bool | `true` | Show the centre progress ring while a program reports busy (OSC 9;4 state `3`, label `working`). `false` hides only that ring: percent, error and paused rings and the titlebar progress lamp still show. Hot-reloadable. See [spec 364](./0364-progress-gauge-hide-working.md) |
+| `[visual]` | `progress_display` | string | `"band"` | Where OSC 9;4 progress shows: `"band"` (the header band under the titlebar becomes a gauge that fills to the percentage), `"ring"` (the centre ring behind the terminal text) or `"both"`. The titlebar progress lamp lights in every mode. Any other value fails the config parse, so the whole file falls back to defaults. Hot-reloadable. See [spec 390](./0390-header-band-progress.md) |
+| `[visual]` | `progress_gauge_working` | bool | `true` | Show the centre progress ring while a program reports busy (OSC 9;4 state `3`, label `working`). `false` hides only that ring: percent, error and paused rings, the header band and the titlebar progress lamp still show. Has an effect only when `progress_display` includes the ring. Hot-reloadable. See [spec 364](./0364-progress-gauge-hide-working.md) |
 | `[visual]` | `blur` | int | `12` | Reserved — parsed, not applied |
 
 ### SSH Configuration

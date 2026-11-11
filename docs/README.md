@@ -19,7 +19,6 @@ Listed by spec number. Older specs remain in this directory.
 
 | # | Spec |
 |---|------|
-| 370 | [OMP Background Subagent Jobs](./0370-harness-omp-background-jobs.md) |
 | 371 | [Harness Notice Rows](./0371-harness-notice-rows.md) |
 | 372 | [Prompt Dialog → Harness Lanes](./0372-prompt-dialog-harness-lanes.md) |
 | 373 | [Prompt Dialog Typewriter Slip](./0373-prompt-dialog-typewriter-slip.md) |
@@ -39,6 +38,7 @@ Listed by spec number. Older specs remain in this directory.
 | 387 | [Harness System Command Components](./0387-harness-system-command-components.md) |
 | 388 | [ACP Lane Model and Effort Memory](./0388-acp-lane-model-effort-memory.md) |
 | 389 | [Remove ACP Harness Directives](./0389-remove-harness-directives.md) |
+| 390 | [Header Band Progress](./0390-header-band-progress.md) |
 
 ## ADRs (31)
 

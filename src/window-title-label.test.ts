@@ -88,6 +88,11 @@ describe('session mark chrome', () => {
     expect(css).not.toMatch(/\.krypton-window__header-accent--scope/);
   });
 
+  it('fills the header band with one flat accent tint, not a tick pattern', () => {
+    expect(accent).not.toMatch(/repeating-linear-gradient/);
+    expect(accent).toMatch(/--krypton-window-accent-rgb/);
+  });
+
   it('does not let progress.css re-assert titlebar overflow', () => {
     expect(progressCss).not.toMatch(
       /\.krypton-window__titlebar\s*\{[^}]*overflow:\s*hidden\s*;/,

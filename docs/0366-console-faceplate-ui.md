@@ -196,7 +196,7 @@ same element. The light set is the dock's aluminium set with the plate stops at 
   trace (only while music plays), and the default-on 2° perspective tilt (`[visual]
   perspective_tilt_x`, `config.rs:342-352`). The header oscilloscope, on by default on every window
   (spec 188, `compositor.ts:2705`), stays and is redrawn as a display well. (Later removed on
-  2026-11-11; the well now holds the static graticule only. See spec 0188.)
+  2026-11-11; the well now holds one flat accent tint only. See spec 0188.)
 - **Decorative textures go:** the help-overlay scanlines
   (`src/acp/components/help-overlay/help-overlay.css:19`) and the harness dashboard dot grid
   (`harness-shared.css:394-396, 1639-1641`).

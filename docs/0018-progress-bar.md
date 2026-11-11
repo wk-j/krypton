@@ -4,6 +4,7 @@
 > Date: 2026-03-13
 > Milestone: M8 — Polish
 > Amended by: [0364](./0364-progress-gauge-hide-working.md) — `[visual] progress_gauge_working = false` hides the ring while the state is indeterminate
+> Amended by: [0390](./0390-header-band-progress.md) — the header band is the default progress display; the ring shows only with `[visual] progress_display = "ring"` or `"both"`. The display now follows tab switches and pane focus (edge cases 7–8 below), and completion/error dismissal timers are cancelled by a newer update
 > Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): titlebar scanline sweep, gauge orbit and glows removed. DESIGN.md 2.0.2 (2026-11-07) relights the ring's arc only: a soft halo in the state colour from a per-gauge SVG filter, over a dim ring of that colour instead of the dark well; the percentage and label stay unlit, and the sweep and orbit stay gone. The "Opacity levels" and "Glow Effect" sections below describe the original design.
 
 ## Problem

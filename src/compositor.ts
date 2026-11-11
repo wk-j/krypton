@@ -32,7 +32,6 @@ import {
   PaneNode,
   SplitDirection,
   type ProgressEvent,
-  type PaneProgress,
   type ProcessChangedEvent,
   type ProcessInfo,
   type ProcessCandidate,
@@ -605,7 +604,7 @@ export class Compositor {
     this.progressGauge = new ProgressGauge({
       getWindowElement: (windowId) => this.windows.get(windowId)?.element ?? null,
       getQuickTerminalElement: () => this.qtElement,
-      getWindowDisplayProgress: (windowId) => this.getWindowDisplayProgress(windowId),
+      getWindowDisplaySession: (windowId) => this.getWindowDisplaySession(windowId),
     });
     this.setupResizeHandler();
     this.setupPtyListeners();
@@ -837,6 +836,18 @@ export class Compositor {
       document.documentElement.classList.toggle(
         'krypton-no-working-gauge',
         config.visual.progress_gauge_working === false,
+      );
+
+      // Where OSC 9;4 progress draws (spec 390): both displays are always
+      // kept in step, CSS hides the one not picked. Default: band.
+      const progressDisplay = config.visual.progress_display ?? 'band';
+      document.documentElement.classList.toggle(
+        'krypton-no-progress-ring',
+        progressDisplay === 'band',
+      );
+      document.documentElement.classList.toggle(
+        'krypton-no-progress-band',
+        progressDisplay === 'ring',
       );
     }
 
@@ -1764,6 +1775,9 @@ export class Compositor {
     this.syncStageProjectInitials(win);
     this.syncWheelItem(win);
     this.syncWindowPlatedFoot(win);
+    // OSC 9;4 progress follows the focused pane too (spec 390). A no-op
+    // when the shown state did not change.
+    this.progressGauge.refreshWindow(win.id);
   }
 
   /** Spec 366: when the shown tab is one pane whose view ends in a plate strip
@@ -8887,19 +8901,16 @@ export class Compositor {
   }
 
   /**
-   * For a regular window, get the progress of the active tab's focused pane.
+   * For a regular window, the session whose OSC 9;4 progress it shows: the
+   * active tab's focused pane.
    */
-  private getWindowDisplayProgress(windowId: WindowId): PaneProgress | null {
+  private getWindowDisplaySession(windowId: WindowId): SessionId | null {
     const win = this.windows.get(windowId);
     if (!win) return null;
     const tab = win.tabs[win.activeTabIndex];
     if (!tab) return null;
-
-    // Find the focused pane's session
     const focusedPane = this.findPaneInTree(tab.paneTree, tab.focusedPaneId);
-    if (!focusedPane || focusedPane.sessionId === null) return null;
-
-    return this.progressGauge.getSessionProgress(focusedPane.sessionId);
+    return focusedPane?.sessionId ?? null;
   }
 
   // ─── SSH Session Multiplexing ─────────────────────────────────────

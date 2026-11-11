@@ -1,5 +1,8 @@
 // Krypton — Progress Gauge (OSC 9;4)
-// Renders SVG arc gauges and the titlebar progress lamp for progress tracking.
+// Renders OSC 9;4 progress in a window's header band (spec 390), the centred
+// SVG ring (spec 18) and the titlebar progress lamp. `[visual] progress_display`
+// hides the band or the ring by CSS class on <html>; both are always kept in
+// step, so Reload Config shows the current state at once.
 
 import {
   SessionId,
@@ -18,6 +21,19 @@ const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 40;
 const LABEL_Y_UNDER_PCT = '60';
 const LABEL_Y_CENTERED = '50';
 
+/** Completion: the fill flashes, then fades. Error: shown, then fades. */
+const FLARE_MS = 800;
+const ERROR_HOLD_MS = 3000;
+const FADE_MS = 1500;
+
+const BAND = 'krypton-window__header-accent';
+const BAND_FILL = 'krypton-window__header-progress';
+const BAND_MODIFIERS = ['progress', 'busy', 'error', 'paused', 'flare', 'fade-out']
+  .map((m) => `${BAND}--${m}`);
+
+/** Lastly-rendered key when nothing is shown. */
+const NONE = 'none';
+
 /** Gives each gauge's glow filter a document-unique id (one gauge per window). */
 let glowFilterSeq = 0;
 
@@ -25,7 +41,15 @@ let glowFilterSeq = 0;
 export interface ProgressGaugeHost {
   getWindowElement(windowId: WindowId): HTMLElement | null;
   getQuickTerminalElement(): HTMLElement | null;
-  getWindowDisplayProgress(windowId: WindowId): PaneProgress | null;
+  /** Session of the window's active tab's focused pane, or null when it has none. */
+  getWindowDisplaySession(windowId: WindowId): SessionId | null;
+}
+
+/** The chrome parts one window's progress is drawn into. */
+interface ProgressParts {
+  content: Element | null;
+  titlebar: Element | null;
+  band: HTMLElement | null;
 }
 
 export class ProgressGauge {
@@ -33,13 +57,17 @@ export class ProgressGauge {
   private sessionProgress: Map<SessionId, PaneProgress> = new Map();
   /** Quick Terminal progress state */
   private qtProgress: PaneProgress | null = null;
+  /** `${state}:${progress}` last drawn per window element; skips identical redraws. */
+  private lastRendered: WeakMap<HTMLElement, string> = new WeakMap();
+  /** The one pending flare/fade/dismiss timer per window element. */
+  private dismissTimers: WeakMap<HTMLElement, ReturnType<typeof setTimeout>> = new WeakMap();
   private host: ProgressGaugeHost;
 
   constructor(host: ProgressGaugeHost) {
     this.host = host;
   }
 
-  /** Get the progress state for a session (used by host for display resolution) */
+  /** The stored progress state for a session, or null when it reports none. */
   getSessionProgress(sessionId: SessionId): PaneProgress | null {
     return this.sessionProgress.get(sessionId) ?? null;
   }
@@ -51,7 +79,8 @@ export class ProgressGauge {
 
   /**
    * Handle a progress update for a session. Updates internal state and
-   * drives the status dot arc gauge + titlebar progress lamp.
+   * redraws the window's band, ring and titlebar lamp. `windowId` null means
+   * the Quick Terminal.
    */
   handleProgress(
     sessionId: SessionId,
@@ -62,14 +91,12 @@ export class ProgressGauge {
     const pState = state as ProgressState;
 
     if (pState === ProgressState.Hidden) {
-      // Clear progress state
       if (windowId === null) {
         this.qtProgress = null;
       } else {
         this.sessionProgress.delete(sessionId);
       }
     } else {
-      // Store progress state
       const paneProgress: PaneProgress = { state: pState, progress };
       if (windowId === null) {
         this.qtProgress = paneProgress;
@@ -78,44 +105,181 @@ export class ProgressGauge {
       }
     }
 
-    // Determine which window element to update
-    let winEl: HTMLElement | null = null;
-    if (windowId === null) {
-      winEl = this.host.getQuickTerminalElement();
-    } else {
-      winEl = this.host.getWindowElement(windowId);
-    }
+    this.renderWindow(windowId);
+  }
+
+  /**
+   * Redraw a window from stored state — the compositor calls this whenever
+   * the window's active tab or focused pane changes (spec 390). A no-op when
+   * the shown state is unchanged.
+   */
+  refreshWindow(windowId: WindowId): void {
+    this.renderWindow(windowId);
+  }
+
+  /** The stored entry the window shows: the active tab's focused pane, or the QT's own. */
+  private displayFor(windowId: WindowId | null): PaneProgress | null {
+    if (windowId === null) return this.qtProgress;
+    const sid = this.host.getWindowDisplaySession(windowId);
+    return sid === null ? null : this.sessionProgress.get(sid) ?? null;
+  }
+
+  private renderWindow(windowId: WindowId | null): void {
+    const winEl = windowId === null
+      ? this.host.getQuickTerminalElement()
+      : this.host.getWindowElement(windowId);
     if (!winEl) return;
+    this.render(winEl, windowId, this.displayFor(windowId));
+  }
 
-    // Resolve which progress to display — active tab's focused pane for regular windows
-    let displayProgress: PaneProgress | null = null;
-    if (windowId === null) {
-      displayProgress = this.qtProgress;
-    } else {
-      displayProgress = this.host.getWindowDisplayProgress(windowId);
+  private partsOf(winEl: HTMLElement): ProgressParts {
+    return {
+      content: winEl.querySelector('.krypton-window__content') ?? winEl.querySelector('.krypton-window__body'),
+      titlebar: winEl.querySelector('.krypton-window__titlebar'),
+      band: winEl.querySelector<HTMLElement>(`.krypton-window__chrome > .${BAND}`),
+    };
+  }
+
+  /** Draw `display` into one window: band, ring and titlebar lamp. */
+  private render(
+    winEl: HTMLElement,
+    windowId: WindowId | null,
+    display: PaneProgress | null,
+  ): void {
+    const shown = display && display.state !== ProgressState.Hidden ? display : null;
+    const key = shown ? `${shown.state}:${shown.progress}` : NONE;
+    if (this.lastRendered.get(winEl) === key) return;
+    this.lastRendered.set(winEl, key);
+    this.cancelTimer(winEl);
+
+    const parts = this.partsOf(winEl);
+    if (!shown) {
+      this.clearParts(parts);
+      return;
     }
 
-    this.updateProgressGauge(winEl, displayProgress);
+    if (parts.band) this.drawBand(parts.band, shown);
+    if (parts.content && parts.titlebar) this.drawRing(parts.content, parts.titlebar, shown);
+
+    const { state, progress } = shown;
+    if (state === ProgressState.Normal && progress >= 100) {
+      this.schedule(winEl, FLARE_MS, () => {
+        this.beginFade(parts);
+        this.schedule(winEl, FADE_MS, () => this.dismiss(winEl, windowId, shown));
+      });
+    } else if (state === ProgressState.Error) {
+      this.schedule(winEl, ERROR_HOLD_MS, () => {
+        this.beginFade(parts);
+        this.schedule(winEl, FADE_MS, () => this.dismiss(winEl, windowId, shown));
+      });
+    }
+  }
+
+  private schedule(winEl: HTMLElement, ms: number, fn: () => void): void {
+    this.dismissTimers.set(winEl, setTimeout(() => {
+      this.dismissTimers.delete(winEl);
+      fn();
+    }, ms));
+  }
+
+  private cancelTimer(winEl: HTMLElement): void {
+    const timer = this.dismissTimers.get(winEl);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    this.dismissTimers.delete(winEl);
+  }
+
+  /**
+   * A completion or error has been shown and faded: forget it so a later
+   * refresh (tab switch back) does not replay it, then redraw whatever the
+   * window should show now. Only drops the entry if the program has not
+   * reported anything since (`source` is still the stored object).
+   */
+  private dismiss(winEl: HTMLElement, windowId: WindowId | null, source: PaneProgress): void {
+    if (windowId === null) {
+      if (this.qtProgress === source) this.qtProgress = null;
+    } else {
+      for (const [sid, entry] of this.sessionProgress) {
+        if (entry === source) {
+          this.sessionProgress.delete(sid);
+          break;
+        }
+      }
+    }
+    this.clearParts(this.partsOf(winEl));
+    this.lastRendered.set(winEl, NONE);
+    if (winEl.isConnected) this.renderWindow(windowId);
+  }
+
+  private beginFade(parts: ProgressParts): void {
+    if (parts.band) {
+      parts.band.classList.remove(`${BAND}--flare`);
+      parts.band.classList.add(`${BAND}--fade-out`);
+    }
+    const gauge = parts.content?.querySelector('.krypton-progress-gauge');
+    if (gauge) {
+      gauge.classList.remove('krypton-progress-gauge--flare');
+      gauge.classList.add('krypton-progress-gauge--fade-out');
+    }
+  }
+
+  private clearParts(parts: ProgressParts): void {
+    if (parts.band) this.clearBand(parts.band);
+    if (parts.content && parts.titlebar) this.removeProgressGauge(parts.content, parts.titlebar);
+  }
+
+  /**
+   * The header band as a gauge (spec 390): a fill element scaled from the
+   * left to the percentage. Transform only, so the transition runs on the
+   * compositor and the chrome plate is not repainted.
+   */
+  private drawBand(band: HTMLElement, shown: PaneProgress): void {
+    const { state, progress } = shown;
+    let fill = band.querySelector<HTMLElement>(`:scope > .${BAND_FILL}`);
+    if (!fill) {
+      fill = document.createElement('div');
+      fill.className = BAND_FILL;
+      band.appendChild(fill);
+    }
+
+    band.classList.remove(...BAND_MODIFIERS);
+    band.classList.add(`${BAND}--progress`);
+
+    let ratio = clampPct(progress) / 100;
+    switch (state) {
+      case ProgressState.Normal:
+        if (progress >= 100) band.classList.add(`${BAND}--flare`);
+        break;
+      case ProgressState.Error:
+        band.classList.add(`${BAND}--error`);
+        if (progress <= 0) ratio = 1;
+        break;
+      case ProgressState.Indeterminate:
+        band.classList.add(`${BAND}--busy`);
+        ratio = 1;
+        break;
+      case ProgressState.Paused:
+        band.classList.add(`${BAND}--paused`);
+        break;
+    }
+    fill.style.transform = `scaleX(${ratio})`;
+  }
+
+  private clearBand(band: HTMLElement): void {
+    band.classList.remove(...BAND_MODIFIERS);
+    band.querySelector(`:scope > .${BAND_FILL}`)?.remove();
   }
 
   /**
    * Create or update the large centered background gauge in a window's
    * content area, and toggle the titlebar progress lamp.
    */
-  private updateProgressGauge(
-    winEl: HTMLElement,
-    displayProgress: PaneProgress | null,
+  private drawRing(
+    contentEl: Element,
+    titlebar: Element,
+    shown: PaneProgress,
   ): void {
-    const contentEl = winEl.querySelector('.krypton-window__content') ?? winEl.querySelector('.krypton-window__body');
-    const titlebar = winEl.querySelector('.krypton-window__titlebar');
-    if (!contentEl || !titlebar) return;
-
-    if (!displayProgress || displayProgress.state === ProgressState.Hidden) {
-      this.removeProgressGauge(contentEl, titlebar);
-      return;
-    }
-
-    const { state, progress } = displayProgress;
+    const { state, progress } = shown;
 
     // Ensure gauge container exists
     let gauge = contentEl.querySelector('.krypton-progress-gauge') as HTMLElement | null;
@@ -159,21 +323,11 @@ export class ProgressGauge {
         pctText.textContent = `${progress}%`;
         labelText.textContent = 'loading';
 
-        // Completion flash at 100%
+        // Completion flash at 100%; render() schedules the fade-out.
         if (progress >= 100) {
           pctText.textContent = '100%';
           labelText.textContent = 'complete';
           gauge.classList.add('krypton-progress-gauge--flare');
-          const gaugeRef = gauge;
-          const contentRef = contentEl;
-          const titlebarRef = titlebar;
-          setTimeout(() => {
-            gaugeRef.classList.remove('krypton-progress-gauge--flare');
-            gaugeRef.classList.add('krypton-progress-gauge--fade-out');
-            setTimeout(() => {
-              this.removeProgressGauge(contentRef, titlebarRef);
-            }, 1500);
-          }, 800);
         }
         break;
       }
@@ -184,15 +338,6 @@ export class ProgressGauge {
         titlebar.classList.add('krypton-window__titlebar--progress-error');
         pctText.textContent = progress > 0 ? `${progress}%` : 'ERR';
         labelText.textContent = 'error';
-        const gaugeRef = gauge;
-        const contentRef = contentEl;
-        const titlebarRef = titlebar;
-        setTimeout(() => {
-          gaugeRef.classList.add('krypton-progress-gauge--fade-out');
-          setTimeout(() => {
-            this.removeProgressGauge(contentRef, titlebarRef);
-          }, 1500);
-        }, 3000);
         break;
       }
 
@@ -304,7 +449,7 @@ export class ProgressGauge {
   }
 
   /**
-   * Remove the background gauge and titlebar sweep from a window.
+   * Remove the background gauge and turn off the titlebar progress lamp.
    */
   private removeProgressGauge(
     contentEl: Element,
@@ -319,4 +464,10 @@ export class ProgressGauge {
       'krypton-window__titlebar--progress-paused',
     );
   }
+}
+
+/** OSC 9;4 values are 0-100; the parser already clamps, this guards the scale. */
+function clampPct(progress: number): number {
+  if (!Number.isFinite(progress)) return 0;
+  return Math.max(0, Math.min(100, progress));
 }

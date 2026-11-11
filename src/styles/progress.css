@@ -1,4 +1,9 @@
 /* ─── Progress Gauge (OSC 9;4) ─── */
+/* `[visual] progress_display` (spec 390) picks the header band, the ring or
+   both. ProgressGauge always keeps both in step; the compositor puts
+   `krypton-no-progress-ring` / `krypton-no-progress-band` on <html> and the
+   rules here hide the one not picked, so Reload Config needs no redraw. */
+
 /* Large centred ring gauge behind terminal content (DESIGN.md "Gauges and
    progress"): the one glowing gauge. The arc is lit in `--x-rgb` with a soft
    halo (the SVG filter `createGaugeElement` attaches to the fill), over an
@@ -94,8 +99,13 @@
 }
 
 /* [visual] progress_gauge_working = false — no ring while busy (spec 364).
-   The titlebar LED stays lit. */
+   The titlebar LED stays lit, and the header band still shows busy. */
 .krypton-no-working-gauge .krypton-progress-gauge--indeterminate {
+  display: none;
+}
+
+/* [visual] progress_display = "band" — no ring at all (spec 390). */
+.krypton-no-progress-ring .krypton-progress-gauge {
   display: none;
 }
 
@@ -134,4 +144,82 @@
 
 .krypton-window__titlebar--progress-paused .krypton-window__status-dot {
   --x-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+}
+
+/* ── Header band gauge (spec 390) ── */
+/* The band under the titlebar (window.css) is a well; while the shown pane
+   reports progress it is a gauge (DESIGN.md "Gauges and progress"): the
+   track drops to an unlit tint of the state colour and a flat fill grows
+   from the left, with a 1px inset top highlight and no glow. The fill moves
+   by `transform: scaleX()` on its own layer, so a change never repaints the
+   chrome plate under it (the spec 188 problem). Busy is the whole band lit
+   steadily at half strength: no sweep, no bounce. Every rule is gated on
+   the band being picked by `[visual] progress_display`. */
+
+.krypton-window__header-progress {
+  display: none;
+}
+
+html:not(.krypton-no-progress-band) .krypton-window__header-accent--progress {
+  --x-rgb: var(--krypton-window-accent-rgb, 0, 204, 255);
+}
+
+html:not(.krypton-no-progress-band) .krypton-window__header-accent--error {
+  --x-rgb: var(--krypton-danger-rgb, 255, 58, 92);
+}
+
+html:not(.krypton-no-progress-band) .krypton-window__header-accent--paused {
+  --x-rgb: var(--krypton-warning-rgb, 232, 197, 71);
+}
+
+/* The unlit track. Back to the idle tint as the fill fades out. */
+html:not(.krypton-no-progress-band)
+  .krypton-window__header-accent--progress:not(.krypton-window__header-accent--fade-out) {
+  background:
+    linear-gradient(rgba(var(--x-rgb), 0.12), rgba(var(--x-rgb), 0.12)),
+    var(--mat-well-fill);
+}
+
+html:not(.krypton-no-progress-band) .krypton-window__header-progress {
+  display: block;
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  background-color: rgba(var(--x-rgb), 0.9);
+  box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
+  will-change: transform;
+  transition: transform 300ms ease-out, opacity 1.5s ease-out;
+}
+
+html:not(.krypton-no-progress-band)
+  .krypton-window__header-accent--busy .krypton-window__header-progress {
+  background-color: rgba(var(--x-rgb), 0.5);
+}
+
+/* Completion: one lamp flash (≤600ms), then the 1.5s fade. */
+html:not(.krypton-no-progress-band)
+  .krypton-window__header-accent--flare .krypton-window__header-progress {
+  animation: krypton-band-flare 0.6s ease-out;
+}
+
+html:not(.krypton-no-progress-band)
+  .krypton-window__header-accent--fade-out .krypton-window__header-progress {
+  opacity: 0;
+}
+
+@keyframes krypton-band-flare {
+  0%   { filter: brightness(1); }
+  40%  { filter: brightness(1.6); }
+  100% { filter: brightness(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not(.krypton-no-progress-band) .krypton-window__header-progress {
+    transition: opacity 1.5s ease-out;
+  }
+
+  html:not(.krypton-no-progress-band)
+    .krypton-window__header-accent--flare .krypton-window__header-progress {
+    animation: none;
+  }
 }

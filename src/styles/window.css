@@ -159,21 +159,22 @@
 .krypton-window[data-signal='normal']  { /* default primary */ }
 
 /* ─── Header band ───
-   A small display well let into the titlebar plate under the title row, with
-   a static accent graticule inside the well. Static on purpose: the live
-   oscilloscope that used to draw here (specs 188/189) was removed. */
+   A small display well let into the titlebar plate under the title row,
+   filled with one flat accent tint (no tick pattern). Static on purpose: the
+   live oscilloscope that used to draw here (specs 188/189) was removed.
+   While a program reports OSC 9;4 progress it is a gauge: progress.css owns
+   that state and the fill element it clips (spec 390). */
 .krypton-window__header-accent {
+  position: relative;
+  overflow: hidden;
   height: var(--krypton-header-accent-height, 6px);
   margin: 0 var(--krypton-header-accent-margin, 20px);
   /* A slot: half the band height, never more than the part radius. */
   border-radius: min(var(--krypton-border-radius, 8px), calc(var(--krypton-header-accent-height, 6px) / 2));
   background:
-    repeating-linear-gradient(
-      90deg,
-      rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35) 0px,
-      rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35) 1px,
-      transparent 1px,
-      transparent 3px
+    linear-gradient(
+      rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35),
+      rgba(var(--krypton-window-accent-rgb, 0, 200, 255), 0.35)
     ),
     var(--mat-well-fill);
   box-shadow: var(--mat-well-shadow);
