@@ -2466,6 +2466,7 @@ export class AcpHarnessView implements ContentView {
         lane.currentModelId = modelId;
         lane.modelName = modelId;
         this.render();
+        await this.refreshLaneEffort(lane);
         return { lane: lane.displayName, modelId, result };
       }
       case 'lane.permission_mode': {
@@ -10686,8 +10687,11 @@ export class AcpHarnessView implements ContentView {
       rememberModel = picked.model_id;
     }
     let rememberEffort: string | undefined;
-    if (effort && (await this.switchLaneEffort(lane, picked, effort)) && effort.moved) {
-      rememberEffort = effort.value;
+    if (effort) {
+      if ((await this.switchLaneEffort(lane, picked, effort)) && effort.moved) rememberEffort = effort.value;
+    } else if (modelChanged) {
+      // The strip was empty, but the new model may bring an effort control.
+      await this.refreshLaneEffort(lane);
     }
     if (rememberModel === undefined && rememberEffort === undefined) return;
     try {
@@ -10722,7 +10726,21 @@ export class AcpHarnessView implements ContentView {
       return false;
     } finally {
       lane.effortSwitchInFlight = false;
+      this.render();
     }
+  }
+
+  /** spec 388: re-read the lane's effort after a model switch, which can move
+   *  it or add or drop the control, so the head chip shows the live value. */
+  private async refreshLaneEffort(lane: HarnessLane): Promise<void> {
+    const client = lane.client;
+    if (!client) return;
+    try {
+      lane.effort = await client.laneEffort();
+    } catch {
+      return;
+    }
+    this.render();
   }
 
   /** Perform a live model switch with an epoch-guarded optimistic update

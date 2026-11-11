@@ -1,7 +1,7 @@
 // Spec 302 §4.2 — `LaneHead`.
 //
 // The lane's first row: status symbol, name + backend logo, status word, the
-// chip strip (inbox / orchestrator / model / mode / mcp / sandbox / bypass /
+// chip strip (inbox / orchestrator / model / effort / mode / mcp / sandbox / bypass /
 // metrics) and the activity tail. Ported from `harness-lane-chrome.ts:86-130`
 // (`renderLaneHead`) plus every chip builder it calls (`:132-144`, `:318-400`).
 //
@@ -172,6 +172,21 @@ function headChips(next: LaneHeadProps): HeadChip[] {
           title: `model ${lane.modelName}`,
         },
       });
+  }
+
+  // spec 388: the lane's reasoning effort, beside the model it applies to.
+  // Absent when the agent offers no effort control or reports no value.
+  const effort = lane.effort;
+  if (effort?.current) {
+    const name = effort.options.find((option) => option.value === effort.current)?.name ?? effort.current;
+    out.push({
+      key: 'effort',
+      props: {
+        block: 'acp-harness__lane-effort',
+        text: `effort ${name}`,
+        title: `reasoning effort ${name} — ⌘P , to change`,
+      },
+    });
   }
 
   if (lane.currentMode) {
@@ -433,6 +448,7 @@ export const def: ComponentDef = {
     'acp-harness__lane-inbox',
     'acp-harness__lane-orchestrator',
     'acp-harness__lane-model',
+    'acp-harness__lane-effort',
     'acp-harness__lane-mode',
     'acp-harness__lane-sandbox',
     'acp-harness__lane-mcp',
