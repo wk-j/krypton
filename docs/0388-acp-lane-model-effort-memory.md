@@ -87,8 +87,9 @@ selectors.
 | `src/acp/client.ts` | `laneEffort()`, `setLaneEffort(value)`, `static rememberLaneChoice(backendId, choice)`. |
 | `src/acp/adapters/types.ts`, `src/acp/adapters/generic.ts` | `LaneSession.requestedModelId`, `LaneSession.effort`. |
 | `src/acp/harness-lane-chrome.ts` | `inferLaneModelName` prefers the session's requested model (as its advertised name). |
-| `src/acp/acp-harness-view.ts` | `HarnessLane.effort`, effort cursor, `h`/`l`, the Enter flow below, remember call. |
+| `src/acp/acp-harness-view.ts` | `HarnessLane.effort`, effort cursor, `h`/`l`, the Enter flow below, remember call, effort re-read after a model switch. |
 | `src/acp/components/model-picker/{index.ts,model-picker.css,model-picker.test.ts}` | Effort strip with its own `h`/`l` caps. |
+| `src/acp/components/lane-head/{index.ts,lane-head.css,lane-head.test.ts}` | `effort <name>` chip after the model chip. |
 | `docs/0006-configuration.md`, `docs/0127-acp-lane-model-picker.md`, `docs/0126-acp-lane-model-selection.md`, `docs/0069-acp-agent-support.md`, `docs/README.md` | File, precedence, picker keys, which backends have effort. |
 
 ## Design
@@ -213,6 +214,22 @@ animates.
   unchanged. Checked in a browser at 1400px (one-line head, whole strip visible) and 700px (360px
   plate; the strip scrolls sideways, and the head wraps exactly as it did before this spec).
 
+**Lane effort chip** (added 2026-11-11 at the user's request). The lane head shows the lane's
+current effort as `effort <name>` in its own chip, `.acp-harness__lane-effort`, right after the
+model chip and in the same unlit capsule. `<name>` is the option name the agent advertises, or
+the raw value when the current value is not among the options. Its title is
+`reasoning effort <name> — ⌘P , to change`. There is no chip when the lane has no effort control or
+the agent reports no current value. The chip reads `HarnessLane.effort`, so the frontend keeps that
+field current:
+- at spawn and restore, from `LaneSession.effort`;
+- when the picker opens (`laneEffort()`);
+- after a picker effort step, which re-renders whether it succeeded or failed;
+- after a picker model switch on a lane that had no strip, and after a control-API `lane.model`
+  switch, because a model switch can move the effort, or add or drop the control.
+
+The agent can also change effort by itself (`config_option_update`). Rust records that, but no
+event reaches the frontend, so the chip catches up the next time one of the paths above runs.
+
 ## Edge Cases
 
 - **Remembered model is not advertised any more**: Krypton logs it and falls back to config
@@ -249,7 +266,7 @@ None. Settled:
 
 - A picker key that clears remembered values (edit the file).
 - Remembering per project or per lane, or effort per model.
-- An effort key in `krypton.toml`, and showing effort in the lane chip.
+- An effort key in `krypton.toml`.
 - Switching Codex or Cline from the `models` object to `configOptions`.
 - Other config options (`fast`, `mode`, `provider`, `auto_approve`).
 - Persisting switches made by the control API, Inline AI, Commit Explainer or Assist.

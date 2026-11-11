@@ -5632,13 +5632,14 @@ describe('model picker Enter: model, then effort, then memory (spec 388)', () =>
     expect(remembered()).toEqual([]);
   });
 
-  it('remembers a model on a lane without an effort control', async () => {
-    const { view, lane, client } = setup({ effortAfter: null });
+  it('picks up the effort a new model brings without remembering it', async () => {
+    const { view, lane, client } = setup({ effortAfter: effortOf('high') });
     lane.effort = null;
 
     await proto.applyModelPickerChoice.call(view, lane, haiku, null);
 
-    expect(client.laneEffort).not.toHaveBeenCalled();
+    expect(lane.effort).toEqual(effortOf('high'));
+    expect(client.setLaneEffort).not.toHaveBeenCalled();
     expect(remembered()).toEqual([{ backendId: 'claude', modelId: 'haiku', effort: null }]);
   });
 });

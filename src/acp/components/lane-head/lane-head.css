@@ -158,6 +158,7 @@
      ink) by default; a chip whose state matters lights with its `--lane-chip-rgb`
      (DESIGN.md "Lamps"). All sit at the chrome font size. */
   .acp-harness__lane-model,
+  .acp-harness__lane-effort,
   .acp-harness__lane-mode,
   .acp-harness__lane-sandbox,
   .acp-harness__lane-bg,

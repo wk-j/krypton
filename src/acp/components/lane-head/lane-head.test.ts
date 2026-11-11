@@ -198,6 +198,22 @@ describe('LaneHead', () => {
     head.dispose();
   });
 
+  it('shows the current effort by its option name, beside the model, and drops it with the control', () => {
+    const effort = { options: [{ value: 'hi', name: 'high' }, { value: 'max', name: 'max' }], current: 'hi' };
+    const head = new LaneHead();
+    head.update(props({ lane: makeLane({ modelName: 'opus', effort }) }));
+    const chips = [...head.el.querySelectorAll('.acp-harness__lane-chips > *')].map((node) => node.className);
+    expect(chips.indexOf('acp-harness__lane-effort')).toBe(chips.indexOf('acp-harness__lane-model') + 1);
+    expect(head.el.querySelector('.acp-harness__lane-effort')?.textContent).toBe('effort high');
+
+    head.update(props({ lane: makeLane({ modelName: 'opus', effort: { ...effort, current: 'ultra' } }) }));
+    expect(head.el.querySelector('.acp-harness__lane-effort')?.textContent).toBe('effort ultra');
+
+    head.update(props({ lane: makeLane({ modelName: 'opus', effort: null }) }));
+    expect(head.el.querySelector('.acp-harness__lane-effort')).toBeNull();
+    head.dispose();
+  });
+
   it('unregisters its spinner from the shared tick on dispose', () => {
     const head = new LaneHead();
     head.update(props({ lane: makeLane({ status: 'busy' }) }));
