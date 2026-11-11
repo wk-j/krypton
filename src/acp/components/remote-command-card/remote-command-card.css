@@ -1,0 +1,38 @@
+/* Spec 386: flat transcript content; only the REMOTE name is a readout. */
+@layer krypton.component {
+  .acp-remote-command-card {
+    container-type: inline-size;
+    min-width: 0;
+    color: var(--krypton-fg);
+    font: var(--krypton-font-size, 13px)/1.4 var(--agent-font, monospace);
+  }
+  .acp-remote-command-card [hidden] { display: none; }
+  .acp-remote-command-card__head { display: grid; grid-template-columns: auto minmax(0, min(14ch, 25%)) minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+  .acp-remote-command-card__kind { padding: 1px 7px; border-radius: var(--krypton-border-radius, 8px); background: var(--mat-well); box-shadow: var(--mat-well-shadow); font-size: 0.72em; letter-spacing: 0.08em; color: var(--agent-blue, var(--krypton-fg)); }
+  .acp-remote-command-card__computer,
+  .acp-remote-command-card__command,
+  .acp-remote-command-card__state { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .acp-remote-command-card__computer { color: var(--krypton-ink-2, var(--krypton-fg)); }
+  .acp-remote-command-card__meta { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; min-width: 0; }
+  .acp-remote-command-card__state { max-width: 18ch; color: var(--krypton-ink-3, var(--krypton-fg)); }
+  .acp-remote-command-card[data-state='failed'] .acp-remote-command-card__state { color: rgb(var(--krypton-danger-rgb)); }
+  .acp-remote-command-card[data-state='unknown'] .acp-remote-command-card__state,
+  .acp-remote-command-card[data-state='pending'] .acp-remote-command-card__state,
+  .acp-remote-command-card[data-state='running'] .acp-remote-command-card__state { color: var(--mat-lit); }
+  .acp-remote-command-card .acp-remote-command-card__timer { font-size: 1em; letter-spacing: normal; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .acp-remote-command-card__timing-label { color: var(--krypton-ink-3, var(--krypton-fg)); font-size: 0.82em; }
+  .acp-remote-command-card__button { flex: none; padding: 0 8px; border: 1px solid var(--mat-key-edge); border-radius: var(--krypton-border-radius, 8px); background: var(--mat-key); box-shadow: var(--mat-key-raise); color: var(--krypton-ink-2, var(--krypton-fg)); font: inherit; text-shadow: var(--mat-print); white-space: nowrap; cursor: pointer; }
+  .acp-remote-command-card__button:hover { background: var(--mat-key-hover); color: var(--mat-lit); }
+  .acp-remote-command-card__button:active { background: var(--mat-key-down); box-shadow: var(--mat-key-sunk); transform: translateY(1px); }
+  .acp-remote-command-card__button:focus-visible { outline: 1px solid var(--mat-lit); outline-offset: 2px; }
+  .acp-remote-command-card__hint { margin-left: 6px; }
+  .acp-remote-command-card__output { margin-top: 4px; overflow: hidden; }
+  .acp-remote-command-card__stream { display: flex; align-items: baseline; gap: 8px; }
+  .acp-remote-command-card__stream-label { flex: none; color: var(--krypton-ink-3, var(--krypton-fg)); font-size: 0.82em; }
+  .acp-remote-command-card__text { margin: 0; min-width: 0; overflow: hidden; font: inherit; white-space: pre; }
+  .acp-remote-command-card__note { color: var(--krypton-ink-3, var(--krypton-fg)); font-size: 0.82em; }
+  @container (max-width: 680px) {
+    .acp-remote-command-card__head { grid-template-columns: auto minmax(0, min(14ch, 25%)) minmax(0, 1fr); }
+    .acp-remote-command-card__meta { grid-column: 1 / -1; justify-content: flex-start; }
+  }
+}

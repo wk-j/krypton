@@ -12,6 +12,7 @@ import type {
   ExecutionPayload,
   GuardianReviewPayload,
   JobsPayload,
+  RemoteCommandPayload,
   SubagentPayload,
 } from '../harness-view-types';
 import type {
@@ -150,6 +151,7 @@ export interface ToolView {
   readonly jobs?: JobsPayload;
   readonly execution?: ExecutionPayload;
   readonly guardianReview?: GuardianReviewPayload;
+  readonly remoteCommand?: RemoteCommandPayload;
 }
 
 /** What one tool update contributed toward the row's image strip (spec 281). */

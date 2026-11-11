@@ -141,7 +141,7 @@ export class AgentView implements ContentView {
   readonly type: PaneContentType = 'agent';
   readonly element: HTMLElement;
 
-  /** Set by the compositor to drive the window's oscilloscope band. See docs/189. */
+  /** Set by the compositor to drive the window's Wheel rail activity dot. */
   onOutputPump?: (chars: number) => void;
 
   private messagesEl!: HTMLElement;

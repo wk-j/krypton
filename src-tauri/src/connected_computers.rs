@@ -3,6 +3,7 @@
 use crate::util::emit::EmitExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -33,6 +34,9 @@ pub struct ComputerProfile {
     /// Spec 318: read-only commands skip the approval row. Omitted means `true`.
     #[serde(default = "default_true")]
     pub auto_approve_read_only: bool,
+    /// Spec 385: all commands skip approval for this profile. Omitted means `false`.
+    #[serde(default)]
+    pub bypass_command_approval: bool,
 }
 
 fn default_true() -> bool {
@@ -41,6 +45,10 @@ fn default_true() -> bool {
 
 fn is_true(value: &bool) -> bool {
     *value
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Deserialize, Serialize)]
@@ -61,6 +69,8 @@ struct StoredProfile {
     default_cwd: Option<String>,
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     auto_approve_read_only: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    bypass_command_approval: bool,
 }
 
 impl From<StoredProfile> for ComputerProfile {
@@ -72,6 +82,7 @@ impl From<StoredProfile> for ComputerProfile {
             port: value.port,
             default_cwd: value.default_cwd,
             auto_approve_read_only: value.auto_approve_read_only,
+            bypass_command_approval: value.bypass_command_approval,
         }
     }
 }
@@ -85,6 +96,7 @@ impl From<&ComputerProfile> for StoredProfile {
             port: value.port,
             default_cwd: value.default_cwd.clone(),
             auto_approve_read_only: value.auto_approve_read_only,
+            bypass_command_approval: value.bypass_command_approval,
         }
     }
 }
@@ -798,7 +810,7 @@ impl ConnectedComputerManager {
             None => {
                 self.await_approval(token, &binding, &request, &target, cwd.as_deref())
                     .await?;
-                request.command.clone()
+                Cow::Borrowed(request.command.as_str())
             }
         };
         self.binding(token)?;
@@ -1127,17 +1139,20 @@ fn check_master(profile: &ComputerProfile, socket: &Path) -> bool {
         .is_ok_and(|status| status.success())
 }
 
-/// Spec 318: the re-quoted script to run without asking, or `None` for the
-/// spec 311 approval row. The profile setting is checked before the command.
-fn auto_approved_script(
+/// Spec 385 bypass borrows the original command; spec 318 read-only approval
+/// returns a re-quoted script. `None` requires the spec 311 approval row.
+fn auto_approved_script<'a>(
     profile: &ComputerProfile,
-    command: &str,
+    command: &'a str,
     cwd: Option<&str>,
-) -> Option<String> {
+) -> Option<Cow<'a, str>> {
+    if profile.bypass_command_approval {
+        return Some(Cow::Borrowed(command));
+    }
     if !profile.auto_approve_read_only {
         return None;
     }
-    crate::computer_read_only::read_only_script(command, cwd)
+    crate::computer_read_only::read_only_script(command, cwd).map(Cow::Owned)
 }
 
 fn validate_profile(profile: &ComputerProfile) -> Result<(), String> {
@@ -1369,6 +1384,7 @@ mod tests {
                     port: None,
                     default_cwd: Some("/srv/builds".into()),
                     auto_approve_read_only: true,
+                    bypass_command_approval: false,
                 },
                 &first.revision,
             )
@@ -1379,6 +1395,7 @@ mod tests {
         assert!(!body.contains("defaultCwd"));
         // The default `true` is omitted from the file.
         assert!(!body.contains("auto_approve_read_only"));
+        assert!(!body.contains("bypass_command_approval"));
         assert!(manager
             .save(
                 ComputerProfile {
@@ -1388,6 +1405,7 @@ mod tests {
                     port: None,
                     default_cwd: None,
                     auto_approve_read_only: true,
+                    bypass_command_approval: false,
                 },
                 &first.revision
             )
@@ -1423,6 +1441,7 @@ mod tests {
             legacy.auto_approve_read_only,
             "omitted key defaults to true"
         );
+        assert!(!legacy.bypass_command_approval, "omitted key defaults to false");
         manager
             .save(
                 ComputerProfile {
@@ -1432,6 +1451,7 @@ mod tests {
                     port: None,
                     default_cwd: None,
                     auto_approve_read_only: false,
+                    bypass_command_approval: false,
                 },
                 &first.revision,
             )
@@ -1459,7 +1479,172 @@ mod tests {
             auto_approved_script(&legacy, "rm -rf build", Some("/srv")),
             None
         );
-        assert_eq!(auto_approved_script(&prod, "ls -la", Some("/srv")), None);
+        assert_eq!(
+            auto_approved_script(&prod, "ls -la", Some("/srv")),
+            None
+        );
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn bypass_setting_defaults_persists_and_restores_profile_policy() {
+        let base = std::env::temp_dir().join(format!(
+            "connected-computers-test-{}",
+            random_hex().unwrap()
+        ));
+        let path = base.join("profiles.toml");
+        let manager = ConnectedComputerManager::new_at(path.clone(), base.join("sockets"));
+        let mut profile: ComputerProfile = serde_json::from_value(serde_json::json!({
+            "id": "trusted", "host": "shared-host", "autoApproveReadOnly": false
+        }))
+        .unwrap();
+        assert!(!profile.bypass_command_approval, "legacy IPC defaults to false");
+        profile.bypass_command_approval = true;
+        let saved = manager
+            .save(profile.clone(), &manager.list().unwrap().revision)
+            .unwrap();
+        let ipc = serde_json::to_value(&saved.computers[0].profile).unwrap();
+        assert_eq!(ipc["bypassCommandApproval"], true);
+        let body = fs::read_to_string(&path).unwrap();
+        assert!(body.contains("schema_version = 1"));
+        assert!(body.contains("bypass_command_approval = true"));
+        assert!(body.contains("auto_approve_read_only = false"));
+        assert!(!body.contains("bypassCommandApproval"));
+
+        let mut other = profile.clone();
+        other.id = "manual".into();
+        other.bypass_command_approval = false;
+        manager.save(other, &saved.revision).unwrap();
+        let reloaded = ConnectedComputerManager::new_at(path.clone(), base.join("sockets"));
+        let list = reloaded.list().unwrap();
+        let trusted = list.computers.iter().find(|entry| entry.profile.id == "trusted").unwrap();
+        let manual = list.computers.iter().find(|entry| entry.profile.id == "manual").unwrap();
+        assert_eq!(trusted.state, ConnectionState::Configured);
+        assert!(trusted.profile.bypass_command_approval);
+        assert!(!trusted.profile.auto_approve_read_only);
+        assert_eq!(
+            auto_approved_script(&trusted.profile, "printf '%s\\n' bypass-smoke", None).as_deref(),
+            Some("printf '%s\\n' bypass-smoke")
+        );
+        assert!(!manual.profile.bypass_command_approval);
+        assert_eq!(auto_approved_script(&manual.profile, "ls -la", None), None);
+
+        profile.bypass_command_approval = false;
+        reloaded.save(profile, &list.revision).unwrap();
+        assert!(!fs::read_to_string(&path).unwrap().contains("bypass_command_approval"));
+        let restored = ConnectedComputerManager::new_at(path, base.join("sockets")).list().unwrap();
+        let trusted = restored.computers.iter().find(|entry| entry.profile.id == "trusted").unwrap();
+        assert!(!trusted.profile.bypass_command_approval);
+        assert!(!trusted.profile.auto_approve_read_only);
+        assert_eq!(auto_approved_script(&trusted.profile, "ls -la", None), None);
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn bypass_precedes_read_only_and_preserves_original_command_bytes() {
+        let mut profile = ComputerProfile {
+            id: "trusted".into(),
+            host: "shared-host".into(),
+            user: None,
+            port: None,
+            default_cwd: None,
+            auto_approve_read_only: true,
+            bypass_command_approval: true,
+        };
+        let shell = "  printf '%s\\n' \"$(printf café)\" > result; cat result | wc -c\n";
+        for read_only in [false, true] {
+            profile.auto_approve_read_only = read_only;
+            for command in [shell, "ls -la"] {
+                let script = auto_approved_script(&profile, command, Some("/home/user/.ssh")).unwrap();
+                assert!(matches!(&script, Cow::Borrowed(_)));
+                assert_eq!(script.as_bytes(), command.as_bytes());
+                assert_eq!(script.as_ptr(), command.as_ptr(), "bypass must borrow the command");
+            }
+            profile.bypass_command_approval = false;
+            assert_eq!(auto_approved_script(&profile, shell, None), None);
+            let script = auto_approved_script(&profile, "ls -la", Some("/srv"));
+            if read_only {
+                assert!(matches!(&script, Some(Cow::Owned(_))));
+                assert_eq!(script.as_deref(), Some("'ls' '-la'"));
+                assert_eq!(
+                    auto_approved_script(&profile, "cat /home/user/.ssh/id_ed25519", None),
+                    None
+                );
+            } else {
+                assert_eq!(script, None);
+            }
+            profile.bypass_command_approval = true;
+        }
+    }
+
+    #[tokio::test]
+    async fn bypass_keeps_request_capability_and_connection_guards() {
+        let base = std::env::temp_dir().join(format!(
+            "connected-computers-test-{}",
+            random_hex().unwrap()
+        ));
+        let manager =
+            ConnectedComputerManager::new_at(base.join("profiles.toml"), base.join("sockets"));
+        manager
+            .save(
+                ComputerProfile {
+                    id: "trusted".into(),
+                    host: "unused-host".into(),
+                    user: None,
+                    port: None,
+                    default_cwd: None,
+                    auto_approve_read_only: false,
+                    bypass_command_approval: true,
+                },
+                &manager.list().unwrap().revision,
+            )
+            .unwrap();
+        let token = manager.issue_capability("h1".into(), "Pi-1".into(), 7).unwrap();
+        let request = ComputerExecRequest {
+            computer_id: "trusted".into(),
+            command: "printf '%s\\n' bypass-smoke".into(),
+            cwd: None,
+            timeout_seconds: None,
+        };
+        assert_eq!(
+            manager.exec(&token, request.clone()).await.err().unwrap(),
+            "Computer lane capability is invalid or expired"
+        );
+        manager.bind_session(&token, 42).unwrap();
+        for (command, expected) in [
+            (String::new(), "Command must be 1–16384 bytes"),
+            ("x".repeat(16 * 1024 + 1), "Command must be 1–16384 bytes"),
+            ("printf\0bad".into(), "Command contains NUL"),
+        ] {
+            let mut invalid = request.clone();
+            invalid.command = command;
+            assert_eq!(manager.exec(&token, invalid).await.err().unwrap(), expected);
+        }
+        for timeout in [0, 601] {
+            let mut invalid = request.clone();
+            invalid.timeout_seconds = Some(timeout);
+            assert_eq!(
+                manager.exec(&token, invalid).await.err().unwrap(),
+                "timeoutSeconds must be 1–600"
+            );
+        }
+        manager.disconnect("trusted").unwrap();
+        assert_eq!(
+            manager.exec(&token, request.clone()).await.err().unwrap(),
+            "Computer is disconnected"
+        );
+        let replacement = manager.issue_capability("h1".into(), "Pi-1".into(), 8).unwrap();
+        assert_eq!(
+            manager.exec(&token, request.clone()).await.err().unwrap(),
+            "Computer lane capability is invalid or expired"
+        );
+        manager.bind_session(&replacement, 43).unwrap();
+        manager.revoke_session(43);
+        assert_eq!(
+            manager.exec(&replacement, request).await.err().unwrap(),
+            "Computer lane capability is invalid or expired"
+        );
+        assert!(manager.approvals.lock().unwrap().is_empty());
         let _ = fs::remove_dir_all(base);
     }
 
@@ -1472,6 +1657,7 @@ mod tests {
             port: None,
             default_cwd: None,
             auto_approve_read_only: true,
+            bypass_command_approval: false,
         };
         assert!(validate_profile(&profile).is_err());
         profile.host = "buildbox".into();

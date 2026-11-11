@@ -12,6 +12,7 @@ export interface ComputerProfile {
   port?: number;
   defaultCwd?: string;
   autoApproveReadOnly?: boolean;
+  bypassCommandApproval?: boolean;
 }
 
 type ConnectionState = 'configured' | 'connecting' | 'connected' | 'disconnected';
@@ -230,7 +231,7 @@ export class ConnectedComputersContentView implements ContentView {
       title.textContent = item.profile.id;
       const state = document.createElement('span');
       state.className = 'krypton-computers__state krypton-computers__state--' + item.state;
-      state.textContent = item.state;
+      state.textContent = item.state + (item.profile.bypassCommandApproval ? ' · BYPASS' : '');
       const target = document.createElement('small');
       target.textContent = item.resolvedTarget ?? item.profile.host;
       const activity = document.createElement('small');
@@ -284,7 +285,8 @@ export class ConnectedComputersContentView implements ContentView {
       ['User', item.profile.user ?? 'OpenSSH config/default'],
       ['Port', item.profile.port?.toString() ?? 'OpenSSH config/default'],
       ['Default directory', item.profile.defaultCwd ?? 'Remote login home'],
-      ['Read-only commands', item.profile.autoApproveReadOnly !== false ? 'Run without asking' : 'Always ask'],
+      ['Command approval', item.profile.bypassCommandApproval ? 'BYPASS — all commands'
+        : item.profile.autoApproveReadOnly !== false ? 'Read-only auto-approval' : 'Always ask'],
     ]) {
       const dt = document.createElement('dt');
       dt.textContent = label;
@@ -354,6 +356,20 @@ export class ConnectedComputersContentView implements ContentView {
     checkbox.checked = profile?.autoApproveReadOnly !== false;
     autoApprove.append(checkbox, ' Run read-only commands without asking');
     form.appendChild(autoApprove);
+    const bypassLabel = document.createElement('label');
+    bypassLabel.className = 'krypton-computers__check';
+    const bypass = document.createElement('input');
+    bypass.type = 'checkbox';
+    bypass.name = 'bypassCommandApproval';
+    bypass.checked = profile?.bypassCommandApproval === true;
+    checkbox.disabled = bypass.checked;
+    bypass.addEventListener('change', () => { checkbox.disabled = bypass.checked; });
+    const warning = document.createElement('p');
+    warning.id = 'computer-bypass-warning';
+    warning.textContent = 'All local lanes can run any command on this computer without asking, including file deletion and service changes. This setting is saved across app restarts.';
+    bypass.setAttribute('aria-describedby', warning.id);
+    bypassLabel.append(bypass, ' Bypass remote command approval');
+    form.append(bypassLabel, warning);
     const hint = document.createElement('p');
     hint.textContent = 'Keys and jump hosts stay in OpenSSH config. No credentials are stored here.';
     const actions = document.createElement('div');
@@ -383,7 +399,8 @@ export class ConnectedComputersContentView implements ContentView {
     if (!host || host.startsWith('-') || /\s/.test(host)) { this.notice('Enter a valid host or SSH alias.'); return; }
     if (defaultCwd && !defaultCwd.startsWith('/')) { this.notice('Default directory must be absolute.'); return; }
     const autoApproveReadOnly = target.querySelector<HTMLInputElement>('input[name="autoApproveReadOnly"]')?.checked ?? true;
-    const profile: ComputerProfile = { id, host, autoApproveReadOnly };
+    const bypassCommandApproval = target.querySelector<HTMLInputElement>('input[name="bypassCommandApproval"]')?.checked ?? false;
+    const profile: ComputerProfile = { id, host, autoApproveReadOnly, bypassCommandApproval };
     if (user) profile.user = user;
     if (portText) profile.port = Number(portText);
     if (defaultCwd) profile.defaultCwd = defaultCwd;

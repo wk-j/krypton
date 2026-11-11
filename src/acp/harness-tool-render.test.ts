@@ -638,6 +638,20 @@ describe('formatGrokFileMatches', () => {
 });
 
 describe('boundedOutputLines line cut (spec 326)', () => {
+  it('preserves source newlines, indentation, tabs and trailing whitespace', () => {
+    const source = '  first  \n\n\tsecond\t\n  third\n';
+    expect(boundedOutputLines(source, 6)).toBe(source);
+  });
+
+  it('counts blank source lines toward the line limit', () => {
+    expect(boundedOutputLines('first\n\n  third\nfourth', 3)).toBe('first\n\n  third');
+  });
+
+  it('keeps padding before a width-cut ellipsis on the same cell', () => {
+    const source = `${'x'.repeat(136)}    tail`;
+    expect(boundedOutputLines(source, 6)).toBe(`${'x'.repeat(136)}   …`);
+  });
+
   it('cuts a Thai row and an ASCII row of the same width on the same cell', () => {
     const ascii = `+${'-'.repeat(148)}+`; // 150 cells
     const thai = `| ${'กั'.repeat(146)} |`; // 150 cells, 296 code units

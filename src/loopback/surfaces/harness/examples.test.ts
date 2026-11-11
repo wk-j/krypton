@@ -72,6 +72,7 @@ describe('harness gallery examples', () => {
     expect(TOOLS.some((view) => view.jobs !== undefined)).toBe(true);
     expect(TOOLS.some((view) => view.execution !== undefined)).toBe(true);
     expect(TOOLS.some((view) => view.guardianReview !== undefined)).toBe(true);
+    expect(TOOLS.some((view) => view.remoteCommand !== undefined)).toBe(true);
     expect(TOOLS.some((view) => view.diffs.length > 0)).toBe(true);
     expect(TOOLS.some((view) => view.background !== null)).toBe(true);
     expect(INPUTS.some((input) => input.kind === 'tool' && (input.images?.blocks.length ?? 0) > 0)).toBe(true);

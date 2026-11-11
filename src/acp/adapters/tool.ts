@@ -24,6 +24,7 @@ import {
   toolSubject,
 } from './generic';
 import { parseSubagentPayload } from './subagents';
+import { normalizeRemoteCommand } from './remote-command';
 import type {
   LaneAdapter,
   McpIdentity,
@@ -394,6 +395,7 @@ export class ToolCallDecoder {
     const wire = (merged.status ?? 'pending') as ToolState;
     step.draft.status = this.adapter.toolStatus?.(step, wire) ?? wire;
     this.adapter.tool?.(step);
+    normalizeRemoteCommand(step);
     const view: ToolView = step.draft;
     this.remember(call.toolCallId, {
       wire: compactToolCallForRetention(merged),

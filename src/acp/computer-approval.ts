@@ -1,9 +1,10 @@
 // Krypton — Connected Computer command approval (spec 311), presented as a
 // harness permission row instead of a modal dialog.
 //
-// The gate itself is in Rust: `connected_computers.rs::exec` parks a oneshot,
-// emits `computer-command-approval`, and opens SSH only after the human answers
-// (or declines it after 120s). This module is presentation only — it turns that
+// The gate itself is in Rust: `connected_computers.rs::exec` skips approval for
+// profile bypass or classified reads (specs 385/318). Otherwise it parks a
+// oneshot, emits `computer-command-approval`, and waits for a human answer
+// (or declines after 120s). This module is presentation only — it turns that
 // request into the SAME `PermissionPayload` the ACP permission rows use, so a
 // remote command reads in the transcript exactly like every other decision the
 // lane is waiting on.

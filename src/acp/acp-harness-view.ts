@@ -123,6 +123,7 @@ import { GenUiPanel } from './components/genui-panel';
 import type { GenUiPanelState } from './components/genui-panel';
 import { ToolRow } from './components/tool-row';
 import { ExecutionDialog } from './components/execution-dialog';
+import { RemoteCommandDialog } from './components/remote-command-dialog';
 import { initialState as initialUiState } from './genui/evaluate';
 import {
   formatUiFailure,
@@ -408,6 +409,7 @@ import type {
   BackgroundTask,
   ComposerFocus,
   ExecutionOpenTarget,
+  RemoteCommandOpenTarget,
   FileTouchRecord,
   HarnessArtifactRecord,
   HarnessReviewRecord,
@@ -681,6 +683,7 @@ type HarnessOpenTarget =
   | SvgFenceEntry
   | UiFenceEntry
   | ExecutionOpenTarget
+  | RemoteCommandOpenTarget
   | FollowUpAction;
 
 const LANE_PEEK_HEAT_RING_MAX = 240;
@@ -1348,8 +1351,8 @@ export class AcpHarnessView implements ContentView {
   /** Spec 366: the command centre is the root's last child, a plate strip. */
   readonly platedFoot = true;
 
-  /** Set by the compositor to drive the window's oscilloscope band. Pumped by any
-   *  lane's streamed output — the band reads aggregate window activity. See docs/189. */
+  /** Set by the compositor to drive the window's Wheel rail activity dot. Pumped
+   *  by any lane's streamed output — the dot reads aggregate window activity. */
   onOutputPump?: (chars: number) => void;
   /** spec 365: set by the compositor; called when `getFireTrigger()` may have changed. */
   onFireTriggerChange: (() => void) | null = null;
@@ -1530,6 +1533,17 @@ export class AcpHarnessView implements ContentView {
   private executionOpen: { laneId: string; itemId: string } | null = null;
   private readonly executionDialogClosed = (restoreFocus: boolean): void => {
     this.executionOpen = null;
+    if (restoreFocus) {
+      this.focus = 'text';
+      this.element.focus({ preventScroll: true });
+      this.invalidate('composer');
+    }
+  };
+  /** Spec 386: remote details belong to the view, never a sealed row. */
+  private remoteCommandDialog!: RemoteCommandDialog;
+  private remoteCommandOpen: { laneId: string; itemId: string } | null = null;
+  private readonly remoteCommandDialogClosed = (restoreFocus: boolean): void => {
+    this.remoteCommandOpen = null;
     if (restoreFocus) {
       this.focus = 'text';
       this.element.focus({ preventScroll: true });
@@ -4582,6 +4596,7 @@ export class AcpHarnessView implements ContentView {
     // every key while open (the dialog lets Cmd/Ctrl chords through).
     if (this.imageViewer?.isOpen) return this.imageViewer.handleKey(e);
     if (this.executionDialog?.isOpen) return this.executionDialog.handleKey(e);
+    if (this.remoteCommandDialog?.isOpen) return this.remoteCommandDialog.handleKey(e);
     if (this.openHintMode) return this.handleOpenHintKey(e);
     // Spec 280/314: Cmd+Shift+L starts or stops; Left Option is hold-to-talk.
     if (e.code === 'KeyL' && e.metaKey && !e.ctrlKey && e.shiftKey && !e.altKey) {
@@ -5262,6 +5277,9 @@ export class AcpHarnessView implements ContentView {
     this.executionDialog?.close(false);
     this.executionDialog?.dispose();
     this.executionOpen = null;
+    this.remoteCommandDialog?.close(false);
+    this.remoteCommandDialog?.dispose();
+    this.remoteCommandOpen = null;
     this.genUiStates.clear();
     this.uiGenerations.clear();
     this.metricsOverlay?.dispose();
@@ -6644,6 +6662,13 @@ export class AcpHarnessView implements ContentView {
         this.openExecution(executionMsg.dataset.msgId);
         return;
       }
+      const remoteButton = target.closest<HTMLElement>('[data-remote-command-details]');
+      const remoteMsg = remoteButton?.closest<HTMLElement>('.acp-harness__msg[data-msg-id]');
+      if (remoteMsg?.dataset.msgId) {
+        e.preventDefault();
+        this.openRemoteCommand(remoteMsg.dataset.msgId);
+        return;
+      }
       const subagentRow = target.closest<HTMLElement>('[data-subagent-id]');
       const subagentMsg = subagentRow?.closest<HTMLElement>('.acp-harness__msg[data-msg-id]');
       if (subagentRow?.dataset.subagentId && subagentMsg?.dataset.msgId) {
@@ -6750,6 +6775,8 @@ export class AcpHarnessView implements ContentView {
     // spec 319: one Execution Inspector dialog, mounted once like the viewer.
     this.executionDialog = new ExecutionDialog();
     body.appendChild(this.executionDialog.el);
+    this.remoteCommandDialog = new RemoteCommandDialog();
+    body.appendChild(this.remoteCommandDialog.el);
     // spec 310: no parent until a card seats it — the panel lives in the row.
     this.genUiPanel = new GenUiPanel();
 
@@ -9102,8 +9129,8 @@ export class AcpHarnessView implements ContentView {
     }
     if (!this.remoteRuntimeId && lane.computerCapability) {
       head.push(['pi-acp', 'cursor', 'junie', 'cline'].includes(lane.backendId)
-        ? 'Connected computers: use "$KRYPTONCTL_PATH" computer list --json to see targets the user connected in Krypton; use "$KRYPTONCTL_PATH" computer exec <id> -- <quoted-command> to request one remote command. Read-only commands from Krypton\'s built-in list may run immediately when the computer allows it; any other command waits for the user\'s approval of the exact command. Pass --cwd instead of cd, and avoid redirection, $, globs and ~ so a read-only command qualifies. Never expose the capability from your environment.'
-        : 'Connected computers: call computer_list to discover targets the user connected in Krypton, then computer_exec with a connected computerId and exact command. Read-only commands from Krypton\'s built-in list may run immediately when the computer allows it; any other command waits for the user\'s approval of the exact command. Pass cwd instead of cd, and avoid redirection, $, globs and ~ so a read-only command qualifies.');
+        ? 'Connected computers: use "$KRYPTONCTL_PATH" computer list --json to see targets the user connected in Krypton; use "$KRYPTONCTL_PATH" computer exec <id> -- <quoted-command> to request one remote command. If the user enabled bypassCommandApproval for that computer, any command runs without asking; otherwise read-only commands from Krypton\'s built-in list may run immediately when the computer allows it, and other commands wait for approval of the exact command. Pass --cwd instead of cd, and avoid redirection, $, globs and ~ so a read-only command qualifies. Never expose the capability from your environment.'
+        : 'Connected computers: call computer_list to discover targets the user connected in Krypton, then computer_exec with a connected computerId and exact command. If the user enabled bypassCommandApproval for that computer, any command runs without asking; otherwise read-only commands from Krypton\'s built-in list may run immediately when the computer allows it, and other commands wait for approval of the exact command. Pass cwd instead of cd, and avoid redirection, $, globs and ~ so a read-only command qualifies.');
     }
     // spec 298: every lane reads the global lessons, including lanes that
     // cannot write them (Pi, no hook server).
@@ -9522,7 +9549,8 @@ export class AcpHarnessView implements ContentView {
 
   /** spec 311: queue a remote command for the human. Deliberately NOT a
    *  `HarnessPermission` — see `computer-approval.ts` for why the two queues
-   *  stay apart. Nothing in this file resolves it except a keystroke. */
+   *  stay apart. Rust skips this queue for profile bypass or classified reads;
+   *  requests that reach it still require an explicit keystroke. */
   private addComputerApproval(lane: HarnessLane, request: ComputerApprovalRequest): void {
     lane.pendingComputerCommands.push(request);
     this.computerApprovalSeq -= 1;
@@ -10153,6 +10181,7 @@ export class AcpHarnessView implements ContentView {
       targets.push(...(item.svgFences ?? []));
       if (this.transcript?.rowFor(item.id)) targets.push(...(item.uiFences ?? []));
       if (item.executionTarget && this.transcript?.rowFor(item.id)) targets.push(item.executionTarget);
+      if (item.remoteCommandTarget && this.transcript?.rowFor(item.id)) targets.push(item.remoteCommandTarget);
       // spec 323: follow-up buttons, last in their row — only where a label can be seen.
       if (item.followUps && this.transcript?.rowFor(item.id)) targets.push(...item.followUps);
     }
@@ -10186,6 +10215,7 @@ export class AcpHarnessView implements ContentView {
       for (const fence of item.svgFences ?? []) fence.hintLabel = null;
       for (const fence of item.uiFences ?? []) fence.hintLabel = null;
       if (item.executionTarget) item.executionTarget.hintLabel = null;
+      if (item.remoteCommandTarget) item.remoteCommandTarget.hintLabel = null;
       for (const action of item.followUps ?? []) action.hintLabel = null;
     }
     this.render();
@@ -10219,6 +10249,8 @@ export class AcpHarnessView implements ContentView {
         else this.runFollowUp(exact);
       } else if ('executionItemId' in exact) {
         this.openExecution(exact.executionItemId);
+      } else if ('remoteCommandItemId' in exact) {
+        this.openRemoteCommand(exact.remoteCommandItemId);
       } else if ('sourceHash' in exact) {
         const owner = this.activeLane()?.transcript.find((row) => row.uiFences?.includes(exact));
         if (owner) this.openGenUi(owner.id, exact.index);
@@ -10252,7 +10284,10 @@ export class AcpHarnessView implements ContentView {
         row.patchUiHints();
         row.syncFollowUps();
       }
-      if (row instanceof ToolRow) row.patchExecutionHint(item.executionTarget?.hintLabel ?? null);
+      if (row instanceof ToolRow) {
+        row.patchExecutionHint(item.executionTarget?.hintLabel ?? null);
+        row.patchRemoteCommandHint(item.remoteCommandTarget?.hintLabel ?? null);
+      }
     }
   }
 
@@ -10358,8 +10393,51 @@ export class AcpHarnessView implements ContentView {
     });
   }
 
+  private openRemoteCommand(itemId: string): void {
+    const lane = this.activeLane();
+    const tool = lane?.transcript.find((entry) => entry.id === itemId)?.tool;
+    if (!lane || !tool?.remoteCommand || tool.artifactRedaction || tool.execution || tool.subagents) return;
+    this.remoteCommandOpen = { laneId: lane.id, itemId };
+    this.remoteCommandDialog.update({
+      open: true,
+      targetId: itemId,
+      payload: tool.remoteCommand,
+      diagnostics: tool.sections,
+      status: tool.status,
+      startedAt: tool.startedAt,
+      endedAt: tool.endedAt,
+      takeFocus: true,
+      onClose: this.remoteCommandDialogClosed,
+    });
+  }
+
+  /** Refresh the owning overlay only; a retained but unmounted row stays static. */
+  private syncRemoteCommandDialog(): void {
+    const open = this.remoteCommandOpen;
+    if (!open) return;
+    const lane = this.activeLane();
+    const tool = lane?.id === open.laneId
+      ? lane.transcript.find((entry) => entry.id === open.itemId)?.tool : undefined;
+    if (!tool?.remoteCommand || tool.artifactRedaction || tool.execution || tool.subagents) {
+      this.remoteCommandDialog.close(false);
+      return;
+    }
+    this.remoteCommandDialog.update({
+      open: true,
+      targetId: open.itemId,
+      payload: tool.remoteCommand,
+      diagnostics: tool.sections,
+      status: tool.status,
+      startedAt: tool.startedAt,
+      endedAt: tool.endedAt,
+      takeFocus: false,
+      onClose: this.remoteCommandDialogClosed,
+    });
+  }
+
   private dropGenUiLane(laneId: string): void {
     if (this.executionOpen?.laneId === laneId) this.executionDialog.close(false);
+    if (this.remoteCommandOpen?.laneId === laneId) this.remoteCommandDialog.close(false);
     this.uiGenerations.delete(laneId);
     this.genUiPanel?.close();
     for (const key of this.genUiStates.keys()) if (key.startsWith(`${laneId}\u0000`)) this.genUiStates.delete(key);
@@ -11514,6 +11592,7 @@ export class AcpHarnessView implements ContentView {
   private async forceRestartLane(lane: HarnessLane): Promise<void> {
     if (!lane.client || lane.status === 'starting') return; // restart already in flight
     if (this.executionOpen?.laneId === lane.id) this.executionDialog.close(false);
+    if (this.remoteCommandOpen?.laneId === lane.id) this.remoteCommandDialog.close(false);
     this.clearCancelEscalation(lane);
     const resumeSessionId = lane.sessionId;
     this.uiGenerations.delete(lane.id);
@@ -11561,6 +11640,7 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     if (this.executionOpen?.laneId === lane.id) this.executionDialog.close(false);
+    if (this.remoteCommandOpen?.laneId === lane.id) this.remoteCommandDialog.close(false);
     // spec 293: a restarted lane starts a new work thread on its next #handoff.
     this.unbindLaneHandoff(lane);
     if (lane.client) {
@@ -13053,6 +13133,7 @@ export class AcpHarnessView implements ContentView {
     // may have left the window entirely — re-seat it, or collapse it.
     this.syncGenUiMount();
     this.syncExecutionDialog();
+    this.syncRemoteCommandDialog();
     if (anchor) {
       this.restoreTranscriptScrollAnchor(body, anchor);
       lane.savedScrollAnchor = this.captureTranscriptScrollAnchor(body) ?? anchor;
@@ -15184,6 +15265,7 @@ export class AcpHarnessView implements ContentView {
       delete tool.subagents;
       delete tool.execution;
       delete tool.jobs;
+      delete tool.remoteCommand;
     }
     // spec 370: an OMP `wait` reports on the agents of earlier spawn cards.
     if (tool.jobs && event.jobsReport) this.applyJobsToCards(lane, event.jobsReport);
@@ -15191,6 +15273,11 @@ export class AcpHarnessView implements ContentView {
       target.executionTarget ??= { executionItemId: target.id, hintLabel: null };
     } else {
       delete target.executionTarget;
+    }
+    if (tool.remoteCommand && !tool.execution && !tool.subagents) {
+      target.remoteCommandTarget ??= { remoteCommandItemId: target.id, hintLabel: null };
+    } else {
+      delete target.remoteCommandTarget;
     }
     target.text = toolItemText(tool);
     target.status = status;
@@ -16187,6 +16274,7 @@ export class AcpHarnessView implements ContentView {
     if (id !== this.activeLaneId) {
       this.genUiPanel?.close();
       this.executionDialog?.close(false);
+      this.remoteCommandDialog?.close(false);
       this.dictationCtl.abort(false);
       this.assistCtl.cancel(); // spec 306: an in-flight answer is about the old lane
     }

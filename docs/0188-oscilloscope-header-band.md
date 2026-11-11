@@ -1,8 +1,14 @@
 # Oscilloscope Header Band — Implementation Spec
 
-> Status: Implemented
+> Status: Removed (2026-11-11)
 > Date: 2026-07-05
 > Milestone: M-chrome — window chrome polish
+>
+> **Removed (2026-11-11):** the live band, `src/header-scope.ts` and the
+> `chrome.header_accent.style` key are gone; every window draws the static striped band.
+> Profiling the installed app showed the trace kept a 2D canvas redrawing every frame while
+> any window had output, and each redraw made WebKit repaint the gradient chrome under it.
+> The rest of this document records the original design.
 >
 > **Resolved (2026-07-05):** (1) unfocused windows **do** animate (idle-stops when quiet),
 > so the band signals background activity. (2) The `chrome.header_accent.style` config toggle

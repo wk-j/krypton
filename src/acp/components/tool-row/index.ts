@@ -51,6 +51,7 @@ import { Meter } from '../meter';
 import { Spinner } from '../spinner';
 import { SubagentCard } from '../subagent-card';
 import { ExecutionCard } from '../execution-card';
+import { RemoteCommandCard } from '../remote-command-card';
 import { JobList } from '../job-list';
 import { TranscriptRow, type RowProps } from '../transcript-row';
 import { jobsSummary, subagentSummary } from '../../harness-subagents';
@@ -96,7 +97,7 @@ function plainSection(section: ToolSection): HTMLElement {
   if (tone !== 'output') {
     label = el('div', { class: `${PREFIX}__tool-section-label`, text: section.label });
   }
-  const text = el('pre', { class: `${PREFIX}__tool-section-text`, text: section.text });
+  const text = el('pre', { class: `${PREFIX}__tool-section-text`, text: section.text, attrs: { title: section.text } });
   gridifyText(text);
   return el(
     'div',
@@ -154,6 +155,7 @@ export class ToolRow extends TranscriptRow {
   private card: SubagentCard | null = null;
   private jobList: JobList | null = null;
   private executionCard: ExecutionCard | null = null;
+  private remoteCommandCard: RemoteCommandCard | null = null;
   private unidiff: DiffBlock | null = null;
   private readonly statBars: Meter[] = [];
   private statCursor = 0;
@@ -171,15 +173,27 @@ export class ToolRow extends TranscriptRow {
   update(next: RowProps): void {
     const wasLive = this.isLive;
     this.props = next;
+    if (!wasLive && this.remoteCommandCard && next.item.tool?.remoteCommand
+      && !next.item.tool.artifactRedaction && !next.item.tool.subagents && !next.item.tool.execution) {
+      this.paintRemoteCommand(next);
+      return;
+    }
     super.update(next);
     // A cold replay can supply its result after an already-terminal start.
     // Only the owning summary changes; the sealed row stays put.
-    if (!wasLive) this.paintExecution(next);
+    if (!wasLive) {
+      this.paintExecution(next);
+      this.paintRemoteCommand(next);
+    }
     if (next.item.tool && isTerminalToolStatus(next.item.tool.status)) this.seal(next);
   }
 
   patchExecutionHint(label: string | null): void {
     this.executionCard?.setHint(label);
+  }
+
+  patchRemoteCommandHint(label: string | null): void {
+    this.remoteCommandCard?.setHint(label);
   }
 
   /**
@@ -205,6 +219,12 @@ export class ToolRow extends TranscriptRow {
         tool.execution.durationMs,
         tool.execution.detached,
         tool.diffs,
+      ];
+    }
+    if (tool?.remoteCommand && !tool.artifactRedaction && !tool.subagents && !tool.execution) {
+      return [
+        tool.remoteCommand, tool.status, tool.startedAt, tool.endedAt, tool.sections,
+        next.item.remoteCommandTarget?.hintLabel, tool.diffs,
       ];
     }
     return [
@@ -243,6 +263,7 @@ export class ToolRow extends TranscriptRow {
     }
     if (tool.execution && !tool.artifactRedaction && !tool.subagents) {
       this.dropCard();
+      this.dropRemoteCommandCard();
       this.dropJobList();
       this.glyph.update({ running: false, terminalGlyph: tool.glyph });
       this.executionCard ??= new ExecutionCard();
@@ -256,6 +277,21 @@ export class ToolRow extends TranscriptRow {
       return;
     }
     this.dropExecutionCard();
+    if (tool.remoteCommand && !tool.artifactRedaction && !tool.subagents) {
+      this.dropCard();
+      this.dropJobList();
+      this.glyph.update({ running: false, terminalGlyph: tool.glyph });
+      this.remoteCommandCard ??= new RemoteCommandCard();
+      this.paintRemoteCommand(next);
+      const children: HTMLElement[] = [this.remoteCommandCard.el];
+      if (tool.diffs.length > 0) {
+        this.paintDiffs(tool.diffs);
+        children.push(this.diffs);
+      }
+      syncOrder(body, children);
+      return;
+    }
+    this.dropRemoteCommandCard();
     this.paintHead(tool);
     const children: HTMLElement[] = [this.head];
 
@@ -305,6 +341,10 @@ export class ToolRow extends TranscriptRow {
     if (!tool || tool.artifactRedaction) return;
     if (tool.execution && !tool.subagents) {
       this.paintExecution(next);
+      return;
+    }
+    if (tool.remoteCommand && !tool.subagents) {
+      this.paintRemoteCommand(next);
       return;
     }
     if (tool.subagents) {
@@ -359,6 +399,7 @@ export class ToolRow extends TranscriptRow {
     const nodes: HTMLElement[] = [this.kind.el];
     if (tool.subject) {
       setText(this.subject, tool.subject);
+      setAttr(this.subject, 'title', tool.subject);
       nodes.push(this.subject);
     }
     if (tool.result) {
@@ -509,6 +550,21 @@ export class ToolRow extends TranscriptRow {
     });
   }
 
+  private paintRemoteCommand(next: RowProps): void {
+    const tool = next.item.tool;
+    if (!tool?.remoteCommand || !this.remoteCommandCard || tool.artifactRedaction || tool.subagents || tool.execution) return;
+    this.remoteCommandCard.update({
+      payload: tool.remoteCommand, status: tool.status, startedAt: tool.startedAt, endedAt: tool.endedAt,
+      hintLabel: next.item.remoteCommandTarget?.hintLabel ?? null, diagnostics: tool.sections,
+    });
+  }
+
+  private dropRemoteCommandCard(): void {
+    if (!this.remoteCommandCard) return;
+    this.remoteCommandCard.dispose();
+    this.remoteCommandCard = null;
+  }
+
   private dropExecutionCard(): void {
     if (!this.executionCard) return;
     this.executionCard.el.remove();
@@ -535,6 +591,7 @@ export class ToolRow extends TranscriptRow {
     this.dropCard();
     this.dropJobList();
     this.dropExecutionCard();
+    this.dropRemoteCommandCard();
     this.glyph.dispose();
     this.kind.dispose();
     this.unidiff?.dispose();

@@ -158,11 +158,11 @@ Superseded by [spec 273](./0273-wheel-live-previews.md). `WheelRail` flies the i
 4. nextFrame → fitAll() (all windows) → WheelRail.setActive(index) → rAF rotates to target, then stops
 5. Leader j / Cmd+Shift+< → compositor.wheelNext() → focusWindow(next)
 6. focusWindow → syncWheelFocus → set roles (active / preview ±3 / hidden) → suspend/resume webviews → wheel.setActive(i) → rail rotates and docks
-7. PTY output → headerScope.pump(n) + wheelRail.pump(id, n); content views → pumpWindowActivity(id, n) → same pair → activity dot grows, loop runs until decayed
+7. PTY output → wheelRail.pump(id, n); content views → pumpWindowActivity(id, n) → wheelRail.pump → activity dot grows, loop runs until decayed
 8. Leaving Wheel: wheel.dispose(); clear the --wheel class, role, visibility, pointer, opacity, transform; resume webviews
 ```
 
-The PTY route calls `wheelRail.pump` next to `headerScope.pump`; both `onOutputPump` assignments now always go through `pumpWindowActivity`, even when the header style is `ticks`. `syncWheelItem(win)` is called wherever `syncStageProjectInitials` is called today (inside `syncWindowFooter`, title change, cwd change). That covers tab, pane, split, title, and cwd changes.
+The PTY route calls `wheelRail.pump`; both `onOutputPump` assignments go through `pumpWindowActivity`. (The header oscilloscope this used to sit beside was removed on 2026-11-11, spec 0188.) `syncWheelItem(win)` is called wherever `syncStageProjectInitials` is called today (inside `syncWindowFooter`, title change, cwd change). That covers tab, pane, split, title, and cwd changes.
 
 ### Keybindings
 

@@ -118,7 +118,7 @@
 /* ─── Signal-state chrome — re-tints the window's LEDs and focus ring via the
    focused pane's view:state signal. See docs/0104-chrome-signal-upgrades.md and
    docs/0105-view-protocol.md. The override re-targets --krypton-window-accent-rgb
-   for descendants (titlebar / tab / footer LEDs, ring, oscilloscope trace) — no
+   for descendants (titlebar / tab / footer LEDs, ring, header-band ticks) — no
    per-element rule changes needed. */
 /* ─── Active-lane accent (spec 142) ─── */
 /* The ACP harness sets data-lane-accent on its host window when the active
@@ -159,9 +159,9 @@
 .krypton-window[data-signal='normal']  { /* default primary */ }
 
 /* ─── Header band ───
-   A small display well let into the titlebar plate under the title row
-   (DESIGN.md "Motion": the header oscilloscope draws inside a display well).
-   The `ticks` style keeps its static accent graticule inside the well. */
+   A small display well let into the titlebar plate under the title row, with
+   a static accent graticule inside the well. Static on purpose: the live
+   oscilloscope that used to draw here (specs 188/189) was removed. */
 .krypton-window__header-accent {
   height: var(--krypton-header-accent-height, 6px);
   margin: 0 var(--krypton-header-accent-margin, 20px);
@@ -181,18 +181,6 @@
   pointer-events: none;
 }
 
-/* Oscilloscope variant — a <canvas> drawn by HeaderScope (fed by PTY
-   throughput). Drops the graticule so only the trace shows on the well;
-   keep the shared height/margin so themes still control the band's box.
-   See docs/0188-oscilloscope-header-band.md. */
-.krypton-window__header-accent--scope {
-  display: block;
-  /* <canvas> is a replaced element: without an explicit width it stays at its
-     intrinsic 300px instead of tracking the window. Fill the band minus the
-     shared horizontal margin so the trace spans the whole head. */
-  width: calc(100% - 2 * var(--krypton-header-accent-margin, 20px));
-  background: var(--mat-well-fill);
-}
 
 /* ─── Chrome — titlebar plate ───
    Titlebar (and the header band under it) is one plate strip. It meets the
@@ -225,7 +213,7 @@
   position: relative;
   z-index: 1;
   /* Keep the titlebar's contents in the rail. The session mark stays in this
-     rail (spec 226) — it does not hang into the oscilloscope. */
+     rail (spec 226) — it does not hang into the header band. */
   overflow: hidden;
   /* spec 320: narrow-tile rule — below 480px the view-toggle cluster keeps
      only the spec 347 `left` / `right` toggles and the spec 247 status badge
@@ -313,7 +301,7 @@
    A readout: the figure in a small well. Quiet 11px on every tile; zoomed and
    lit (no glow) only on the focused window, capped inside the titlebar rail so
    the ID stays at the top of the window and never collides with the
-   oscilloscope. `font-size` (not a transform) so the box carries its painted
+   header band. `font-size` (not a transform) so the box carries its painted
    width. The end cluster is locked to the titlebar height so the type cannot
    grow the rail. */
 .krypton-window__titlebar-end {

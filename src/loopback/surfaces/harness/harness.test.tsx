@@ -97,6 +97,84 @@ describe('harness component gallery', () => {
     expect(exit1?.textContent).toContain('boom');
   });
 
+  it('opens production remote Details outside the rows, switches sections, and restores focus without stealing Esc', () => {
+    location.hash = 'tool-remote-command';
+    settleHash();
+    const input = root.querySelector<HTMLInputElement>('.lb-filter__input')!;
+    type(input, 'remote command');
+    const block = root.querySelector<HTMLElement>('.lb-harness__block[data-state="CLI nonzero with stderr"]')!;
+    const row = block.querySelector<HTMLElement>('.acp-harness__msg')!;
+    const button = row.querySelector<HTMLButtonElement>('[data-remote-command-details]')!;
+    button.focus();
+    act(() => button.click());
+    const overlay = root.querySelector<HTMLElement>('.acp-harness__remote-command-overlay')!;
+    const panel = overlay.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(overlay.hidden).toBe(false);
+    expect(overlay.closest('.acp-harness__msg')).toBeNull();
+    expect(panel.textContent).toContain('buildbox');
+    const tabs = [...panel.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const command = tabs.find((tab) => tab.textContent?.includes('Command'))!;
+    const output = tabs.find((tab) => tab.textContent?.includes('Output'))!;
+    act(() => command.click());
+    expect(panel.textContent).toContain('git diff --check');
+    press(command, 'Tab');
+    expect(output.getAttribute('aria-selected')).toBe('true');
+    expect(panel.textContent).toContain('Checking working tree');
+    expect(panel.textContent).toContain('trailing whitespace.');
+    pressKey('Tab', { shiftKey: true }, output);
+    expect(command.getAttribute('aria-selected')).toBe('true');
+    press(command, 'Escape');
+    expect(overlay.hidden).toBe(true);
+    expect(input.value).toBe('remote command');
+    expect(document.activeElement).toBe(button);
+    expect(block.querySelector('.acp-harness__msg')).toBe(row);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('retargets one remote dialog and disposes it on entry changes without restoring stale focus', () => {
+    location.hash = 'tool-remote-command';
+    settleHash();
+    const buttons = [...root.querySelectorAll<HTMLButtonElement>('[data-remote-command-details]')];
+    act(() => buttons[0].click());
+    const overlay = root.querySelector<HTMLElement>('.acp-harness__remote-command-overlay')!;
+    act(() => buttons[3].click());
+    expect(root.querySelectorAll('.acp-harness__remote-command-overlay')).toHaveLength(1);
+    expect(overlay.textContent).toContain('git diff --check');
+    location.hash = 'tool-execute';
+    settleHash();
+    expect(overlay.isConnected).toBe(false);
+    expect(document.activeElement).not.toBe(buttons[3]);
+    press(document.body, 's');
+    expect([...root.querySelectorAll<HTMLElement>('.lb-harness__source')].every((source) => !source.hidden)).toBe(true);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('keeps undecodable diagnostics separate from remote output and pauses page keys without blocking copy', () => {
+    location.hash = 'tool-remote-command';
+    settleHash();
+    const block = root.querySelector<HTMLElement>('.lb-harness__block[data-state="undecodable result diagnostics"]')!;
+    const button = block.querySelector<HTMLButtonElement>('[data-remote-command-details]')!;
+    act(() => button.click());
+    const panel = root.querySelector<HTMLElement>('.acp-harness__remote-command-overlay [role="dialog"]')!;
+    const tabs = [...panel.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const output = tabs.find((tab) => tab.textContent?.includes('Output'))!;
+    const result = tabs.find((tab) => tab.textContent?.includes('Result'))!;
+    act(() => output.click());
+    expect(panel.querySelector('[role="tabpanel"][aria-label="Output"]')?.textContent).not.toContain('retained diagnostic only');
+    act(() => result.click());
+    expect(panel.querySelector('[role="tabpanel"][aria-label="Result"]')?.textContent).toContain('No remote result was inferred.');
+    const sources = [...root.querySelectorAll<HTMLElement>('.lb-harness__source')];
+    press(result, 's');
+    expect(sources.every((source) => source.hidden)).toBe(true);
+    press(result, ']');
+    expect(location.hash).toBe('#tool-remote-command');
+    expect(pressKey('c', { metaKey: true }, result).defaultPrevented).toBe(false);
+    expect(pressKey('c', { ctrlKey: true }, result).defaultPrevented).toBe(false);
+    press(result, 'Escape');
+    expect(document.activeElement).toBe(button);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
   it('toggles the canonical input under each state with s, without remounting rows', () => {
     const rows = [...root.querySelectorAll('.acp-harness__msg')];
     const sources = [...root.querySelectorAll<HTMLElement>('.lb-harness__source')];

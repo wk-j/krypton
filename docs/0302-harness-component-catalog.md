@@ -606,7 +606,7 @@ then `.acp-harness__tool-output > -section > -label + <pre> -text`,
 Exit status appears only in the head: success uses the status LED with no `exit 0` text, and non-zero codes keep the compact `exit N` result. No exit readout is repeated in the output body.
 The tool kind is a small BYPASS-style readout (spec 383): `--mat-well` + `--mat-well-shadow`, `1px 7px` padding, 8px radius, body-size × 0.72 and existing kind ink, with the existing status LED inside. The head/subject/output remain flat.
 
-**Live contract** — generic `appendChunk()` updates only `.acp-harness__tool-output`; recognized executions update their owning `ExecutionCard`. Render precedence is artifact redaction → subagent card → execution → job list (spec 370) → generic. Diffs and the base row's image strip remain available. A subagent card whose agents still run in the background (spec 370) stays live after the row seals and is sealed by the row once it settles or turns `last reported`.
+**Live contract** — generic `appendChunk()` updates only `.acp-harness__tool-output`; recognized executions and remote commands update their owning `ExecutionCard` / `RemoteCommandCard`. Render precedence is artifact redaction → subagent card → execution → remote command → job list (spec 370) → generic. Diffs and the base row's image strip remain available. A subagent card whose agents still run in the background (spec 370) stays live after the row seals and is sealed by the row once it settles or turns `last reported`.
 **Replaces** `harness-tool-render.ts:551-673,776-860,862-1060` and `patchStreamingToolBody` `:635-664`
 (including its `body.dataset.toolStreamSig` / `subagentLiveSig` dedupe keys — the component's deps do that job).
 
@@ -694,6 +694,50 @@ reviewing, denied, timed out, and failed states have a status LED. It has no
 permission control. The same row updates while the ACP call is live and seals
 on its terminal status; later reports do not repaint a sealed row. A malformed
 terminal result reads `REVIEW OUTCOME UNAVAILABLE`, never `APPROVED`.
+
+## 3.4d `RemoteCommandCard` (spec 386)
+
+**Props** `{ payload: RemoteCommandPayload, status, startedAt?, endedAt?, hintLabel, diagnostics? }`.
+`ToolRow` owns this read-only summary, replacing the generic header/output only for a recognized
+Connected Computer call. Immutable payload identity is the data dependency; no-op decoder updates
+preserve it. `setHint()` and `ToolRow.patchRemoteCommandHint()` update the owned child after seal.
+
+**Example UI**
+
+```text
+REMOTE  buildbox  git status --short                 Done · exit 0  Details
+ M src/acp/adapters/tool.ts
+```
+
+**Emits** `.acp-remote-command-card` and its owned descendants, including the one-line
+`[data-remote-command-details]` action. The command stays flexible; computer and state labels
+ellipsis independently, and narrow layouts move metadata to a second line. Up to four output
+preview lines preserve whitespace, prioritising stderr for failures. Backend and UI truncation
+notes are distinct; empty output and missing exit remain valid states.
+
+The requested computer ID, command and explicit cwd do not imply resolved SSH identity, effective
+default directory or approval policy. Observed timing is call elapsed, not remote runtime.
+Unknown outcomes and terminal tool failures never become remote success merely because MCP or
+the outer shell succeeded. Indirect scripts/code cells and foreign/conflicting identity keep
+their existing renderer; undecodable recognized output retains generic diagnostics.
+
+**Replaces** the generic tool presentation for exact built-in `computer_exec` MCP calls and
+recognizable complete direct `kryptonctl computer exec` invocations only; no execution or approval API.
+
+## 3.4e `RemoteCommandDialog` (spec 386; overlay registry)
+
+**Props** `{ open, targetId, payload: RemoteCommandPayload | null, status, startedAt?, endedAt?, takeFocus, onClose, diagnostics? }`.
+One `OverlayShell` modal owned by `AcpHarnessView`, never by a row. Optional `diagnostics` carries retained generic tool sections separately from remote stdout/stderr. Details or transcript `f`
+hints open the retained target; Command / Output / Result sections expose the requested fields,
+separate stdout/stderr, remote exit/outcome, error and limit notes. Omitted cwd reads `Not reported`.
+`Tab` / `Shift+Tab` switch sections; arrows scroll both axes, PageUp/PageDown scroll a page and Home/End reach the active panel's vertical ends. `Esc` closes with focus restoration. Shift-selection and Cmd/Ctrl copy remain native.
+
+**Emits** `.acp-harness__remote-command-overlay` containing
+`.acp-remote-command-dialog__panel[role=dialog][aria-modal=true]` and owned sections.
+Repeated updates preserve node identity and scroll; removal, lane replacement and disposal close
+without taking focus. The [Harness gallery](./0381-harness-component-gallery.md) owns its own
+production dialog outside preview rows and delegates Details clicks to retained item targets.
+No profile lookup, polling, backend bus, retry/rerun or permission control is introduced.
 
 ## 3.5 `SubagentCard` L
 
@@ -964,7 +1008,7 @@ HarnessView
 │  │                     ├─ AssistantRow L ── ResourceRail, ImageStrip, Card(fence)
 │  │                     ├─ ThoughtRow L ──── Meter(glyph)
 │  │                     ├─ UserRow L
-│  │                     ├─ ToolRow L ─────── Spinner, DiffBlock, Meter(diffstat), SubagentCard L, ExecutionCard
+│  │                     ├─ ToolRow L ─────── Spinner, DiffBlock, Meter(diffstat), SubagentCard L, ExecutionCard, RemoteCommandCard
 │  │                     ├─ PermissionRow · QuestionRow(ListPicker) · FsActivityRow
 │  │                     ├─ FsWriteReviewRow(DiffBlock) · ProviderErrorRow · InterLaneRow
 │  │                     ├─ DocCardRow(Card) · UsageRow(Meter, StatList)
@@ -973,9 +1017,10 @@ HarnessView
 │                        PlanPanel · PeekCard(ReviewLoopRows, HeatPanel) · ThoughtCard L
 │                        QueueCard · TicketDock · AnnotationRail
 ├─ ExecutionDialog ───── view-owned OverlayShell modal (spec 319); never row-owned
+├─ RemoteCommandDialog ─ view-owned OverlayShell modal (spec 386); never row-owned
 ├─ Composer ──────────── ComposerMeta(Chip, StatList) · DraftLine · StagingStrip
 │                        PeerStrip · InlinePalette ×4 · DictationControl · LiveVoiceStrip · BackgroundTaskStrip
-└─ Overlays ──────────── current registry: 20 components; no TimelineCapture
+└─ Overlays ──────────── current registry: 21 components; no TimelineCapture
 ```
 
 # Totals
@@ -983,8 +1028,9 @@ HarnessView
 Current registry counts come from `HARNESS_COMPONENTS` in `src/acp/components/registry.ts`.
 Use that registry for current totals rather than the historical numbered catalog.
 Later additions include the persistent composer `BackgroundTaskStrip` (spec 384);
-the transcript registry also includes `GenuiCard`, `DirectiveDiffRow` and `FollowUpRail` (spec 323);
-overlays include `BackgroundTasks`, `ExecutionDialog`, `GenuiPanel`, and `GenuiCatalog`. The composer's
+the transcript registry also includes `GenuiCard`, `DirectiveDiffRow`, `FollowUpRail` (spec 323)
+and `RemoteCommandCard` (spec 386);
+overlays include `BackgroundTasks`, `ExecutionDialog`, `RemoteCommandDialog`, `GenuiPanel`, and `GenuiCatalog`. The composer's
 `AssistStrip` (spec 306) was removed on 2026-10-23 with the `next-prompt` task.
 `TimelineCapture` is absent. Historical cutover-site counts below are not a new removal tally.
 
@@ -993,12 +1039,12 @@ overlays include `BackgroundTasks`, `ExecutionDialog`, `GenuiPanel`, and `GenuiC
 | 0 — layout | 1 | 4 hardcoded `*SlotEl` fields + their CSS pinning |
 | 1 — leaf | 9 | ~75 |
 | 2 — composite | 5 | ~45 (incl. 8 cursor handlers, 4 palette handlers, 12 overlay shells) |
-| 3 — transcript | 22 | Original cutover plus ExecutionCard (spec 315), GenuiCard, DirectiveDiffRow, and FollowUpRail |
+| 3 — transcript | 23 | Original cutover plus ExecutionCard (spec 315), RemoteCommandCard (spec 386), GenuiCard, DirectiveDiffRow, and FollowUpRail |
 | 4 — lane chrome | 6 | `renderDashboard`, `renderActiveLaneChrome`, `refreshMetricsRender`, `renderRailEntry`, `refreshZenRail` |
 | 5 — right rail | 9 | Original cutover plus `AssistantInstances` (spec 357); historical 8 builders + 3 `patch*` functions |
 | 6 — composer | 9 | Original composer cutover; AssistStrip came and went (spec 306) |
-| 7 — overlays | 20 | Current registry; historical 7.15 retired, later additions (incl. `ExecutionDialog`, spec 319) retained |
-| **Total** | **81 (80 registered + LayoutHost)** | **Historical cutover counts remain historical; no Timeline capture implementation or style owner remains** |
+| 7 — overlays | 21 | Current registry; historical 7.15 retired, later additions (incl. `ExecutionDialog`, spec 319, and `RemoteCommandDialog`, spec 386) retained |
+| **Total** | **83 (82 registered + LayoutHost)** | **Historical cutover counts remain historical; no Timeline capture implementation or style owner remains** |
 
 # Packaging, style ownership, and theming
 

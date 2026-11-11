@@ -1,5 +1,5 @@
 // Krypton — shared contract for canvas animations mounted in window chrome or
-// content (header scope, music visualizer, program-status fire).
+// content (music visualizer, program-status fire).
 
 /** Common interface for all background animations */
 export interface BackgroundAnimation {

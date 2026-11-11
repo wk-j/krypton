@@ -44,12 +44,14 @@ export function toolPayloadFromView(
     ...(view.execution ? { execution: view.execution } : {}),
     ...(view.jobs ? { jobs: view.jobs } : {}),
     ...(view.guardianReview ? { guardianReview: view.guardianReview } : {}),
+    ...(view.remoteCommand ? { remoteCommand: view.remoteCommand } : {}),
   };
 }
 
 /** The tool row's portable text line (Live Assist, peek); the row itself paints the payload. */
 export function toolItemText(tool: ToolPayload): string {
   if (tool.guardianReview) return `Guardian review: ${tool.guardianReview.outcome} — ${tool.guardianReview.action}`;
+  if (tool.remoteCommand) return `remote ${tool.remoteCommand.computerId}: ${tool.remoteCommand.command}`;
   return tool.subject ? `${tool.glyph} ${tool.kind} ${tool.subject}` : `${tool.glyph} ${tool.kind}`;
 }
 

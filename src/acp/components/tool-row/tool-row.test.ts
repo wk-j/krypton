@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { ToolRow } from './index';
 import { tickAllSpinners } from '../spinner';
 import type { RowProps } from '../transcript-row';
-import type { HarnessTranscriptItem, JobsPayload, SubagentEntry, SubagentPayload, ToolPayload } from '../../harness-view-types';
+import type { HarnessTranscriptItem, JobsPayload, RemoteCommandPayload, SubagentEntry, SubagentPayload, ToolPayload } from '../../harness-view-types';
 
 function payload(over: Partial<ToolPayload> = {}): ToolPayload {
   return {
@@ -549,5 +549,90 @@ describe('ToolRow lifecycle', () => {
 
     tickAllSpinners();
     expect(glyph.textContent).toBe(frame);
+  });
+});
+
+describe('ToolRow remote commands', () => {
+  const remote: RemoteCommandPayload = {
+    source: 'mcp', computerId: 'build', command: 'pwd', cwd: null, result: null,
+    error: null, outcomeUnknown: false, displayTruncated: [],
+  };
+
+  it('replaces the generic head and output, settles once, and forwards late result only into the owned card', () => {
+    const tool = payload({ remoteCommand: remote });
+    const row = new ToolRow(props(tool));
+    const host = mount(row);
+    row.update(props(tool));
+    const card = row.el.querySelector<HTMLElement>('.acp-remote-command-card')!;
+    const body = card.parentNode;
+    const details = card.querySelector('[data-remote-command-details]');
+    expect(row.el.querySelector('.acp-harness__tool-head')).toBeNull();
+    expect(row.el.querySelector('.acp-harness__tool-output')).toBeNull();
+    expect(card.textContent).toContain('In progress');
+    row.update(props(payload({ remoteCommand: remote, status: 'completed' })));
+    expect(row.isLive).toBe(false);
+    const settledClass = row.el.className;
+    const completed = { ...remote, result: { exitCode: 0, outcome: 'completed' as const, stdout: 'remote result', stderr: '', truncated: false } };
+    const seen = records(host, () => row.update(props(payload({ remoteCommand: completed, status: 'completed' }))));
+    expect(seen.length).toBeGreaterThan(0);
+    for (const record of seen) expect(card.contains(record.target)).toBe(true);
+    expect(card.parentNode).toBe(body);
+    expect(card.querySelector('[data-remote-command-details]')).toBe(details);
+    expect(card.textContent).toContain('Done · exit 0');
+    expect(card.textContent).toContain('remote result');
+    expect(row.el.className).toBe(settledClass);
+    row.update(props(payload({ remoteCommand: completed, status: 'in_progress' })));
+    expect(row.isLive).toBe(false);
+    expect(card.textContent).toContain('Done · exit 0');
+    row.patchRemoteCommandHint('rt');
+    expect(details?.querySelector('kbd')?.textContent).toBe('rt');
+    row.dispose();
+    expect(card.parentNode).toBeNull();
+  });
+
+  it('mounts terminal replay immediately and forwards diagnostics-only updates without repainting the sealed row', () => {
+    const tool = payload({ remoteCommand: remote, status: 'completed' });
+    const row = new ToolRow(props(tool));
+    mount(row);
+    row.update(props(tool));
+    const card = row.el.querySelector<HTMLElement>('.acp-remote-command-card')!;
+    const body = card.parentElement!;
+    const seen = records(body, () => row.update(props({ ...tool, sections: [{ label: 'output', text: '{malformed result' }] })));
+    expect(seen.length).toBeGreaterThan(0);
+    for (const record of seen) expect(card.contains(record.target)).toBe(true);
+    expect(card.textContent).toContain('Diagnostic (output)');
+    expect(card.textContent).toContain('{malformed result');
+    expect(card.textContent).toContain('Remote result not reported');
+    expect(row.el.querySelector('.acp-harness__tool-output')).toBeNull();
+    row.dispose();
+  });
+
+  it('keeps artefact, subagent and code-cell ownership ahead of remote specialization', () => {
+    const variants: Partial<ToolPayload>[] = [
+      { artifactRedaction: { tail: 'report.html', size: 12, hash: 'abc', pending: false } },
+      { subagents: { source: 'omp', background: false, agents: [agent()], overflow: 0 } },
+      { execution: { source: 'omp', language: 'js', title: 'code', code: '1', output: '', observedLive: true, cellStatus: 'running', durationMs: null, exitCode: null, isError: false, activity: [], views: [], detached: null, truncated: [] } },
+    ];
+    for (const variant of variants) {
+      const tool = payload({ remoteCommand: remote, ...variant });
+      const row = new ToolRow(props(tool));
+      row.update(props(tool));
+      expect(row.el.querySelector('.acp-remote-command-card')).toBeNull();
+      expect(row.el.querySelector('.acp-harness__artifact-redaction, .acp-harness__subagents, .acp-execution-card')).not.toBeNull();
+      row.dispose();
+    }
+  });
+
+  it('drops remote specialization on contradictory identity and renders generic diagnostics', () => {
+    const initial = payload({ remoteCommand: remote });
+    const row = new ToolRow(props(initial));
+    row.update(props(initial));
+    const card = row.el.querySelector('.acp-remote-command-card')!;
+    const generic = payload({ sections: [{ label: 'output', text: 'foreign tool result' }] });
+    row.update(props(generic));
+    expect(row.el.querySelector('.acp-remote-command-card')).toBeNull();
+    expect(card.parentNode).toBeNull();
+    expect(row.el.querySelector('.acp-harness__tool-output')?.textContent).toContain('foreign tool result');
+    row.dispose();
   });
 });

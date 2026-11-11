@@ -4,8 +4,11 @@
 // lane body holds the state's rows as direct siblings (spec 379 connector),
 // then the canonical input as JSON for the `s` toggle outside the preview.
 
+import { RemoteCommandDialog } from '../../../acp/components/remote-command-dialog';
 import { createTranscriptRow } from '../../../acp/components/transcript/rows';
 import type { RowProps, TranscriptRow } from '../../../acp/components/transcript-row';
+import type { HarnessTranscriptItem } from '../../../acp/harness-view-types';
+import { keymap } from '../../kit/lib/keymap';
 import { buildState } from './build';
 import type { GalleryEntry } from './examples/types';
 
@@ -20,12 +23,53 @@ export class HarnessStage {
   private rows: TranscriptRow[] = [];
   private sources: HTMLElement[] = [];
   private host: HTMLElement | null = null;
+  private readonly items = new Map<string, HarnessTranscriptItem>();
+  private readonly remoteDialog = new RemoteCommandDialog();
+  private releaseModal: (() => void) | null = null;
+  private detailsButton: HTMLElement | null = null;
+  private readonly closeRemote = (restoreFocus: boolean): void => {
+    const button = this.detailsButton;
+    this.detailsButton = null;
+    if (restoreFocus && button?.isConnected) button.focus({ preventScroll: true });
+  };
+  private readonly onClick = (event: MouseEvent): void => {
+    if (!(event.target instanceof Element)) return;
+    const button = event.target.closest<HTMLElement>('[data-remote-command-details]');
+    const id = button?.closest<HTMLElement>('[data-msg-id]')?.dataset.msgId;
+    if (!button || !id) return;
+    const item = this.items.get(id);
+    if (!item?.remoteCommandTarget || !item.tool?.remoteCommand) return;
+    this.detailsButton = button;
+    this.remoteDialog.update({
+      open: true,
+      targetId: item.remoteCommandTarget.remoteCommandItemId,
+      payload: item.tool.remoteCommand,
+      diagnostics: item.tool.sections,
+      status: item.status ?? '',
+      startedAt: item.toolStartedAt,
+      endedAt: item.toolEndedAt,
+      takeFocus: true,
+      onClose: this.closeRemote,
+    });
+    event.preventDefault();
+  };
+  private readonly onKey = (event: KeyboardEvent): void => {
+    if (this.remoteDialog.handleKey(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
 
   constructor(private readonly entry: GalleryEntry) {}
 
   mount(host: HTMLElement, sourceOpen: boolean): void {
     if (this.host !== null) return;
     this.host = host;
+    host.addEventListener('click', this.onClick);
+    // The page keymap captures first. Pause page shortcuts before this modal
+    // handles Tab/Esc, rather than clearing search or navigating behind it.
+    this.releaseModal = keymap().addModal(() => this.remoteDialog.isOpen);
+    window.addEventListener('keydown', this.onKey, { capture: true });
     const now = performance.now();
     this.entry.states.forEach((state, index) => {
       const block = document.createElement('section');
@@ -37,6 +81,7 @@ export class HarnessStage {
       root.appendChild(body);
       preview.appendChild(root);
       for (const item of buildState(this.entry.id, index, state, now)) {
+        this.items.set(item.id, item);
         const props: RowProps = {
           item,
           isNew: false,
@@ -59,6 +104,8 @@ export class HarnessStage {
       block.append(div('lb-harness__caption', state.label), preview, source);
       host.appendChild(block);
     });
+    // One real dialog, outside every preview row and source block.
+    host.appendChild(this.remoteDialog.el);
   }
 
   setSourceOpen(open: boolean): void {
@@ -67,6 +114,13 @@ export class HarnessStage {
 
   /** Every row's `dispose()`: listeners, parsers and image state go with it. */
   dispose(): void {
+    this.remoteDialog.close(false);
+    this.remoteDialog.dispose();
+    this.releaseModal?.();
+    this.releaseModal = null;
+    window.removeEventListener('keydown', this.onKey, { capture: true });
+    this.host?.removeEventListener('click', this.onClick);
+    this.items.clear();
     for (const row of this.rows) row.dispose();
     this.rows = [];
     this.sources = [];

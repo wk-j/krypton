@@ -4,6 +4,7 @@
 > Date: 2026-11-10
 > Milestone: ACP Harness — one rendering for every lane
 > Builds on: [380](./0380-acp-lane-adapters.md) (lane adapters), [313](./0313-genui-component-gallery.md) (GenUI gallery), [341](./0341-loopback-app.md)/[361](./0361-loopback-app-react.md) (loopback app), [301](./0301-harness-ui-components.md)/[302](./0302-harness-component-catalog.md) (components), [379](./0379-connected-transcript-sources.md) (connected sources)
+> Extended by: [386](./0386-harness-remote-command-component.md) — Remote command summaries and a working stage-owned production Details dialog; no backend execution or approval changes.
 
 ## Problem
 
@@ -97,19 +98,22 @@ export interface GalleryEntry {
 | Group | Entries (states) |
 |-------|------------------|
 | Messages | Agent message (prose, code fence, table, svg/mermaid fence, image, streaming); Thought (short, clamped, effort meter, streaming); User prompt (text, image) |
-| Tools | Command (running, exit 0, exit 1, no exit reported, long output trimmed, git status, git diff, background task, run of three); Read, Edit (diff, new file), Delete, Move, Search (grep hits), Fetch, Think, Other (each: running, completed, failed); Agents (subagent card: running, mixed, done); Wait (job list); Code cell (execution card); Guardian review; Tool images |
+| Tools | Command (running, exit 0, exit 1, no exit reported, long output trimmed, git status, git diff, background task, run of three); Remote command (pending, approval in progress, MCP exit 0, CLI nonzero with stderr, empty output, missing exit, declined or expired, unknown with partial output, unknown without output, transport failure, cancellation, backend truncation, UI truncation, long computer and command); Read, Edit (diff, new file), Delete, Move, Search (grep hits), Fetch, Think, Other (each: running, completed, failed); Agents (subagent card: running, mixed, done); Wait (job list); Code cell (execution card); Guardian review; Tool images |
 | Requests | Permission (command, edit, MCP tool, resolved); Question (single, multi-select); Form elicitation |
 | Files | File activity (read, write, failed); Write review (pending, accepted, rejected) |
 | Turn | Usage; Stop and cancel notices; Error; Provider error (rate limit, auth, overloaded) |
 | Session | Lane head (model and mode chips, busy, error); Lane stats (usage meter); Plan panel (mixed, collapsed) |
 
-Only components that paint agent-originated data are in scope. Components that render Krypton's own UI look the same in every lane already and are excluded: composer, pickers, overlays, inter-lane mail, artifact/review cards and directive diffs.
+Only components that paint agent-originated data are in scope, including read-only details belonging to those results. Components that render Krypton's own UI look the same in every lane already and are excluded: composer, pickers, unrelated overlays, inter-lane mail, artifact/review cards and directive diffs.
 
 ### Stage
 
 `stage.ts` mounts each state into its own block. A block is a caption in loopback gallery typography, then a `.lb-harness__stage` preview wrapping a `.acp-harness` root holding one `.acp-harness__lane-body` whose direct children are the state's rows. The caption and optional source JSON are siblings outside the preview bezel, never part of its themed contents. Every row is built with `createTranscriptRow({ item, isNew: false, streaming, lane: null, projectDir: null, resolveLocalImages: false })`. Lane chrome uses `LaneHead` / `LaneStats` over `laneFixture()`, and `PlanPanel` uses `{entries, collapsed}`. Switching entry disposes every component through `dispose()`. Each preview is `.krypton-window` by value over the desktop stand-in, with the GenUI rev 4 reset scoped to `.lb-harness__stage`.
 
 The stage-scoped margin/padding reset lives in `lb.reset`, below both the gallery's `lb.surface` spacing and every production `krypton.*` rule, so it cannot override the preview inset. State titles, separation and source margins use loopback styles outside that reset.
+
+**Remote command Details (spec 386).** The `tool-remote-command` entry supplies both MCP and direct CLI `ToolView.remoteCommand` payloads through `toolPayloadFromView`; `build.ts` adds `remoteCommandTarget` alongside the existing code-cell `executionTarget`. The stage retains built items for exact target matching and owns one actual `RemoteCommandDialog` outside all preview rows. A delegated `[data-remote-command-details]` click finds the nearest `[data-msg-id]`, then opens that retained item's payload. No decorative/dead Details control or React-owned component node is used. Entry changes dispose the stage/dialog and close without restoring stale row focus. The page keymap's modal gate pauses page shortcuts while the production dialog handles keys; `Tab` / `Shift+Tab` switch sections and `Esc` closes/restores focus rather than clearing search.
+The undecodable-result state also forwards retained `ToolPayload.sections` as dialog diagnostics: Result exposes those generic diagnostics separately from remote stdout/stderr, without inferring an exit code.
 
 ### Backends view
 
@@ -136,22 +140,25 @@ For an entry with a `scenario`, `backends.ts` loads `src/acp/adapters/fixtures/*
 | `↑` / `↓` | Rail, or `↓` from search | Move selection |
 | `Enter` | Rail item | Open entry |
 | `Esc` | Page, outside an input | Clear a non-empty search |
+| `Tab` / `Shift+Tab` | Remote command Details | Next / previous section |
+| Arrow keys / PageUp / PageDown / Home / End | Remote command Details | Scroll the active panel (arrows also scroll horizontally) |
+| `Esc` | Remote command Details | Close and restore the Details button's focus |
 | `b` | Page, entry has a scenario | Toggle Canonical ↔ Backends |
 | `s` | Page | Toggle canonical-input source under each state |
 
-All keys go through the page `useKeymap`, so `?` lists them.
+Page keys go through `useKeymap`, so `?` lists them. The production remote dialog owns its modal keys; its stage registers the existing keymap modal gate so page shortcuts do not steal them.
 
 ### Coverage guard (`examples.test.ts`)
 
 The test fails when any of these has no example:
 - a `rowKindFor` kind that adapter output can produce (every kind except `interLane`, `docCard` and `directiveDiff`);
-- a `ToolView.kind`, or one of the payloads `subagents`, `jobs`, `execution`, `guardianReview`;
+- a `ToolView.kind`, or one of the payloads `subagents`, `jobs`, `execution`, `remoteCommand`, `guardianReview`;
 - one of the five `status` values;
 - an `exit` that is `null`, `0` or non-zero;
 - a non-empty `diffs`, a tool event whose `images` carries a block, or a non-null `background`;
 - a spec 380 fixture scenario, which some entry's `scenario` must reference.
 
-Every id in `components` must exist in `HARNESS_COMPONENTS`. `harness.test.tsx` covers keys, hash routing and both views, and renders every entry once with `invoke` stubbed to throw, which proves the gallery never reaches Tauri.
+Every id in `components` must exist in `HARNESS_COMPONENTS`. `harness.test.tsx` covers keys, hash routing, production remote Details opening/section navigation/focus/retargeting/disposal, and renders every entry once with `invoke` stubbed to throw, which proves the gallery never reaches Tauri. The remote fixture projection test also checks payload reference preservation and exact open targets. Browser review should cover summary and Details at wide/narrow widths in light/dark themes, including long metadata and separate output streams; fixtures do not prove live SSH transport.
 
 ### Phases
 
@@ -166,14 +173,14 @@ Every id in `components` must exist in `HARNESS_COMPONENTS`. `harness.test.tsx` 
 - **Shared builders:** `harness-transcript-items.ts` gains `toolItemText` and `permissionItemText`. They are the rows' text lines, moved out of `renderTool` and the permission path, and the view calls them too. `build.ts` turns each input into an item through these builders, `toolPayloadFromView`, `permissionPayloadFromRequest`, `payloadFromCard` / `createAskUserCardState` and `parseElicitationForm`.
 - **Images:** decoded by the production `imageBytesSource` / `createBytesImage`. The Blob URL is then swapped for a `data:` URL, because the CSP allows only `data:` images.
 - **Stage:** `stage.ts` mounts each state as a caption outside its own `.lb-harness__stage` preview, followed by optional source JSON outside the preview. Inside each preview, a `.acp-harness` root and its `.acp-harness__lane-body` hold the rows as direct siblings. `harness.css` resets the preview inside `lb.reset`, below gallery spacing and production component rules. In `krypton.base`, with higher specificity, it lets the root and lane body grow to their rows instead of filling a lane box. It also copies the `kbd` key-cap rule (spec 369), scoped to the stage, because `src/styles/kbd.css` styles bare `kbd` and would restyle every loopback page in the merged `app.css`.
-- **Entries:** 26 entries with 83 states in five groups.
+- **Entries:** 27 entries with 98 states in five groups, including spec 386's 15 Remote command states through the shared production builder (the named state matrix plus undecodable-result diagnostics).
   - Beyond the Entries table: Command `pending` and `canceled`, because the coverage guard needs all five statuses. Also Edit, Search and the other file kinds `running`/`failed`, Permission `high-risk command`, Question `answered`, and Usage `recording off`, which is the notice row.
   - Assistant and user images are image strips (`imageBlocks`).
 - **Coverage guard:**
   - `examples.test.ts` checks row kinds against the newly exported `ROW_KINDS`.
   - A "tool kind" is the ACP `ToolKind` plus `agents` and `wait`. A type-level check fails the build when `ToolKind` or `ToolState` gains a member that has no example.
   - The fixture-scenario check reads `src/acp/adapters/fixtures/` and passes trivially until spec 380 phase 4b adds fixtures.
-- **Page test:** `harness.test.tsx` mocks `invoke` to throw and asserts it was never called after rendering every entry. It also covers the keys (`/`, `[`/`]`, ↑/↓, Enter, Esc, `s`), hash routing and the source toggle.
+- **Page test:** `harness.test.tsx` mocks `invoke` to throw and asserts it was never called after rendering every entry. It also covers the keys (`/`, `[`/`]`, ↑/↓, Enter, Esc, `s`), hash routing, the source toggle, and the production remote Details modal's interaction and disposal.
 - **Deviations from the design:**
   - `GalleryGroup` has no `session`, and `GalleryInput` has no `plan` or `lane` member. Both land with phase 2.
   - `GalleryEntry` gains `summary`.
@@ -202,8 +209,8 @@ None. Scope is the components that paint agent-originated data. The Krypton-only
 
 ## Out of Scope
 
-- Krypton-originated components (composer, pickers, overlays, inter-lane mail, artifact/review cards, directive diffs).
-- Acting on a preview (approving a permission, answering a question), editing examples in the browser, and a scheme toggle separate from the app theme.
+- Krypton-originated components (composer, pickers, unrelated overlays, inter-lane mail, artifact/review cards, directive diffs); the result-owned read-only Remote command Details dialog is included by spec 386.
+- Mutating a preview (approving a permission, answering a question, running/rerunning a remote command), editing examples in the browser, and a scheme toggle separate from the app theme. Opening read-only remote Details is supported.
 - Screenshot diffing or visual regression tests.
 - Simulating streaming, sealing or the tail window in the Backends view.
 

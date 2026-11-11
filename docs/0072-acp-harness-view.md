@@ -755,22 +755,36 @@ config files do not contain the lane capability.
 The lane capability is private, bound to its ACP process session and revoked
 when that session ends. Remote Harness lanes do not receive it.
 
-The built-in tool route may pass the adapter's permission check. A command that
-passes Krypton's read-only classifier (spec 318) on a computer whose
-`auto_approve_read_only` setting is on (default) runs immediately: it appears
-only as the lane's own `computer_exec` / shell tool row, with no `⚠ remote`.
-Any other `computer_exec` waits for a Krypton decision carrying the exact SSH
+The built-in tool route may pass the adapter's permission check. Spec 385 amends
+specs 311/318: Rust first checks persistent per-computer
+`bypass_command_approval` (default `false`), which skips classifier and approval
+queue and runs original command bytes. It covers every authorized local lane
+across projects, including role-assigned and Telegram-driven lanes, not other
+computer IDs. With bypass off, a command passing spec 318's read-only classifier
+runs as re-quoted argv when `auto_approve_read_only` is on (default).
+Both paths appear only as the ordinary tool call/result, with no `⚠ remote`.
+All remaining `computer_exec` calls wait for a Krypton decision carrying the exact SSH
 target, remote directory and command. It renders as a permission row in the requesting
 lane's own transcript — same chrome, same `a`/`r` keys as a tool permission, no
 modal dialog — and the lane shows `⚠ remote` until it is answered. The queue
 behind that row is separate from `pendingPermissions` on purpose: permission
 mode, `A`/`R` for the turn, a Telegram turn and the Polly/Salty roles all drain
-tool permissions automatically, and none of them may open an SSH session. One
+tool permissions automatically, but none may answer this remote queue or grant profile bypass. One
 keystroke answers one command; an unanswered request expires in 120 seconds and
 never runs. A command finishing with a nonzero exit reports that exit code. A
 timeout, disconnect or lane cancellation reports an unknown remote outcome and
 is never retried automatically. The detailed contract is in
 `docs/0311-connected-computer-commands.md`.
+
+No new exec argument, configuration API or CLI flag lets agents enable bypass.
+The Connected Computers editor warns that all local lanes can run any command,
+including deletion and service changes, and that the grant survives restarts.
+Changing it requires disconnect → edit → save → reconnect; enabling it disables
+the read-only checkbox without clearing its saved choice. Bypass omits the
+read-only path guard, not request validation: all lane/connection checks,
+capacity/output limits, timeouts, cancellation and no-retry behavior remain.
+Saving or reconnecting does not accept pending approvals; lane bypass alone is
+unrelated to this per-computer grant.
 
 ## Out of Scope
 

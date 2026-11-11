@@ -2,7 +2,7 @@
 // cards a tool row grows into (subagents, jobs, code cells, Guardian review).
 
 import type { ToolView } from '../../../../acp/adapters/types';
-import type { ExecutionPayload, SubagentEntry, SubagentPayload } from '../../../../acp/harness-view-types';
+import type { ExecutionPayload, RemoteCommandPayload, SubagentEntry, SubagentPayload } from '../../../../acp/harness-view-types';
 import { imageBlock, lines, section, tool, toolView } from './fixtures';
 import type { GalleryEntry, GalleryInput, GalleryState } from './types';
 
@@ -89,6 +89,39 @@ const CODE_CELL: ExecutionPayload = {
   truncated: [],
 };
 
+const REMOTE_COMMAND: RemoteCommandPayload = {
+  source: 'mcp',
+  computerId: 'buildbox',
+  command: 'git status --short',
+  cwd: '/srv/krypton',
+  result: { exitCode: 0, outcome: 'completed', stdout: ' M src/acp/adapters/tool.ts\n?? scratch.txt\n', stderr: '', truncated: false },
+  error: null,
+  outcomeUnknown: false,
+  displayTruncated: [],
+};
+
+function remote(
+  id: string,
+  status: ToolView['status'],
+  fields: Partial<RemoteCommandPayload> = {},
+  elapsedMs: number | null = 1_200,
+): GalleryInput {
+  const payload = { ...REMOTE_COMMAND, ...fields };
+  const cli = payload.source === 'cli';
+  const directory = payload.cwd === null ? '' : ` --cwd '${payload.cwd.replace(/'/g, "'\\''")}'`;
+  const line = `kryptonctl computer exec ${payload.computerId}${directory} -- '${payload.command.replace(/'/g, "'\\''")}'`;
+  return tool(toolView(`remote-${id}`, {
+    kind: cli ? 'execute' : 'other',
+    status,
+    title: cli ? line : 'mcp__krypton-harness-memory__computer_exec',
+    subject: cli ? line : 'computer_exec',
+    command: cli ? line : '',
+    commandLine: cli ? line : null,
+    mcp: cli ? null : { server: 'krypton-harness-memory', tool: 'computer_exec' },
+    remoteCommand: payload,
+  }), elapsedMs);
+}
+
 function guardian(id: string, status: ToolView['status'], review: NonNullable<ToolView['guardianReview']>): GalleryInput {
   return tool(
     toolView(`guardian_assessment:${id}`, { kind: 'think', status, title: 'Guardian Review', subject: 'Guardian Review', guardianReview: review }),
@@ -155,6 +188,105 @@ export const TOOL_ENTRIES: readonly GalleryEntry[] = [
           tool(command('run2', 'npm run check', { status: 'completed', exit: 0, sections: [section('> tsc --noEmit')] }), 6_800),
           tool(command('run3', 'npm test', { status: 'failed', exit: 1, sections: [section('1 failed | 74 passed')] }), 9_100),
         ],
+      },
+    ],
+  },
+  {
+    id: 'tool-remote-command',
+    title: 'Remote command',
+    group: 'tools',
+    summary: 'Connected Computer MCP and direct CLI commands, with retained command, separate streams and working Details.',
+    components: ['tool-row', 'remote-command-card', 'remote-command-dialog'],
+    scenario: null,
+    states: [
+      { label: 'pending', inputs: [remote('pending', 'pending', { result: null }, null)] },
+      { label: 'approval in progress', inputs: [remote('approval', 'in_progress', { result: null }, 3_400)] },
+      { label: 'MCP exit 0', inputs: [remote('exit0', 'completed')] },
+      {
+        label: 'CLI nonzero with stderr',
+        inputs: [remote('exit2', 'completed', {
+          source: 'cli',
+          command: 'git diff --check',
+          result: { exitCode: 2, outcome: 'completed', stdout: 'Checking working tree\n', stderr: 'src/main.ts:8: trailing whitespace.\n+  return true;  \n', truncated: false },
+        })],
+      },
+      {
+        label: 'empty output',
+        inputs: [remote('empty', 'completed', {
+          source: 'cli',
+          command: 'true',
+          cwd: null,
+          result: { exitCode: 0, outcome: 'completed', stdout: '', stderr: '', truncated: false },
+        })],
+      },
+      {
+        label: 'missing exit',
+        inputs: [remote('missing-exit', 'completed', {
+          result: { exitCode: null, outcome: 'completed', stdout: 'Command completed; no exit value supplied.\n', stderr: '', truncated: false },
+        })],
+      },
+      {
+        label: 'declined or expired',
+        inputs: [remote('declined', 'failed', { result: null, error: 'Remote command declined or approval expired' })],
+      },
+      {
+        label: 'unknown with partial output',
+        inputs: [remote('unknown-output', 'failed', {
+          source: 'cli',
+          command: 'make release',
+          outcomeUnknown: true,
+          error: 'Remote command outcome unknown after timeout.',
+          result: { exitCode: null, outcome: 'unknown', stdout: 'Compiling release\n  linking application\n', stderr: 'Connection interrupted\n', truncated: false },
+        })],
+      },
+      {
+        label: 'unknown without output',
+        inputs: [remote('unknown-input', 'failed', {
+          result: null,
+          outcomeUnknown: true,
+          error: 'Remote command outcome unknown while sending input.',
+        })],
+      },
+      {
+        label: 'transport failure',
+        inputs: [remote('transport', 'failed', { result: null, error: 'Computer buildbox is not connected' })],
+      },
+      { label: 'cancellation', inputs: [remote('cancelled', 'canceled', { result: null }, 5_200)] },
+      {
+        label: 'backend truncation',
+        inputs: [remote('backend-limit', 'completed', {
+          result: { exitCode: 0, outcome: 'completed', stdout: lines(10, 'retained backend output'), stderr: '', truncated: true },
+        })],
+      },
+      {
+        label: 'UI truncation',
+        inputs: [remote('display-limit', 'failed', {
+          command: 'make release\n'.repeat(1_260).slice(0, 16_384),
+          result: { exitCode: 1, outcome: 'completed', stdout: 'build output\n'.repeat(1_500).slice(0, 16_384), stderr: 'build failed\n'.repeat(1_500).slice(0, 16_384), truncated: false },
+          error: 'Compiler diagnostics\n'.repeat(250).slice(0, 4_096),
+          displayTruncated: ['command', 'stdout', 'stderr', 'error'],
+        })],
+      },
+      {
+        label: 'long computer and command',
+        inputs: [remote('long-metadata', 'completed', {
+          source: 'cli',
+          computerId: `production-buildbox-${'region-'.repeat(30)}01`,
+          cwd: `/srv/${'very-long-project-directory/'.repeat(12)}krypton`,
+          command: `printf '%s\\n' '${'long requested command with significant spaces  '.repeat(12)}'`,
+        })],
+      },
+      {
+        label: 'undecodable result diagnostics',
+        inputs: [tool(toolView('remote-diagnostics', {
+          kind: 'other',
+          status: 'completed',
+          title: 'mcp__krypton-harness-memory__computer_exec',
+          subject: 'computer_exec',
+          mcp: { server: 'krypton-harness-memory', tool: 'computer_exec' },
+          remoteCommand: { ...REMOTE_COMMAND, result: null },
+          sections: [section('Result envelope incomplete: exitCode and outcome were not reported.\n  stdout: retained diagnostic only\n\nNo remote result was inferred.', 'output')],
+        }))],
       },
     ],
   },

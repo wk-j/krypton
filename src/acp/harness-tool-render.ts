@@ -37,17 +37,17 @@ export function cleanToolTitle(title: string | undefined, fallback: string): str
   return value;
 }
 
-/** Widest output line a tool card shows, in terminal cells. */
+/** Maximum retained output-line width; CSS clips further to the actual well. */
 const OUTPUT_LINE_CELLS = 140;
 
 /**
- * Cut a line wider than the card at 139 cells plus `…`. Counted in cells, not
- * code units (spec 326): a Thai row of a frame and its ASCII border, padded to
- * the same width, are cut on the same column, and no grapheme is split.
+ * Cut a line beyond the retained limit at 139 cells plus `…`. Counted in cells,
+ * not code units (spec 326): equally padded Thai and ASCII rows are cut on the
+ * same column, and no grapheme is split.
  */
 function capLineCells(line: string): string {
   const fit = sliceCells(line, OUTPUT_LINE_CELLS);
-  return fit.length === line.length ? line : `${sliceCells(fit, OUTPUT_LINE_CELLS - 1).trimEnd()}…`;
+  return fit.length === line.length ? line : `${sliceCells(fit, OUTPUT_LINE_CELLS - 1)}…`;
 }
 
 export function boundedOutputLines(value: string, maxLines: number): string {
@@ -56,23 +56,11 @@ export function boundedOutputLines(value: string, maxLines: number): string {
   // `pre.textContent`, so an unhandled ESC (0x1b) byte shows as a garbage glyph and
   // the trailing `[1;37m` shows as literal text. Strip ANSI + leftover C0/C1 control
   // chars here (keeping \t and \n) so every lane's output reads clean.
-  const kept = stripAnsi(value)
+  return stripAnsi(value)
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
     .replace(/\r/g, '')
     .split('\n')
-    .map((line) => line.replace(/\s+$/, ''))
-    .filter((line) => line.length > 0)
-    .slice(0, maxLines);
-  let minIndent = Infinity;
-  for (const line of kept) {
-    const match = line.match(/^[ \t]*/);
-    const indent = match ? match[0].length : 0;
-    if (indent < minIndent) minIndent = indent;
-    if (minIndent === 0) break;
-  }
-  if (!Number.isFinite(minIndent)) minIndent = 0;
-  return kept
-    .map((line) => line.slice(minIndent))
+    .slice(0, maxLines)
     .map(capLineCells)
     .join('\n');
 }

@@ -116,6 +116,8 @@ export interface HarnessTranscriptItem {
   subagentExpanded?: string[];
   /** spec 315: stable keyboard target for the execution inspector. */
   executionTarget?: ExecutionOpenTarget;
+  /** spec 386: distinct keyboard target for remote command details. */
+  remoteCommandTarget?: RemoteCommandOpenTarget;
   /** spec 281: images rendered in this row's strip (bytes or local path). */
   images?: HarnessImage[];
   /** spec 281: path candidates beyond the per-row cap. */
@@ -284,6 +286,8 @@ export interface ToolPayload {
   jobs?: JobsPayload;
   /** spec 378: Codex Guardian assessment, derived before generic output trim. */
   guardianReview?: GuardianReviewPayload;
+  /** spec 386: recognized Connected Computer execution, decoded before trimming. */
+  remoteCommand?: RemoteCommandPayload;
 }
 
 export interface ExecutionActivity {
@@ -322,6 +326,30 @@ export type ExecutionState = 'pending' | 'running' | 'complete' | 'error' | 'can
 
 export interface ExecutionOpenTarget {
   executionItemId: string;
+  hintLabel: string | null;
+}
+
+export interface RemoteCommandPayload {
+  readonly source: 'mcp' | 'cli';
+  readonly computerId: string;
+  /** The remote request after CLI argument transformations, not its local wrapper. */
+  readonly command: string;
+  /** Explicit request directory only; null means not reported. */
+  readonly cwd: string | null;
+  readonly result: null | {
+    readonly exitCode: number | null;
+    readonly outcome: 'completed' | 'unknown';
+    readonly stdout: string;
+    readonly stderr: string;
+    readonly truncated: boolean;
+  };
+  readonly error: string | null;
+  readonly outcomeUnknown: boolean;
+  readonly displayTruncated: readonly ('computerId' | 'cwd' | 'command' | 'stdout' | 'stderr' | 'error')[];
+}
+
+export interface RemoteCommandOpenTarget {
+  remoteCommandItemId: string;
   hintLabel: string | null;
 }
 

@@ -5,6 +5,13 @@
 > Milestone: ACP Harness — transcript
 > Builds on: 0324 (cell-grid box drawing) · 0319/0315 (Execution Inspector, append-preserving output) · 0235 (grep tokens) · 0301/0302 (component kernel, AGENTS.md constraint 10)
 > Extended by: [0330](./0330-termctrl-monitor-full-log.md) — the Terminal Control monitor's Screen view, an OS-browser loopback page, uses this grid through a bundled `gridifyText` (`src/acp/loopback-cell-grid.ts`).
+> Tool-row trim correction (2026-11-11): the 140-cell cut is a retained-text limit,
+> not a measurement of the available well. Generic tool headers keep the kind,
+> ellipsized subject and timer on one row. Plain output uses `white-space: pre`
+> with width-based CSS ellipsis, preserving source newlines and whitespace rather
+> than soft-wrapping a retained line. Column-laid-out output still uses the grid
+> and its bounded horizontal scroller.
+
 
 ## Problem
 
@@ -24,7 +31,7 @@ Three entry points cover every surface:
 
 The tool card's line cut moves from code units to cells.
 
-**Gridded blocks never wrap.** Wrapping a column layout destroys it. A multi-line block scrolls sideways as one unit, as markdown code blocks already do. Single-line rows keep clipping with `…`. Output that the trigger does not catch keeps its current wrapping.
+**Gridded blocks never wrap.** Wrapping a column layout destroys it. A multi-line block scrolls sideways as one unit, as markdown code blocks already do. Single-line rows keep clipping with `…`. Generic tool-section text also never soft-wraps: each source line clips with `…` at the available well width; other non-gridded output surfaces keep their current wrapping.
 
 ## Research
 
@@ -32,7 +39,7 @@ The tool card's line cut moves from code units to cells.
   - markdown rendered with `marked`: inter-lane mail, the peek thought, Live Assist, Agent view, Review Board, the AI panels;
   - one raw-text block: the tool section `pre`, the subagent detail, the `!shell` row, the provider-error payload, Agent view tool and shell results, the Hurl response, the Inspector JSON and activity panes;
   - one element per line: `DiffBlock` (`paired`, `unified` and `raw` modes, used by the tool row, FS write review, the directive diff and GenUI `Diff`) and the grep rows (`renderGrepSection`).
-- **Tool card text is pre-trimmed** (`harness-tool-render.ts::boundedOutputLines`). It strips ANSI and controls, drops empty lines, trims trailing space, removes the common indent, and keeps 6 lines (12 for `execute`, 80 for `git diff`). Lines over 140 are then cut with `line.slice(0, 139) + '…'`. That cut counts code units, so a Thai row is cut further left than an ASCII row of the same cell width, and it can split a cluster or a surrogate pair.
+- **Tool card text is pre-trimmed** (`harness-tool-render.ts::boundedOutputLines`). It strips ANSI and controls and keeps 6 source lines (12 for `execute`, 80 for `git diff`). Explicit blank lines, indentation, tabs and trailing spaces remain intact. Lines over 140 cells are cut at 139 cells plus `…`; CSS may clip earlier at the actual well width. The original code-unit cut could split a cluster or a surrogate pair; `sliceCells` avoids that.
 - **Tool rows rebuild their output** on every deps change (`tool-row/index.ts::paintOutput`, `setChildren`). Gridding inside that rebuild adds no deps and no append path. The deps are still the whole diff (constraint 10).
 - **`.acp-cellgrid` assumes a `code` element.** Its rounded `line-height` uses `1lh` of the parent. UA `code` sets `font-family: monospace`, which the Inspector undoes with `> code { font: inherit }` (rev 4). A raw-text block needs that rule built in.
 - **Per-line blocks** need every line gridded once any line needs it. Otherwise ASCII rows advance by `1ch` and gridded rows by the rounded `ch`. Rows must also share one rounded line height with no row gap, or vertical lines break between rows. Grep rows have a 3px gap, and diff gutter spans keep an unrounded `1.4`.
@@ -58,7 +65,7 @@ The tool card's line cut moves from code units to cells.
 |------|--------|
 | `src/acp/cell-grid.ts` | New `gridifyText`, `gridifyLines`, `CellGridText` (moved out of the Inspector), `sliceCells`, `STREAMING_GRID_MAX_LINES`; `gridifyCodeBlocks` takes `{ maxLines }` |
 | `src/acp/cell-grid.css` | `.acp-cellgrid--text` (raw block) and `.acp-cellgrid-lines` (per-line container) rules |
-| `src/acp/harness-tool-render.ts` | `boundedOutputLines` cuts at 140 cells. `renderGrepSection` grids its text cells |
+| `src/acp/harness-tool-render.ts` | `boundedOutputLines` preserves source lines/whitespace and cuts at 140 cells. `renderGrepSection` grids its text cells |
 | `src/acp/components/tool-row/index.ts`, `tool-row.css` | `plainSection` grids its `pre`. Gridded grep, unified and paired diff rows get a rounded pitch and no gap, and a gridded paired body scrolls as one block |
 | `src/acp/components/diff-block/index.ts` | `paired`, `unified` and `raw` grid their text elements after each paint |
 | `genui-catalog/data.css` | Rounded row pitch for gridded GenUI diffs (the directive diff needs no rule; see Implementation Notes) |
@@ -139,9 +146,9 @@ Row rules go in the sheet that owns the rows (`tool-row.css`, GenUI `data.css`),
 
 ```
 1. ACP tool update → buildToolPayload → boundedOutputLines cuts lines over 140 cells
-   at 139 cells + '…' (sliceCells), so a frame wider than the card is cut on one column.
+   at 139 cells + '…' (sliceCells), preserving blank lines, indentation and padding.
 2. ToolRow.paintOutput (deps changed) → plainSection builds the pre → gridifyText(pre):
-   plain output keeps its single Text node; column output becomes cells.
+   plain output keeps its single Text node and clips each source line to the actual well width; column output becomes cells.
 3. Terminal status seals the row. No later paint, so no later grid work (constraint 10).
 4. Marked surfaces: innerHTML = md.parse(…) → gridifyCodeBlocks(root). Surfaces that
    re-parse every frame pass { maxLines: 60 } while streaming, then a full pass at the end.
@@ -151,7 +158,7 @@ Row rules go in the sheet that owns the rows (`tool-row.css`, GenUI `data.css`),
 
 ## Edge Cases
 
-- **Plain output:** never gridded. DOM, wrapping and selection are as today.
+- **Plain tool output:** never gridded or soft-wrapped. Explicit newlines and meaningful whitespace remain; CSS clips overflowing lines with ellipsis without changing the DOM text used by native selection/copy. Other plain output surfaces are unchanged.
 - **Thai prose with a double space in tool output:** gridded and no longer wraps; it scrolls sideways. The tool card caps lines at 140 cells, so the scroll stays bounded. Other raw surfaces scroll as markdown code blocks do.
 - **A per-line block where only some lines need the grid:** every line is gridded, so ASCII rows advance by the same rounded cell.
 - **Grep rows from different files:** path and line-number columns size per row, so text aligns across rows only within one file's context block, as today.
@@ -165,7 +172,7 @@ Row rules go in the sheet that owns the rows (`tool-row.css`, GenUI `data.css`),
 
 - Prose surfaces: thought rows, user rows, system rows other than `!shell`, question detail, memory drawer, review-thread preview, GenUI panel source, the permission preview line, peek one-liners, Live Assist non-reply rows.
 - File and debug viewers: Markdown viewer, file-manager previews, quick overview, Vault viewer, Context view, OS-browser loopback pages.
-- The tool card's line caps, empty-line dropping and ANSI handling in `!shell` rows.
+- The tool card's numeric line caps and ANSI handling in `!shell` rows.
 - Drawing Legacy Computing, Braille and Powerline glyphs. They still take their cells, so alignment holds, but the font draws them.
 - Any config option.
 

@@ -370,8 +370,8 @@ Links use the theme link colour, underlined with a 2px offset; no glow. Inline c
 - **Reduced motion** — entrances capped at 120ms; caret blinks stop; hover and focus changes are
   instant.
 - **Config effects** keep their own behaviour and are not part of the chrome: `[shader]`, cursor
-  trail, `[fire]`, the `[music]` circuit trace, perspective tilt. The header oscilloscope (spec 188)
-  draws inside a display well.
+  trail, `[fire]`, the `[music]` circuit trace, perspective tilt. The header band is a static
+  display well with an accent graticule; it does not animate (the spec 188 oscilloscope was removed).
 
 ## Elevation and z-index
 

@@ -290,6 +290,17 @@ The compositor is a TypeScript module running in the webview that manages worksp
     execution, protocol, storage or native-window paths. Generic tools, artifact redaction, subagent
     cards, diffs and image strips keep their owners.
 
+    **Remote command presentation (spec 386).** After backend identity checks and before wire
+    compaction, `adapters/remote-command.ts` normalizes exact built-in `computer_exec` MCP calls
+    and complete direct `kryptonctl computer exec` invocations into bounded immutable
+    `RemoteCommandPayload` data. `toolPayloadFromView` preserves its reference. `ToolRow` owns
+    `RemoteCommandCard`; `AcpHarnessView` owns one read-only `RemoteCommandDialog` outside rows.
+    Details and transcript hints expose Command / Output / Result without repainting sealed rows.
+    Remote exit/outcome stays distinct from transport success, and separate stdout/stderr retain
+    whitespace and independent backend/UI limit notes. Indirect scripts, code cells and uncertain
+    identity stay in their existing renderer. No new backend lifecycle bus, execution or approval
+    path is introduced; the browser gallery owns a separate instance of this production dialog.
+
     **Generative UI (specs 308/309/310/312).** A sealed assistant reply can contain
     a `krypton-ui` fence. `src/acp/genui/` compiles a bounded expression
     language and evaluates it locally. An explicit `#ui` turn stages assistant
@@ -433,12 +444,9 @@ Krypton uses an instrument-faceplate chrome style (Krypton Console, `DESIGN.md`;
             <span class="krypton-window__label-tail">01</span>
           </div>
         </div>
-        <!-- header-accent: a <canvas> oscilloscope (HeaderScope) by default, or a
-             static striped <div> when chrome.header_accent.style = "ticks". Fed by
-             PTY throughput on terminal windows, or streamed model output on content
-             windows (agent/ACP/harness, via ContentView.onOutputPump); rAF stops at
-             idle. See specs 188 and 189. -->
-        <canvas class="krypton-window__header-accent krypton-window__header-accent--scope"></canvas>
+        <!-- header-accent: a static striped well. The live oscilloscope canvas
+             (specs 188/189) was removed on 2026-11-11. -->
+        <div class="krypton-window__header-accent"></div>
       </div>
       <!-- Content area: hosts the active tab's pane tree -->
       <div class="krypton-window__content">
@@ -1287,16 +1295,31 @@ lane and ACP process session. The built-in Harness MCP server exposes
 in-process MCP descriptor. Pi, Cursor, Junie and Cline use bundled
 `kryptonctl` over the authenticated loopback control API so their on-disk MCP
 configs never contain the capability. Both routes enter one app-owned gate.
-When the profile's `auto_approve_read_only` is on (default), the Rust
-classifier `computer_read_only.rs::read_only_script` (spec 318) lets a command
-that parses completely in its shell subset, uses only built-in read-only
-commands and options, and passes its path guard run as its re-quoted argv
-without a prompt. Every other command enters the per-command approval queue —
-surfaced as a permission row in the requesting lane's transcript, resolved
-only by an explicit `a`/`r`, never by a permission mode or a turn-wide
-accept — before
-Rust runs a no-PTY SSH channel. The command target is explicit; it does not
+Rust applies the per-profile policy in order (spec 385, amending specs 311/318):
+`bypass_command_approval` (persistent, default `false`) skips classifier and
+approval queue and executes the original command bytes. The grant covers every
+authorized local lane across all projects, including role-assigned and Telegram
+lanes, but no other computer ID. Otherwise, when `auto_approve_read_only` is on
+(default), `computer_read_only.rs::read_only_script` lets commands passing its
+whole-command parser, command/option table and path guard run as re-quoted argv.
+Every remaining command enters the exact-command approval queue, surfaced in the
+requesting lane's transcript and resolved only by explicit `a`/`r`, never a lane
+permission mode or turn-wide accept. No new exec argument or configuration API
+lets agents enable bypass. All paths retain validation, lane/connection rechecks,
+limits, cancellation and no retries before Rust runs a no-PTY SSH channel.
+The editor warns that bypass includes deletion and service changes across all
+local lanes and survives restarts. Changing it requires disconnect → edit →
+save → reconnect; enabling it disables read-only without clearing its saved
+choice. This is not a sandbox; bypass does not use the read-only path guard.
+The command target is explicit; it does not
 change the lane's `WorkspaceRef` or send bytes to an interactive terminal.
+
+The Harness result UI (spec 386) shows only requested computer/command/cwd and
+validated remote results. It does not look up profiles, infer policy from lane mode,
+equate outer tool success with remote exit zero, or guess effective SSH identity or
+remote runtime. Unknown outcomes remain unknown, including input-send failures
+without output. Direct MCP/CLI calls get a summary and read-only Details; indirect
+shell scripts and code cells keep their existing renderer.
 
 ## E2E Commands (spec 328)
 

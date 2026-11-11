@@ -1,8 +1,9 @@
 # Oscilloscope Band in Content Windows (Agent / ACP / Harness) — Implementation Spec
 
-> Status: Implemented
+> Status: Removed (2026-11-11) with [spec 0188](./0188-oscilloscope-header-band.md)
 > Date: 2026-07-06
 > Milestone: M-chrome — window chrome polish
+> `ContentView.onOutputPump` survives: it now feeds only the Wheel rail activity dot (spec 0272).
 > Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): amber agent look retired; band redrawn as a display well.
 
 ## Problem

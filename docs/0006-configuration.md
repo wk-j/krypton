@@ -971,19 +971,37 @@ user = "alice"          # optional; OpenSSH config/default when omitted
 port = 22               # optional; OpenSSH config/default when omitted
 default_cwd = "/srv/builds" # optional remote absolute path
 auto_approve_read_only = false   # optional; default true — read-only commands run without asking (spec 318)
+bypass_command_approval = true   # optional; default false — all valid commands run without asking (spec 385)
 ```
 
 The file stores no password or private key. OpenSSH config supplies keys, jump
 hosts and host-key policy. Profiles start as `configured` after app launch;
 the user must choose **Connect** before a lane can run a command. Saving checks
-the file revision to prevent overwriting an external edit. A command that
-passes Krypton's built-in read-only check (spec 318) runs without asking when
-`auto_approve_read_only` is on (the default); every other remote command
-requires its own approval in the requesting Harness. Because auto-approved
-reads can return any non-hidden file the SSH account can read to the lane's
-model provider, set `auto_approve_read_only = false` on hosts where that is
-unacceptable. Remote Harness workspaces and `acp_harness.remote_profiles`
-remain independent.
+the file revision to prevent overwriting an external edit. Spec 385 amends
+specs 311/318: Rust first checks `bypass_command_approval` (omitted means `false`,
+written only when `true`, schema version remains `1`). When enabled, any valid
+command runs as the original command bytes without classifier or approval row.
+This persistent grant covers every authorized local lane across all projects
+for this computer ID, including role-assigned and Telegram-driven lanes; other
+IDs remain independent, even on the same physical host. Lane bypass alone does
+not enable it. There is no new exec argument, configuration API or CLI flag.
+With bypass off, commands passing the built-in read-only classifier (spec 318)
+run as re-quoted argv when `auto_approve_read_only` is on (default); every other
+command requires exact-command approval. To always ask, disable both settings.
+Reads may return non-hidden files to the model provider; bypass additionally
+permits credential reads, deletion, network and service changes with the SSH
+account's permissions and does not apply the read-only path guard. It is not a
+sandbox. All validation, lane/connection checks, limits and cancellation remain.
+
+The editor's unchecked `Bypass remote command approval` checkbox warns:
+`All local lanes can run any command on this computer without asking, including file deletion and service changes. This setting is saved across app restarts.`
+It disables the read-only checkbox without clearing its choice; save preserves
+that checked state, and disabling bypass restores it. Detail shows
+`Command approval: BYPASS — all commands`, otherwise `Read-only auto-approval`
+or `Always ask`; enabled list rows append `BYPASS`. Changing policy requires
+disconnect → edit → save → reconnect. Pending approvals are not accepted by
+saving or reconnecting, and restart still requires explicit Connect.
+Remote Harness workspaces and `acp_harness.remote_profiles` remain independent.
 
 ### Telegram Harness Controller (app-managed)
 

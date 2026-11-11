@@ -54,7 +54,8 @@ const HARNESS_ISSUE_TOOL_NAMES = new Set([
 // Backend validation caps size and count; the store is plain files a human can edit.
 const HARNESS_LESSON_TOOL_NAMES = new Set(['lesson_record', 'lesson_retire']);
 // spec 311: auto-allow only the authenticated built-in routing call. Rust
-// still waits for the separate, exact-command approval before opening SSH.
+// applies the computer profile's bypass/read-only policy before asking for
+// separate exact-command approval (specs 318/385).
 const HARNESS_COMPUTER_TOOL_NAMES = new Set(['computer_list', 'computer_exec']);
 /** Every built-in harness tool that auto-allows. The lane decoder matches a
  *  permission request against this set by exact identity (spec 96). */

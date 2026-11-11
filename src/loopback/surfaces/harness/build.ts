@@ -74,6 +74,7 @@ export function buildItem(input: GalleryInput, id: string, now: number): Harness
       };
       // As `renderTool`: a code cell gets its inspector target.
       if (tool.execution) item.executionTarget = { executionItemId: id, hintLabel: null };
+      if (tool.remoteCommand) item.remoteCommandTarget = { remoteCommandItemId: id, hintLabel: null };
       if (input.images !== undefined) item.images = stripImages(id, 'tool', input.images.blocks);
       return item;
     }

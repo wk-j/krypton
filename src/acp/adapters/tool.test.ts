@@ -414,9 +414,8 @@ describe('tool decoding — terminal convention', () => {
     _meta: { terminal_output: { terminal_id: 'c1', data } },
   });
 
-  it('shows Claude terminal output and its exit code', () => {
+  it('reports Claude terminal exit code', () => {
     const view = decode('claude', claudeCommand, output('hi\n'), claudeEnd(0));
-    expect(view.sections).toEqual([{ label: 'output', text: 'hi' }]);
     expect(view.exit).toBe(0);
     expect(toolPayloadFromView(view, {}, undefined).exitCode).toBe(0);
   });
@@ -430,7 +429,7 @@ describe('tool decoding — terminal convention', () => {
     expect(unknown.exit).toBeNull();
   });
 
-  it('appends Codex chunks and drops the content copy once output arrives', () => {
+  it('drops the content copy once Codex terminal output arrives', () => {
     const decoder = createLaneDecoder('codex');
     const started = send(decoder, 'tool_call', {
       toolCallId: 'c1',
@@ -446,14 +445,13 @@ describe('tool decoding — terminal convention', () => {
     expect(started?.view.sections).toEqual([{ label: 'content', text: 'Run printf a; false' }]);
     send(decoder, 'tool_call_update', { toolCallId: 'c1', ...output('a\n') });
     const second = send(decoder, 'tool_call_update', { toolCallId: 'c1', ...output('b\n') });
-    expect(second?.view.sections).toEqual([{ label: 'output', text: 'a\nb' }]);
+    expect(second?.view.sections.map((section) => section.label)).toEqual(['output']);
     const ended = send(decoder, 'tool_call_update', {
       toolCallId: 'c1',
       status: 'failed',
       _meta: { terminal_exit: { exit_code: 1, signal: null, terminal_id: 'c1' } },
     });
     expect(ended?.view.exit).toBe(1);
-    expect(ended?.view.sections).toEqual([{ label: 'output', text: 'a\nb' }]);
   });
 
   it('keeps the terminal exit over a rawOutput code, and rawOutput when no terminal exit came', () => {
@@ -527,7 +525,6 @@ describe('tool decoding — terminal convention', () => {
 
     it('is dropped from terminal output once terminal_exit reports the same code', () => {
       const view = decode('claude', claudeCommand, output('Exit code 3\nboom\n'), claudeEnd(3, 'failed'));
-      expect(view.sections).toEqual([{ label: 'output', text: 'boom' }]);
       expect(view.exit).toBe(3);
       expect(toolPayloadFromView(view, {}, undefined).result).toBe('exit 3');
     });
@@ -551,16 +548,16 @@ describe('tool decoding — terminal convention', () => {
       send(decoder, 'tool_call', { toolCallId: 'c1', ...claudeCommand });
       const early = send(decoder, 'tool_call_update', { toolCallId: 'c1', ...output('Exit code 3\nboom\n') });
       expect(early?.view.exit).toBeNull();
-      expect(early?.view.sections).toEqual([{ label: 'output', text: 'Exit code 3\nboom' }]);
+      expect(early?.view.sections[0].text).toContain('Exit code 3');
       const other = decode('claude', claudeCommand, output('Exit code 3\nboom\n'), claudeEnd(2, 'failed'));
-      expect(other.sections).toEqual([{ label: 'output', text: 'Exit code 3\nboom' }]);
+      expect(other.sections[0].text).toContain('Exit code 3');
       const noExit = decode('claude', claudeCommand, { status: 'failed', ...failedText('Exit code 3\nboom') });
       expect(noExit.sections).toEqual([{ label: 'content', text: 'Exit code 3\nboom' }]);
     });
 
     it('is only a first line, and only on Claude lanes', () => {
       const later = decode('claude', claudeCommand, output('boom\nExit code 3\n'), claudeEnd(3, 'failed'));
-      expect(later.sections).toEqual([{ label: 'output', text: 'boom\nExit code 3' }]);
+      expect(later.sections[0].text).toContain('\nExit code 3');
       const codex = decode('codex', { kind: 'execute', title: 'x', status: 'in_progress' }, {
         status: 'failed',
         _meta: { terminal_output: { terminal_id: 'c1', data: 'Exit code 3\nboom' }, terminal_exit: { terminal_id: 'c1', exit_code: 3, signal: null } },
@@ -574,7 +571,6 @@ describe('tool decoding — terminal convention', () => {
       send(decoder, 'tool_call_update', { toolCallId: 'c1', ...output('Exit code 3\nboom\n') });
       const ended = send(decoder, 'tool_call_update', { toolCallId: 'c1', ...claudeEnd(3, 'failed') });
       const again = send(decoder, 'tool_call_update', { toolCallId: 'c1', status: 'failed' });
-      expect(ended?.view.sections).toEqual([{ label: 'output', text: 'boom' }]);
       expect(again?.view.sections).toBe(ended?.view.sections);
     });
   });

@@ -124,7 +124,6 @@ import { DashboardManager } from './dashboard';
 import type { ClaudeHookManager } from './claude-hooks';
 import type { RemoteHarnessWorkspace } from './acp/remote-harness-picker';
 import { installPerspectiveMouseFix } from './perspective-fix';
-import { HeaderScope } from './header-scope';
 import { FireController, type FireTrigger } from './fire';
 import { ProgressGauge } from './progress-gauge';
 import {
@@ -514,8 +513,6 @@ export class Compositor {
   private qtElement: HTMLElement | null = null;
   /** xterm.js terminal instance for Quick Terminal */
   private qtTerminal: TerminalInstance | null = null;
-  /** Oscilloscope header band for Quick Terminal (null when style is 'ticks') */
-  private qtHeaderScope: HeaderScope | null = null;
   /** PTY session ID for Quick Terminal */
   private qtSessionId: number | null = null;
   /** Whether the Quick Terminal is currently visible */
@@ -2302,34 +2299,21 @@ export class Compositor {
     }
     if (this.qtElement) this.applyAccentColor(this.qtElement, primary);
 
-    // Refresh oscilloscope band accents (per-lane color may have changed)
-    for (const [, win] of this.windows) win.headerScope?.refreshColor();
-    this.qtHeaderScope?.refreshColor();
     this.wheelRail?.refreshColors();
     // spec 283: re-theme rendered harness SVG cards in place.
     refreshSvgFencePreviews(document);
   }
 
   /**
-   * Build the header-accent element below the titlebar and append it to `chrome`.
-   * When the theme's `chrome.header_accent.style` is 'oscilloscope' (default), a
-   * live canvas oscilloscope (fed by PTY throughput, idle-stopping) is created and
-   * its HeaderScope returned; when 'ticks', the static striped div is used and
-   * null is returned. See docs/0188-oscilloscope-header-band.md.
+   * Build the static striped header-accent band below the titlebar and append
+   * it to `chrome`. The live oscilloscope variant (specs 188/189) was removed:
+   * it redrew a canvas every frame while any window had output, which kept
+   * WebKit repainting the chrome under it.
    */
-  private buildHeaderAccent(chrome: HTMLElement): HeaderScope | null {
-    const accent = this.themeEngine?.theme?.chrome.header_accent;
-    const enabled = accent?.enabled ?? true;
-    const style = accent?.style ?? 'oscilloscope';
-    if (enabled && style === 'oscilloscope') {
-      const scope = new HeaderScope();
-      chrome.appendChild(scope.getElement());
-      return scope;
-    }
+  private buildHeaderAccent(chrome: HTMLElement): void {
     const div = document.createElement('div');
     div.className = 'krypton-window__header-accent';
     chrome.appendChild(div);
-    return null;
   }
 
   /**
@@ -2588,7 +2572,6 @@ export class Compositor {
       this.accentPicks.set(windowId, entry.name);
       this.applyAccentPick(win.element, entry.name);
     }
-    win.headerScope?.refreshColor();
     this.scheduleWorkspaceStateSave();
   }
 
@@ -2710,9 +2693,8 @@ export class Compositor {
     titlebar.appendChild(this.createTitlebarEnd(...titleEndChildren));
     chrome.appendChild(titlebar);
 
-    // Header accent bar below titlebar — live oscilloscope (fed by PTY
-    // throughput) or the static striped div, per theme config.
-    const headerScope = this.buildHeaderAccent(chrome);
+    // Header accent bar below titlebar — static striped band.
+    this.buildHeaderAccent(chrome);
 
     // Content area
     const content = document.createElement('div');
@@ -2769,7 +2751,6 @@ export class Compositor {
       tabBarElement: tabBar,
       contentElement: content,
       pinned: false,
-      headerScope,
     };
     const stageSnapshots = this.layoutMode === LayoutMode.Stage
       ? this.snapshotStageVisuals()
@@ -3295,10 +3276,9 @@ export class Compositor {
     titlebar.appendChild(this.createTitlebarEnd(ptyStatus, tail));
     chrome.appendChild(titlebar);
 
-    // Header accent bar below titlebar — live oscilloscope (fed by the content
-    // view's streamed output) or the static striped div, per theme config.
-    // The same pump also feeds the Wheel rail's activity dot (spec 272).
-    const headerScope = this.buildHeaderAccent(chrome);
+    // Header accent bar below titlebar — static striped band. The view's
+    // streamed output feeds the Wheel rail's activity dot (spec 272).
+    this.buildHeaderAccent(chrome);
     contentView.onOutputPump = (chars: number): void => this.pumpWindowActivity(id, chars);
 
     const content = document.createElement('div');
@@ -3377,7 +3357,6 @@ export class Compositor {
       tabBarElement: tabBar,
       contentElement: content,
       pinned: false,
-      headerScope,
     };
     const stageSnapshots = this.layoutMode === LayoutMode.Stage
       ? this.snapshotStageVisuals()
@@ -5582,9 +5561,6 @@ export class Compositor {
       this.disposePaneTree(tab.paneTree);
     }
 
-    // Dispose the oscilloscope band (cancels rAF, disconnects ResizeObserver)
-    win.headerScope?.dispose();
-
     // Put out and release this window's fire (spec 362)
     this.fire.remove(win.id);
 
@@ -6417,12 +6393,8 @@ export class Compositor {
     glowBottom.className = 'krypton-glow-overlay krypton-glow-overlay--bottom';
     paneEl.appendChild(glowBottom);
 
-    // Drive the host window's oscilloscope band from this view's streamed
-    // output (spec 189). The band lives on the window chrome and is shared by
-    // every tab/pane, so a content pane pumps the same scope the launching
-    // terminal fed — matching the "all panes pump the single window band" rule.
-    // The scope is null when the header-accent style is 'ticks'; the pump still
-    // feeds the Wheel rail's activity dot (spec 272).
+    // This view's streamed output feeds the host window's Wheel rail
+    // activity dot (spec 272), the same as the launching terminal's PTY output.
     contentView.onOutputPump = (chars: number): void => this.pumpWindowActivity(winId, chars);
 
     const pane: Pane = {
@@ -7247,10 +7219,6 @@ export class Compositor {
       this.qtTerminal = null;
     }
 
-    // Dispose the oscilloscope band
-    this.qtHeaderScope?.dispose();
-    this.qtHeaderScope = null;
-
     // Remove DOM element
     if (this.qtElement) {
       this.qtElement.remove();
@@ -7302,7 +7270,7 @@ export class Compositor {
     titlebar.appendChild(this.createTitlebarEnd(qtPtyStatus, tail));
     chrome.appendChild(titlebar);
 
-    this.qtHeaderScope = this.buildHeaderAccent(chrome);
+    this.buildHeaderAccent(chrome);
 
     const content = document.createElement('div');
     content.className = 'krypton-window__content';
@@ -8439,9 +8407,8 @@ export class Compositor {
     }, Compositor.WHEEL_REFRESH_MS));
   }
 
-  /** Output throughput from a content view: header band + Wheel activity dot. */
+  /** Output throughput from a content view: Wheel activity dot. */
   private pumpWindowActivity(id: WindowId, bytes: number): void {
-    this.windows.get(id)?.headerScope?.pump(bytes);
     this.wheelRail?.pump(id, bytes);
   }
 
@@ -8819,7 +8786,6 @@ export class Compositor {
       // Check Quick Terminal first
       if (this.qtSessionId === sid && this.qtTerminal) {
         this.qtTerminal.terminal.write(new Uint8Array(data));
-        this.qtHeaderScope?.pump(data.length);
         return;
       }
 
@@ -8828,8 +8794,7 @@ export class Compositor {
       if (loc) {
         const win = this.windows.get(loc.windowId);
         if (win) {
-          // Drive the window's oscilloscope band and Wheel activity dot with output throughput.
-          win.headerScope?.pump(data.length);
+          // Drive the window's Wheel activity dot with output throughput.
           this.wheelRail?.pump(win.id, data.length);
           this.scheduleWheelItemRefresh(win);
           const tab = win.tabs.find((t) => t.id === loc.tabId);

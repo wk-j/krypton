@@ -74,6 +74,8 @@ import { def as queueCard } from './queue-card';
 import { def as railsDock } from './rails-dock';
 import { def as railEntry } from './rail-entry';
 import { def as remotePicker } from './remote-picker';
+import { def as remoteCommandCard } from './remote-command-card';
+import { def as remoteCommandDialog } from './remote-command-dialog';
 import { def as resourceRail } from './resource-rail';
 import { def as reviewLoopRows } from './review-loop-rows';
 import { def as reviewMatrixOverlay } from './review-matrix-overlay';
@@ -127,6 +129,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   toolRow,
   guardianReviewRow,
   executionCard,
+  remoteCommandCard,
   subagentCard,
   jobList,
   permissionRow,
@@ -189,6 +192,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   backgroundTasks,
   imageViewer,
   executionDialog,
+  remoteCommandDialog,
   genuiPanel,
   genuiCatalog,
   reviewThreadDialog,

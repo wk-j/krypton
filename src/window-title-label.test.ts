@@ -76,16 +76,16 @@ describe('session mark chrome', () => {
     expect(focused).not.toMatch(/align-self:\s*flex-start/);
   });
 
-  it('does not hang the mark into the oscilloscope band', () => {
+  it('does not hang the mark into the header band', () => {
     expect(css).not.toMatch(/--krypton-header-accent-margin-end/);
     expect(css).not.toMatch(
       /\.krypton-window--focused:has\(\.krypton-window__label-tail/,
     );
     expect(accent).toMatch(/margin:\s*0 var\(--krypton-header-accent-margin/);
-    const scope = css.match(
-      /\.krypton-window__header-accent--scope\s*\{[^}]*\}/,
-    )?.[0] ?? '';
-    expect(scope).toMatch(/2 \* var\(--krypton-header-accent-margin/);
+  });
+
+  it('has no live oscilloscope variant of the header band', () => {
+    expect(css).not.toMatch(/\.krypton-window__header-accent--scope/);
   });
 
   it('does not let progress.css re-assert titlebar overflow', () => {

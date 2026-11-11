@@ -69,32 +69,58 @@ describe('ConnectedComputersContentView', () => {
     expect(view.element.querySelector('[data-action="reload"]')).not.toBeNull();
   });
 
-  it('sends autoApproveReadOnly false when the read-only checkbox is cleared', async () => {
+  it.each([true, false])('preserves read-only choice %s through bypass save, reopen and disable', async (readOnly) => {
+    let savedProfile = { ...profile, autoApproveReadOnly: readOnly, bypassCommandApproval: false };
+    const snapshot = () => ({
+      revision: 'rev1',
+      computers: [{ ...list('configured').computers[0], profile: { ...savedProfile } }],
+    });
     mocks.listen.mockResolvedValue(() => undefined);
-    mocks.invoke.mockResolvedValueOnce(list('configured')).mockResolvedValueOnce(list('configured'));
+    mocks.invoke.mockImplementation(async (command: string, args?: { profile: typeof savedProfile }) => {
+      if (command === 'computer_profile_save') savedProfile = { ...args!.profile };
+      return snapshot();
+    });
     view = new ConnectedComputersContentView(document.createElement('div'));
+    document.body.appendChild(view.element);
     await vi.waitFor(() => expect(view!.element.textContent).toContain('buildbox'));
-    expect(view.element.textContent).toContain('Run without asking');
     view.onKeyDown(new KeyboardEvent('keydown', { key: 'e' }));
-    view.element.querySelector<HTMLInputElement>('input[name="autoApproveReadOnly"]')!.checked = false;
+    let readOnlyInput = view.element.querySelector<HTMLInputElement>('input[name="autoApproveReadOnly"]')!;
+    const bypass = view.element.querySelector<HTMLInputElement>('input[name="bypassCommandApproval"]')!;
+    bypass.click();
+    expect(readOnlyInput.disabled).toBe(true);
+    expect(readOnlyInput.checked).toBe(readOnly);
     view.element.querySelector<HTMLFormElement>('form')!.requestSubmit();
-    await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('computer_profile_save', {
-      profile: { ...profile, autoApproveReadOnly: false }, expectedRevision: 'rev1',
-    }));
+    await vi.waitFor(() => expect(view!.element.querySelector('form')).toBeNull());
+    expect(view.element.querySelector('dd:last-child')?.textContent).toBe('BYPASS — all commands');
+    expect(view.element.querySelector('.krypton-computers__row')?.textContent).toContain('BYPASS');
+    view.onKeyDown(new KeyboardEvent('keydown', { key: 'e' }));
+    readOnlyInput = view.element.querySelector<HTMLInputElement>('input[name="autoApproveReadOnly"]')!;
+    const reopenedBypass = view.element.querySelector<HTMLInputElement>('input[name="bypassCommandApproval"]')!;
+    expect(reopenedBypass.checked).toBe(true);
+    expect(readOnlyInput.disabled).toBe(true);
+    expect(readOnlyInput.checked).toBe(readOnly);
+    reopenedBypass.click();
+    expect(readOnlyInput.disabled).toBe(false);
+    expect(readOnlyInput.checked).toBe(readOnly);
+    view.element.querySelector<HTMLFormElement>('form')!.requestSubmit();
+    await vi.waitFor(() => expect(view!.element.querySelector('form')).toBeNull());
+    expect(view.element.querySelector('dd:last-child')?.textContent).toBe(readOnly ? 'Read-only auto-approval' : 'Always ask');
+    expect(view.element.querySelector('.krypton-computers__row')?.textContent).not.toContain('BYPASS');
   });
 
-  it('sends autoApproveReadOnly true for a new profile by default', async () => {
+  it('discards an unsaved bypass grant when the editor is cancelled', async () => {
     mocks.listen.mockResolvedValue(() => undefined);
-    mocks.invoke.mockResolvedValueOnce({ revision: 'rev0', computers: [] }).mockResolvedValueOnce(list('configured'));
+    mocks.invoke.mockResolvedValue(list('configured'));
     view = new ConnectedComputersContentView(document.createElement('div'));
-    await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(1));
-    await vi.waitFor(() => expect(view!.element.textContent).toContain('No saved computers'));
-    view.onKeyDown(new KeyboardEvent('keydown', { key: 'n' }));
-    view.element.querySelector<HTMLInputElement>('input[name="id"]')!.value = 'devbox';
-    view.element.querySelector<HTMLInputElement>('input[name="host"]')!.value = 'dev.example';
-    view.element.querySelector<HTMLFormElement>('form')!.requestSubmit();
-    await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith('computer_profile_save', {
-      profile: { id: 'devbox', host: 'dev.example', autoApproveReadOnly: true }, expectedRevision: 'rev0',
-    }));
+    document.body.appendChild(view.element);
+    await vi.waitFor(() => expect(view!.element.textContent).toContain('buildbox'));
+    view.onKeyDown(new KeyboardEvent('keydown', { key: 'e' }));
+    view.element.querySelector<HTMLInputElement>('input[name="bypassCommandApproval"]')!.click();
+    view.onKeyDown(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(view.element.querySelector('.krypton-computers__row')?.textContent).not.toContain('BYPASS');
+    view.onKeyDown(new KeyboardEvent('keydown', { key: 'e' }));
+    expect(view.element.querySelector<HTMLInputElement>('input[name="bypassCommandApproval"]')?.checked).toBe(false);
+    expect(view.element.querySelector<HTMLInputElement>('input[name="autoApproveReadOnly"]')?.disabled).toBe(false);
+    expect(mocks.invoke).not.toHaveBeenCalledWith('computer_profile_save', expect.anything());
   });
 });

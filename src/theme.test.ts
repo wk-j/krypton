@@ -79,7 +79,6 @@ function theme(overrides: {
         height: 6,
         color: 'rgba(0, 200, 255, 0.15)',
         margin_horizontal: 20,
-        style: 'oscilloscope',
       },
       corner_accents: { enabled: true, size: 14, thickness: 2, color: 'rgba(0, 200, 255, 0.4)' },
       tabs: {

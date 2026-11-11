@@ -59,7 +59,7 @@
 7. **Backend scans for OSC 9;4** -> Inline state machine detects `ESC ] 9 ; 4 ; <state> [; <progress>] ST` sequences. If found, emits Tauri event `pty-progress` with `{ session_id, state, progress }`. Raw bytes are NOT stripped — xterm.js will ignore the unknown OSC.
 8. **Backend emits event** -> Tauri event `pty-output` pushes raw bytes to frontend (scoped by session_id)
 9. **xterm.js renders** -> xterm.js parses VT sequences and updates the window's terminal canvas
-9b. **Header oscilloscope** -> the same routed chunk feeds `win.headerScope?.pump(data.length)` (Quick Terminal: `qtHeaderScope`). The `HeaderScope` (`src/header-scope.ts`) bumps energy by `max(n/SCALE, MIN_KICK)` and (re)starts its rAF, stroking a scrolling waveform in the window head; the loop self-stops ~0.6 s after output ceases, so an idle window's band costs 0 CPU. `MIN_KICK` is required because model-token deltas are 1–8 chars — far below `SCALE` — and would otherwise never deflect the 6px band. Only when `chrome.header_accent.style = "oscilloscope"` (default); see `docs/0188-oscilloscope-header-band.md`. **Content windows** (agent/ACP/harness) drive the same band without PTY: the compositor injects `ContentView.onOutputPump`, which each view calls with the char length of every streamed model delta (assistant/thought text; harness pumps all lanes). See `docs/0189-oscilloscope-harness-band.md`.
+9b. **Wheel activity** -> the same routed chunk feeds `wheelRail?.pump(win.id, data.length)` (Quick Terminal output does not). **Content windows** (agent/ACP/harness) feed it without PTY: the compositor injects `ContentView.onOutputPump`, which each view calls with the char length of every streamed model delta (assistant/thought text; harness pumps all lanes), routed through `pumpWindowActivity`. The header band is static; the oscilloscope that this chunk used to drive (specs 188/189) was removed on 2026-11-11.
 10. **Progress UI** -> If `pty-progress` was emitted, the compositor updates the target window's content-area gauge (large translucent SVG arc centered behind terminal text) and titlebar scanline sweep animation
 10b. **Program status (OSC 7501)** -> While parsing, xterm.js hands `ESC ] 7501 ; … ST` to the pane's handler. `parseProgramStatus` validates it: a `?` query is answered via `terminal.input` → `onData` → `write_to_pty`, and a report is applied to `ProgramStatusStore`. A changed summary makes the compositor repaint the tab, window and chip, publish `view:program-status` (the footer re-pulls counts), and, for an unfocused pane entering blocked/error/done, show one rate-limited rail message. OSC 133 `A` or a `process-changed` back to the shell drops working/blocked/idle. See `docs/0284-program-status-osc7501.md`
 11. **PTY exits** -> Backend emits `pty-exit` when either the PTY reader hits EOF/error or the owning child process exits. Compositor clears progress and closes the matching pane/tab; if an exit arrives before the frontend has registered the new session, it is held briefly and replayed after registration.
@@ -201,7 +201,7 @@ d. The loop stops once the grip, the mouse and the button fades settle
 3. `fitAll()` fits every window, hidden ones included, on entry, viewport resize, and maximize restore — `visibility: hidden` keeps layout, so hidden PTYs already have the frame's size.
 4. `Leader h/k`, `Leader j/l`, `Cmd+Shift+</>`, `Leader 1-9`, a card click, or a settled mouse-wheel scroll over the rail focuses another window.
 5. `syncWheelFocus()` flips the roles, refocuses the now-visible pane, and calls `setActive`. The rail rotates and runs the dock morph in its own rAF loop: the incoming window flies from its card into the main frame, then its transform is cleared; the outgoing one flies back onto its card. The focused window's card stays at the apex with the caret and big label, and the ghost eye (spec 274) moves onto it and opens: `WheelEye` follows the pointer, then output activity, on its own clock (rAF only while the pointer moves or the lids blink, 80 ms while watching, 420 ms when quiet). Input is not buffered, because the incoming pane already has focus. No fit runs, so no `resize_pty` or `SIGWINCH` is emitted.
-6. PTY output and content-view output pumps feed both the window's header band and `WheelRail.pump()`; each busy window's activity dot on the arc decays with a 1.5 s half-life and the rail loop stops once all are below threshold.
+6. PTY output and content-view output pumps feed `WheelRail.pump()`; each busy window's activity dot on the arc decays with a 1.5 s half-life and the rail loop stops once all are below threshold.
 7. Leaving Wheel disposes the rail, which releases every preview transform, then clears the Wheel class, role, visibility, pointer, z-index, transform, and opacity styles and resumes webviews. Entering Wheel morphs only the focused window with `animateRelayout`; previews start on their cards.
 
 ## Config Loading Flow (on app startup)
@@ -1404,6 +1404,8 @@ PUBLISH
        alone and never the head;
        recognized OMP execution snapshots update their owning ExecutionCard and,
        when open, the view-owned ExecutionDialog instead (specs 315/319).
+       Recognized Connected Computer calls likewise update their owning RemoteCommandCard
+       and the view-owned RemoteCommandDialog (spec 386); neither detail dialog rebuilds a sealed row.
        Codex `guardian_assessment:` calls with the adapter's exact `think` /
        `Guardian Review` identity become GuardianReviewRow payloads before
        generic output trimming (spec 378). The review outcome is distinct from
@@ -2369,21 +2371,57 @@ the local Telegram Settings view accepts it.
    still be bound to a live local ACP session; saved but disconnected profiles
    cannot execute commands.
 3. `computer_exec` or `kryptonctl computer exec` names one connected ID. Rust
-   validates the request. If the profile's `auto_approve_read_only` is on
-   (default) and the command passes `read_only_script` (spec 318), Rust skips
-   the approval event and the wait and uses the re-quoted argv it classified.
-   Otherwise Rust emits the exact target, directory and command to the
+   validates the request, then applies spec 385 (amending specs 311/318): a
+   persistent per-profile `bypass_command_approval` (default false) skips the
+   classifier and approval queue and uses the original command bytes. Otherwise,
+   if `auto_approve_read_only` is on (default) and `read_only_script` accepts,
+   Rust skips the approval event and wait and uses the re-quoted argv.
+   For all remaining commands Rust emits the exact target, directory and command to the
    requesting Harness and waits for a one-time user decision. The Harness seats
    that request as a permission row in the requesting lane's transcript (`a`
    approves once, `r` declines) and keeps it in `pendingComputerCommands`, a
    queue no auto-accept path touches; unanswered, it expires after 120 seconds.
    The adapter's permission auto-allow covers only this built-in routing call.
-4. After approval, or immediately for an auto-approved read-only command, Rust
-   rechecks the lane and SSH master, then sends the script (the re-quoted argv
-   or the approved original command) to remote `sh -s` over a fresh no-PTY
-   channel. It returns bounded stdout,
+4. After manual approval, read-only auto-approval or profile bypass, Rust
+   rechecks the lane and SSH master, then sends the script (re-quoted argv for
+   read-only classification; original command bytes for bypass or manual approval)
+   to remote `sh -s` over a fresh no-PTY channel. It returns bounded stdout,
    stderr and exit code. Timeout, lane close or disconnect cancels the local SSH
    child and reports the remote outcome as unknown; Krypton never retries it.
+5. Bypass is shared by every authorized local lane across all projects for that
+   computer ID; lane bypass, roles and Telegram do not themselves grant it.
+   No new exec argument or configuration API enables it. The editor warns about
+   persistent authority including deletion and service changes. Policy changes
+   require disconnect → edit → save → reconnect, preserving the read-only choice
+   while its checkbox is disabled. No pending approval is automatically accepted.
+   All guards, capacity/output limits and cancellation rules remain unchanged;
+   bypass omits the read-only path guard, not request validation.
+6. For presentation only (spec 386), the lane tool decoder normalizes the merged
+   wire call after adapter identity checks and before generic wire/output compaction.
+   Exact built-in `computer_exec` MCP identity or one complete direct
+   `kryptonctl computer exec` invocation establishes the request; foreign/lookalike
+   identity, indirect scripts and code cells stay generic or keep their existing renderer.
+   Only complete result envelopes for the same unbounded computer ID establish a result;
+   remote exit/outcome is never inferred from the outer tool/shell exit.
+7. The decoder retains an immutable `ToolView.remoteCommand` (command 16 KiB,
+   computer/cwd 1 KiB each, stdout/stderr 16 KiB each, error 4 KiB; UTF-8 safe),
+   preserving its reference on no-op/status-only updates. Backend truncation and UI
+   retention limits remain separate. Exact unknown-outcome errors may retain partial
+   output or no result; missing exit is never zero. Undecodable output keeps generic
+   diagnostics, not fabricated success.
+8. `toolPayloadFromView` passes the payload by reference into the existing transcript
+   item, which carries a separate `remoteCommandTarget`. `ToolRow` owns the summary;
+   Details / transcript `f` hints open one view-owned `RemoteCommandDialog` outside rows.
+   Command / Output / Result expose requested fields and separate streams; Tab /
+   Shift+Tab change sections and Esc restores focus. Late retained data updates that
+   owning component, not sealed row structure. Removal, lane replacement and disposal
+   close without taking focus. No profile lookup, remote-runtime guess, backend bus,
+   approval change, polling or rerun control is added.
+9. `/harness-gallery#tool-remote-command` builds MCP/CLI `ToolView` fixtures through
+   the same production payload builder. The stage retains their item targets and owns
+   a separate real dialog outside preview rows; delegated Details clicks open it and
+   modal keyboard ownership pauses gallery shortcuts. Entry changes dispose it.
+   These fixtures exercise presentation only, not live SSH transport.
 
 ## Native Command Output Flow (specs 351, 352, 353)
 

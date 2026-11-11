@@ -48,7 +48,7 @@
 
   .acp-harness__tool-head {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 8px;
     line-height: 1.4;
@@ -160,7 +160,9 @@
     min-width: 0;
     color: rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.92);
     font-family: var(--agent-font, monospace);
-    word-break: break-all;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .acp-harness__tool-result {
@@ -245,8 +247,12 @@
     font-size: inherit;
     line-height: 1.4;
     color: color-mix(in srgb, var(--acp-tool-section-color, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86)) 82%, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.86));
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
+    /* The 140-cell payload cap is not the available width. Ellipsize each
+       source line at the well edge without inventing wrapped output lines. */
+    white-space: pre;
+    overflow: hidden;
+    overflow-wrap: normal;
+    text-overflow: ellipsis;
   }
 
   .acp-harness__tool-rich {
