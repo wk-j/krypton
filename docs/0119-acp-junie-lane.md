@@ -1,6 +1,8 @@
-# Junie Lane (JetBrains Junie CLI Native ACP) — Implementation Spec
+# Junie Lane (JetBrains Junie CLI Native ACP) — Retired Implementation Spec
 
-> Status: Proposed
+> Retired: Junie backend support has been removed entirely. This document is retained as historical design context; its launch, configuration and MCP instructions no longer describe supported behavior. See [Junie Backend Removal](./0394-remove-junie-backend.md).
+
+> Status: Retired
 > Date: 2026-05-26
 > Milestone: M-ACP — Harness convergence
 

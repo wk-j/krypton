@@ -2986,14 +2986,9 @@ async fn handle_hook(
 /// The MCP "Streamable HTTP" transport opens this stream to receive
 /// server-initiated messages. We never push events from here (the server is
 /// pure request/response), so the stream stays idle and only emits SSE
-/// keepalive comments. Junie's Kotlin MCP SDK treats a 405 here as a hard
-/// transport failure even though the spec permits it, so we serve a valid
-/// (but empty) stream instead.
-///
-/// We emit one SSE comment immediately so Junie's client sees bytes before
-/// its initial-response timer fires (verified: a 15s-only keepalive lets
-/// Junie time out at ~3–5s with zero bytes received). After the first
-/// comment, a 5s keepalive keeps the connection warm.
+/// keepalive comments. Serve a valid empty stream for clients that require GET
+/// support, with an immediate comment before their initial-response timer fires
+/// and a 5s keepalive to keep the connection warm.
 async fn handle_harness_memory_mcp_sse(
     Path((_harness_id, _lane_label)): Path<(String, String)>,
 ) -> Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>> {
@@ -3086,13 +3081,9 @@ async fn handle_harness_memory_mcp(
     json_rpc_reply(id, result)
 }
 
-/// Echo back the client's protocolVersion when we recognize it; the Kotlin
-/// MCP SDK that Junie ships throws `Server's protocol version is not
-/// supported: <ours>` if we unconditionally return a newer version than what
-/// the client requested. Falling back to the request version (or our default
-/// if absent/unknown) keeps every existing client working — our handlers only
-/// implement `tools/list` + `tools/call`, both unchanged across these spec
-/// versions.
+/// Echo the client's protocolVersion when recognized so older clients do not
+/// reject a newer server version. Our tools/list and tools/call handlers are
+/// compatible with every supported version; absent/unknown versions use the default.
 fn negotiated_mcp_protocol_version(request: &Value) -> &str {
     const SUPPORTED_PROTOCOL_VERSIONS: &[&str] = &["2025-06-18", "2025-03-26", "2024-11-05"];
     const DEFAULT_PROTOCOL_VERSION: &str = "2025-06-18";
@@ -3937,7 +3928,7 @@ async fn handle_tools() -> Response {
 
 /// spec 186: reference-page category per built-in MCP tool. Page-only — the
 /// field is injected into `/tools.json` and never into the MCP `tools/list`
-/// response, which strict clients (Junie's Kotlin SDK) parse by shape.
+/// response, which strict clients parse by shape.
 fn tool_category(name: &str) -> &'static str {
     match name {
         "handoff_set" => "memory",

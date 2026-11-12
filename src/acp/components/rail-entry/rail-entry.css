@@ -94,7 +94,6 @@
   .acp-harness__rail-logo--pi       { color: var(--krypton-backend-pi); }
   .acp-harness__rail-logo--droid    { color: var(--krypton-backend-droid); }
   .acp-harness__rail-logo--cursor   { color: var(--krypton-backend-cursor); }
-  .acp-harness__rail-logo--junie    { color: var(--krypton-backend-junie); }
   .acp-harness__rail-logo--omp      { color: var(--krypton-backend-omp); }
   .acp-harness__rail-logo--grok     { color: var(--krypton-backend-grok); }
   .acp-harness__rail-logo--copilot  { color: var(--krypton-backend-copilot); }

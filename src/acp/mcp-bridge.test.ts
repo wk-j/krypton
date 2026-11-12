@@ -54,16 +54,16 @@ describe('toClaudeMcpFile', () => {
     });
   });
 
-  it('writes http remote without type field (Junie doc shape)', () => {
+  it('writes http remote without type field (native config shape)', () => {
     const servers: AcpMcpServerDescriptor[] = [{
       name: 'krypton-harness-memory',
       type: 'http',
-      url: 'http://127.0.0.1:9999/mcp/harness/h1/lane/Junie-1',
+      url: 'http://127.0.0.1:9999/mcp/harness/h1/lane/Claude-1',
       headers: [],
     }];
     const file = toClaudeMcpFile(servers);
     expect(file.mcpServers?.['krypton-harness-memory']).toEqual({
-      url: 'http://127.0.0.1:9999/mcp/harness/h1/lane/Junie-1',
+      url: 'http://127.0.0.1:9999/mcp/harness/h1/lane/Claude-1',
     });
   });
 

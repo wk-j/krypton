@@ -19,7 +19,6 @@ Listed by spec number. Older specs remain in this directory.
 
 | # | Spec |
 |---|------|
-| 373 | [Prompt Dialog Typewriter Slip](./0373-prompt-dialog-typewriter-slip.md) |
 | 374 | [Harness Lane Stats Toggle](./0374-harness-lane-stats-toggle.md) |
 | 375 | [Commit Browser](./0375-commit-browser.md) |
 | 376 | [Commit Explainer Background Job](./0376-commit-explainer-background-job.md) |
@@ -40,6 +39,7 @@ Listed by spec number. Older specs remain in this directory.
 | 391 | [Workspace Fire](./0391-workspace-fire.md) |
 | 392 | [Titlebar Fire](./0392-titlebar-fire.md) |
 | 393 | [Remove MiMo Integration](./0393-remove-mimo.md) |
+| 394 | [Junie Backend Removal](./0394-remove-junie-backend.md) |
 
 ## ADRs (31)
 

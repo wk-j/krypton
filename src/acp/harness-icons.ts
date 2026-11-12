@@ -45,11 +45,6 @@ export const BACKEND_LOGO_SVG_DEFS = [
     '<path d="M8 1.6 L13.6 5 L8 8.4 L2.4 5 Z" fill="currentColor"/>' +
     '<line x1="8" y1="8.4" x2="8" y2="14.4" stroke="currentColor" stroke-width="1.3"/>' +
     '</symbol>',
-  // junie: bracket frame (jetbrains-ish)
-  '<symbol id="krypton-logo-junie" viewBox="0 0 16 16">' +
-    '<rect x="2.5" y="2.5" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
-    '<path d="M5.5 5.5 H10.5 M10.5 5.5 V9.5 Q10.5 11 9 11 H7.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +
-    '</symbol>',
   // omp: concentric rings (also serves as neutral fallback)
   '<symbol id="krypton-logo-omp" viewBox="0 0 16 16">' +
     '<circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.3"/>' +

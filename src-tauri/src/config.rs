@@ -886,7 +886,7 @@ pub struct AcpHarnessConfig {
     /// absolute remote project directory.
     pub remote_profiles: Vec<RemoteHarnessProfile>,
     /// Per-backend model selection. Keyed by backend id (`opencode`,
-    /// `claude`, `codex`, `cursor`, `droid`, `junie`, `cline`, `fx`). `active` is the
+    /// `claude`, `codex`, `cursor`, `droid`, `cline`, `fx`). `active` is the
     /// model applied to the lane: Droid via `-m`, OpenCode and fx
     /// via `session/set_config_option`, and any ACP-native backend that advertises
     /// model state in `session/new` (verified: `claude`) via a post-`session/new`
@@ -894,7 +894,7 @@ pub struct AcpHarnessConfig {
     /// resolve adapter-side; a failure is non-fatal — the lane keeps the agent
     /// default). `models` is an informational allow-list shown in the UI; it is
     /// not enforced and is not the model discovery source. Backends that do not
-    /// advertise model state yet (Cursor, Junie, OMP, Pi, Grok, Cline) are accepted but
+    /// advertise model state yet (Cursor, OMP, Pi, Grok, Cline) are accepted but
     /// ignored at spawn — the entry only drives the model chip; they auto-enable
     /// if/when their adapter advertises model state. `active` is snapshotted at
     /// spawn: editing it takes effect only on the next spawn/`#new`/`#new!`/lane

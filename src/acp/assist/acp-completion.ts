@@ -36,7 +36,7 @@ export interface AcpAssistDeps {
 }
 
 const defaultSpawn: AcpSpawn = (backendId, cwd, owner, remoteRuntimeId) =>
-  AcpClient.spawn(backendId, cwd, owner, [], null, null, remoteRuntimeId);
+  AcpClient.spawn(backendId, cwd, owner, [], null, remoteRuntimeId);
 
 function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);

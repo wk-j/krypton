@@ -35,13 +35,12 @@ Add a **separate, dedicated AI agent window** that speaks the [Agent Client Prot
 | IntelliJ "Gemini CLI Companion" | Launches `gemini --experimental-acp`, JSON-RPC over stdio, modal permission prompts. | Validates Gemini CLI ACP mode for IDE-style hosts. |
 | OpenCode ACP | Launches `opencode acp` as an ACP-compatible subprocess over stdio JSON-RPC; the lane model comes from OpenCode's `configOptions` model select (configured `lane_models.opencode.active` applied via `session/set_config_option`). | Validates OpenCode as a code-defined backend alongside Claude, Gemini, and Codex, without writing OpenCode config files. |
 | Cursor Agent ACP | Launches `cursor-agent acp` as Cursor Agent's native ACP server over stdio JSON-RPC. | Validates Cursor as a regular built-in backend with no headless NDJSON adapter. |
-| JetBrains Junie ACP | Launches `junie --acp true` as Junie CLI's native ACP server over stdio JSON-RPC. | Validates Junie as a regular built-in backend; auth via JetBrains Account, `JUNIE_API_KEY`, `--auth <token>`, or BYOK provider keys. |
 | Oh My Pi ACP | Launches `omp acp` as OMP's native ACP server over stdio JSON-RPC. | Validates OMP as a regular built-in backend with native permission routing; headless `omp acp` does not read `.mcp.json` itself, so Krypton passes project `.mcp.json` servers through `session/new.mcpServers` like other regular lanes. |
 | Emacs `acp.el` | Minimal ACP client; line-delimited framing in a non-Node host. | Reference for non-JS implementation. |
 
 **Krypton delta** — Match Zed's TOML-style backend declaration (familiar to ACP users). Diverge by routing every UI surface through a keyboard-first window in our own compositor (no popups), single-key inline permission prompts, and cyberpunk chrome consistent with the rest of Krypton.
 
-Source note: OpenCode's ACP documentation confirms `opencode acp` as the stdio ACP subprocess command; OpenCode v2 (verified 2.0.26) advertises models only through the `configOptions` model select and rejects `session/set_model` with `Method not found`, so Krypton applies a configured model via `session/set_config_option`. OpenCode's CLI documentation confirms `opencode auth login` for provider credentials. Cursor Agent's local `cursor-agent acp --help` confirms its native ACP subprocess command; Cursor auth remains outside Krypton via `cursor-agent login` or `CURSOR_API_KEY`. JetBrains Junie's `junie-cli-acp` documentation confirms `junie --acp true` as the stdio ACP subprocess command; Junie auth remains outside Krypton via `junie` first-run (JetBrains Account), `JUNIE_API_KEY`, `-a/--auth <token>`, or BYOK provider keys forwarded through the cached login env. OMP's README documents `omp acp` and the install command `curl -fsSL https://omp.sh/install | sh`; OMP auth remains outside Krypton via `omp` first-run/auth-broker or provider keys forwarded through the cached login env.
+Source note: OpenCode's ACP documentation confirms `opencode acp` as the stdio ACP subprocess command; OpenCode v2 (verified 2.0.26) advertises models only through the `configOptions` model select and rejects `session/set_model` with `Method not found`, so Krypton applies a configured model via `session/set_config_option`. OpenCode's CLI documentation confirms `opencode auth login` for provider credentials. Cursor Agent's local `cursor-agent acp --help` confirms its native ACP subprocess command; Cursor auth remains outside Krypton via `cursor-agent login` or `CURSOR_API_KEY`. OMP's README documents `omp acp` and the install command `curl -fsSL https://omp.sh/install | sh`; OMP auth remains outside Krypton via `omp` first-run/auth-broker or provider keys forwarded through the cached login env.
 
 ## Affected Files
 
@@ -76,7 +75,6 @@ ACP backends are code-defined, not configured in `krypton.toml`.
 | `pi-acp` | `pi-acp` |
 | `droid` | `droid exec --output-format acp` |
 | `cursor` | `cursor-agent acp` (harness MCP via native `.cursor/mcp.json` + `mcp enable`, not `session/new`) |
-| `junie` | `junie --acp true` |
 | `omp` | `omp acp` |
 
 **Reasoning effort (spec 388).** Effort is read from the session's `configOptions` select with `category: "thought_level"` — never by id, which differs per adapter — and only when the lane's model is driven through the `configOptions` model select. Probed 2026-11-11: claude-agent-acp 0.106.0 (`effort`: `default, low, medium, high, xhigh, max`; its model is a `configOptions` select, no `models` object) and omp 18.18.8 (`thinking`: `off, auto, low, medium, high, xhigh, max`) get the model picker's effort strip. codex-acp 1.13.0 advertises a `models` object whose ids carry the effort (`gpt-6-sol[high]`), so its effort is chosen and remembered through the model list. cline 3.0.74 offers no effort. A confirmed model/effort pick is remembered per backend in `~/.config/krypton/acp-lane-models.toml`.
@@ -236,7 +234,7 @@ Each lane adapter declares `supplies` (`src/acp/adapters/types.ts` `SupplyMatrix
 
 - Grok has no subagent card, and its lanes have no `turnState` hook.
 - Krypton reads thread state only from codex-acp's `_meta.codex.threadStatus`, so Claude, Grok and OMP lanes have no `turnState` hook either.
-- A backend without its own adapter (OpenCode, Cursor, Junie, pi-acp, Droid, and any new id) stays all `unverified`, even where the generic adapter has no reader.
+- A backend without its own adapter (OpenCode, Cursor, pi-acp, Droid, and any new id) stays all `unverified`, even where the generic adapter has no reader.
 
 ### Data Flow (one prompt turn)
 

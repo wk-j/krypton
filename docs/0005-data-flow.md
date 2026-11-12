@@ -380,7 +380,7 @@ d. The loop stops once the grip, the mouse and the button fades settle
    d. Returns harnessId and hook server port to frontend.
 6. AcpHarnessView lists ACP backends and starts with an empty roster. The user
    opens `Cmd+P → +` to spawn installed harness backends such as Codex, Claude,
-   OpenCode, Pi, Droid, Cursor, Junie, or OMP with the same cwd. After `session/new`,
+   OpenCode, Pi, Droid, Cursor, or OMP with the same cwd. After `session/new`,
    a configured `lane_models.<backend>.active` is applied via `session/set_model`
    (`models` advertised) or `session/set_config_option` (`configOptions` model
    select, e.g. OpenCode v2); failure is non-fatal.
@@ -2388,7 +2388,7 @@ the local Telegram Settings view accepts it.
    named SSH profile, and selects **Connect**. Rust resolves OpenSSH config,
    starts its own ControlMaster and reports `connected` only after `ssh -O check`.
 2. A local Harness lane calls `computer_list` through its per-lane MCP server,
-   or Pi/Cursor/Junie/Cline run `"$KRYPTONCTL_PATH" computer list --json`
+   or Pi/Cursor/Cline run `"$KRYPTONCTL_PATH" computer list --json`
    through a shell tool. The capability must
    still be bound to a live local ACP session; saved but disconnected profiles
    cannot execute commands.

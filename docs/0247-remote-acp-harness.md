@@ -222,7 +222,7 @@ enum RemoteMethod {
 }
 ```
 
-Frames are newline-delimited UTF-8 JSON with a 32 MiB decoded-line cap. ACP values remain nested under `params`/`payload`; neither side parses agent text as shell. Unknown methods, duplicate ids, oversized frames, and version mismatch close with a typed error. `WorkspaceRemove` exists for exact project-file cleanup (currently Cursor MCP entries); directories require `recursive: true`, and the companion rejects paths outside the canonical workspace. Junie/Cline overlays use the dedicated runtime-overlay methods, live under a mode-0700 temporary directory outside the repository, and are removed with the companion.
+Frames are newline-delimited UTF-8 JSON with a 32 MiB decoded-line cap. ACP values remain nested under `params`/`payload`; neither side parses agent text as shell. Unknown methods, duplicate ids, oversized frames, and version mismatch close with a typed error. `WorkspaceRemove` exists for exact project-file cleanup (currently Cursor MCP entries); directories require `recursive: true`, and the companion rejects paths outside the canonical workspace. Cline overlays use the dedicated runtime-overlay methods, live under a mode-0700 temporary directory outside the repository, and are removed with the companion.
 
 A runtime that predates a method fails to parse its request frame and exits, which disconnects
 the whole Harness. The companion's Hello therefore lists `capabilities`, and

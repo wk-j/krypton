@@ -31,7 +31,7 @@ Decisions taken:
   - `tool_category` (:3549), plus its test;
   - `HARNESS_AUTO_ALLOW_TOOL_NAMES`, the regex, and `harnessToolFamily` (`harness-permission-scan.ts:63-164`); otherwise every call prompts.
   The tool must not be project-backed (:6295), so it is not hidden when the harness has no project.
-- **Reach.** Every backend except Pi gets the bus, either through `session/new` or through native overlays (Junie, Cline, Cursor). Remote lanes reach the local hook server (`remote_harness_forward_memory`), so one local store serves them too. Pi lanes cannot call tools but still receive the policy text.
+- **Reach.** Every backend except Pi gets the bus, either through `session/new` or through native overlays (Cline, Cursor). Remote lanes reach the local hook server (`remote_harness_forward_memory`), so one local store serves them too. Pi lanes cannot call tools but still receive the policy text.
 - **Correction signals.**
   - `deliverRedirect` (`inter-lane.ts:406`) is the cleanest human-correction signal.
   - `review_outcome` currently returns only `{recorded:true}`. Its handler (:4975) has the blocker count, so it can add a just-in-time `notice`, the same pattern spec 289 used for the `timeline_record` ack.

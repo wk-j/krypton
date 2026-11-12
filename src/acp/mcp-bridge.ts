@@ -59,9 +59,6 @@ export interface ClineMcpFile {
   mcpServers: Record<string, ClineMcpServer>;
 }
 
-/** Junie advertises http+sse in ACP; used when building overlays before initialize. */
-export const JUNIE_MCP_CAPABILITIES: AcpMcpCapabilities = { http: true, sse: true };
-
 let loginEnvPromise: Promise<Record<string, string>> | null = null;
 
 interface RemoteRunResult {
@@ -327,7 +324,7 @@ function pairsToObject(pairs: Array<{ name: string; value: string }>): Record<st
   return out;
 }
 
-/** Inverse of `translate()` — Junie/Claude on-disk `mcp.json` shape (object env/headers). */
+/** Inverse of `translate()` — Claude-compatible on-disk `mcp.json` shape (object env/headers). */
 export function toClaudeMcpFile(servers: AcpMcpServerDescriptor[]): ClaudeMcpFile {
   const mcpServers: Record<string, ClaudeMcpServer> = {};
   for (const s of servers) {
@@ -446,45 +443,6 @@ export async function gcClineMcpOverlays(
   await invoke('gc_cline_mcp_overlays', { harnessId });
 }
 
-/** Write `.junie/mcp/mcp.json` under ~/.config/krypton/runtime/junie/<harness>/<lane>/ for `--mcp-location`. */
-export async function writeJunieMcpOverlay(
-  harnessId: string,
-  laneLabel: string,
-  servers: AcpMcpServerDescriptor[],
-  remoteRuntimeId?: string | null,
-  projectDir?: string | null,
-): Promise<string> {
-  const content = JSON.stringify(toClaudeMcpFile(servers), null, 2);
-  if (remoteRuntimeId && projectDir) {
-    const overlay = await remoteRequest<{ dir: string }>(remoteRuntimeId, 'overlay_write', {
-      backend: 'junie',
-      harnessId,
-      laneLabel,
-      fileName: 'mcp.json',
-      content,
-    });
-    return overlay.dir;
-  }
-  return invoke<string>('write_junie_mcp_overlay', { harnessId, laneLabel, content });
-}
-
-export async function removeJunieMcpOverlay(
-  harnessId: string,
-  laneLabel: string,
-  remoteRuntimeId?: string | null,
-  projectDir?: string | null,
-): Promise<void> {
-  if (remoteRuntimeId && projectDir) {
-    await remoteRequest(remoteRuntimeId, 'overlay_remove', {
-      backend: 'junie',
-      harnessId,
-      laneLabel,
-    });
-    return;
-  }
-  await invoke('remove_junie_mcp_overlay', { harnessId, laneLabel });
-}
-
 /** spec 113 rev — cursor-agent ignores ACP `session/new` mcpServers (upstream
  *  regression), so the Cursor lane gets its harness servers through native
  *  `<projectDir>/.cursor/mcp.json` + `cursor-agent mcp enable`. Merges into any
@@ -545,21 +503,6 @@ export async function cleanupCursorMcp(
     return;
   }
   await invoke('cleanup_cursor_mcp', { projectDir, names });
-}
-
-export async function gcJunieMcpOverlays(
-  harnessId: string,
-  remoteRuntimeId?: string | null,
-  projectDir?: string | null,
-): Promise<void> {
-  if (remoteRuntimeId && projectDir) {
-    await remoteRequest(remoteRuntimeId, 'overlay_remove', {
-      backend: 'junie',
-      harnessId,
-    });
-    return;
-  }
-  await invoke('gc_junie_mcp_overlays', { harnessId });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -894,8 +894,6 @@ export interface HarnessLane {
   streamingMarkdownParser: smd.Parser | null;
   streamingMarkdownBody: HTMLElement | null;
   streamingMarkdownItemId: string | null;
-  /** Junie native MCP overlay dir passed to `--mcp-location`. */
-  junieMcpOverlayDir: string | null;
   /** Cline native MCP overlay file passed via `CLINE_MCP_SETTINGS_PATH`
    *  (Cline drops `session/new` mcpServers). null when not a Cline lane. */
   clineMcpOverlayDir: string | null;

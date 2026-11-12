@@ -54,7 +54,7 @@ function qualifiedHarnessTool(value: unknown): string | null {
  *
  * Identity comes only from what the adapter states about the call: a qualified
  * title, top-level server metadata paired with an exact bare title, a whole
- * qualified `Tool:` content line, or the Junie option-label wrapper. `rawInput`
+ * qualified `Tool:` content line, or the qualified option-label wrapper. `rawInput`
  * is the tool's argument payload, which the agent writes freely, so it is never
  * identity evidence. A shell command never qualifies, and an explicitly foreign
  * qualified title cannot be overridden by content or option labels.

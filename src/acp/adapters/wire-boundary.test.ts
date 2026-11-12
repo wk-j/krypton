@@ -30,12 +30,12 @@ const VIEW_LANE_EVENT_METHODS = new Set([
  * Components that name the backend for what it is, not for what its traffic
  * means: the lane's logo and label, which backend's sessions the picker
  * lists, and the launch-trust chip of a backend without a working permission
- * rail (Pi, Junie). None of them
+ * rail (Pi). None of them
  * reads wire data. The count pins today's uses, so a new one has to be added
  * here on purpose.
  */
 const COMPONENT_BACKEND_ID_ALLOWED: Readonly<Record<string, number>> = {
-  'acp/components/lane-head/index.ts': 4,
+  'acp/components/lane-head/index.ts': 3,
   'acp/components/rail-entry/index.ts': 7,
   'acp/components/session-picker/index.ts': 4,
 };

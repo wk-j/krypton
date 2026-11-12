@@ -703,7 +703,7 @@ fn overlay_path(
     params: &OverlayParams,
     require_file: bool,
 ) -> Result<PathBuf, RuntimeError> {
-    if !matches!(params.backend.as_str(), "cline" | "junie") {
+    if params.backend != "cline" {
         return Err(RuntimeError::new(
             "invalid_overlay",
             "unsupported overlay backend",
@@ -719,7 +719,7 @@ fn overlay_path(
         let file_name = params.file_name.as_deref().ok_or_else(|| {
             RuntimeError::new("invalid_params", "overlay write requires fileName")
         })?;
-        if !matches!(file_name, "mcp.json" | "cline_mcp_settings.json") {
+        if file_name != "cline_mcp_settings.json" {
             return Err(RuntimeError::new(
                 "invalid_overlay",
                 "unsupported overlay file",
@@ -1091,7 +1091,28 @@ mod tests {
             Some("cline_mcp_settings.json")
         );
 
+        let removed = OverlayParams {
+            backend: "junie".into(),
+            harness_id: "h1".into(),
+            lane_label: Some("removed-1".into()),
+            file_name: Some("mcp.json".into()),
+            content: Some("{}".into()),
+        };
+        for require_file in [true, false] {
+            assert_eq!(
+                overlay_path(&root, &removed, require_file)
+                    .unwrap_err()
+                    .code,
+                "invalid_overlay"
+            );
+        }
+
         let mut invalid = params;
+        invalid.file_name = Some("mcp.json".into());
+        assert_eq!(
+            overlay_path(&root, &invalid, true).unwrap_err().code,
+            "invalid_overlay"
+        );
         invalid.file_name = Some("../../secret".into());
         assert_eq!(
             overlay_path(&root, &invalid, true).unwrap_err().code,

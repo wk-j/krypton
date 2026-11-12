@@ -323,14 +323,6 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
             },
         ),
         (
-            "junie",
-            AcpBackend {
-                command: "junie".to_string(),
-                args: vec!["--acp".to_string(), "true".to_string()],
-                display_name: "Junie".to_string(),
-            },
-        ),
-        (
             "omp",
             AcpBackend {
                 command: "omp".to_string(),
@@ -2520,7 +2512,6 @@ pub async fn acp_spawn(
     cwd: Option<String>,
     owner: AcpInstanceOwner,
     mcp_servers: Option<Vec<Value>>,
-    junie_mcp_location: Option<String>,
     cline_mcp_settings_path: Option<String>,
     remote_runtime_id: Option<String>,
     computer_capability: Option<String>,
@@ -2554,13 +2545,6 @@ pub async fn acp_spawn(
         if backend_id == "droid" {
             backend.args.push("-m".to_string());
             backend.args.push(model.clone());
-        }
-    }
-
-    if backend_id == "junie" {
-        if let Some(loc) = junie_mcp_location.filter(|s| !s.is_empty()) {
-            backend.args.push("--mcp-location".to_string());
-            backend.args.push(loc);
         }
     }
 
@@ -3759,7 +3743,7 @@ pub fn acp_login_env() -> HashMap<String, String> {
     crate::pty::cached_login_env().clone()
 }
 
-// ─── Junie native MCP overlay (ACP session/new mcpServers is a no-op) ──
+// Shared native MCP overlay path validation.
 
 fn sanitize_overlay_path_component(s: &str) -> String {
     s.chars()
@@ -3771,62 +3755,6 @@ fn sanitize_overlay_path_component(s: &str) -> String {
             }
         })
         .collect()
-}
-
-fn junie_overlay_lane_dir(
-    harness_id: &str,
-    lane_label: &str,
-) -> Result<std::path::PathBuf, String> {
-    let base = crate::config::config_dir()
-        .ok_or_else(|| "Could not determine config directory".to_string())?;
-    Ok(base
-        .join("runtime")
-        .join("junie")
-        .join(sanitize_overlay_path_component(harness_id))
-        .join(sanitize_overlay_path_component(lane_label)))
-}
-
-/// Write `mcp.json` for Junie `--mcp-location` (overlay root returned).
-///
-/// Junie's `--mcp-location <folder>` reads `<folder>/mcp.json` directly; it
-/// does not treat the folder like a project root looking for nested
-/// `.junie/mcp/mcp.json`. Verified against Junie build 1668.54 on 2026-05-26.
-#[tauri::command]
-pub fn write_junie_mcp_overlay(
-    harness_id: String,
-    lane_label: String,
-    content: String,
-) -> Result<String, String> {
-    let dir = junie_overlay_lane_dir(&harness_id, &lane_label)?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
-    let path = dir.join("mcp.json");
-    std::fs::write(&path, content).map_err(|e| format!("write {}: {e}", path.display()))?;
-    Ok(dir.to_string_lossy().to_string())
-}
-
-#[tauri::command]
-pub fn remove_junie_mcp_overlay(harness_id: String, lane_label: String) -> Result<(), String> {
-    let dir = junie_overlay_lane_dir(&harness_id, &lane_label)?;
-    if dir.exists() {
-        std::fs::remove_dir_all(&dir).map_err(|e| format!("remove {}: {e}", dir.display()))?;
-    }
-    Ok(())
-}
-
-/// Remove stale overlays for a harness (crash recovery) before new lanes spawn.
-#[tauri::command]
-pub fn gc_junie_mcp_overlays(harness_id: String) -> Result<(), String> {
-    let Some(base) = crate::config::config_dir() else {
-        return Ok(());
-    };
-    let dir = base
-        .join("runtime")
-        .join("junie")
-        .join(sanitize_overlay_path_component(&harness_id));
-    if dir.exists() {
-        std::fs::remove_dir_all(&dir).map_err(|e| format!("remove {}: {e}", dir.display()))?;
-    }
-    Ok(())
 }
 
 // ─── Cline native MCP overlay (ACP session/new mcpServers is dropped) ──
@@ -4144,42 +4072,6 @@ fn startup_hint(backend_id: &str, stderr: &str) -> String {
         }
         if stderr.is_empty() {
             return "Cursor Agent did not return an initialize response and no stderr was captured. First-run auth or install input is a likely cause; try `cursor-agent login` in a terminal, then retry.".to_string();
-        }
-    }
-    if backend_id == "junie" {
-        if s.contains("command not found") || s.contains("enoent") || s.contains("no such file") {
-            return "Install Junie CLI: `curl -fsSL https://junie.jetbrains.com/install.sh | bash`."
-                .to_string();
-        }
-        if s.contains("unknown option --acp")
-            || s.contains("invalid value for --acp")
-            || s.contains("unrecognized argument")
-        {
-            return "Your Junie CLI predates ACP mode. Run `junie --version` (known-good baseline: build 1668.54) and update via the install script.".to_string();
-        }
-        if s.contains("not authenticated")
-            || s.contains("please log in")
-            || s.contains("please login")
-            || s.contains("authentication required")
-            || s.contains("unauthorized")
-        {
-            return "Run `junie` once in a terminal to log in with your JetBrains Account, pass `--auth <token>` for headless setups, or export `JUNIE_API_KEY` / a provider key (e.g. `ANTHROPIC_API_KEY`) in your login shell.".to_string();
-        }
-        if s.contains("invalid api key") || s.contains("bad token") || s.contains("api key") {
-            return "Junie reports an API key problem. Re-check `JUNIE_API_KEY`, `--auth <token>`, or your BYOK provider key in the login shell.".to_string();
-        }
-        if s.contains("subscription")
-            || s.contains("quota")
-            || s.contains("rate limit")
-            || s.contains("billing")
-        {
-            return "Junie reports a subscription/quota issue. Check your JetBrains account or BYOK provider status.".to_string();
-        }
-        if s.contains("~/.junie") || s.contains(".junie/config.json") {
-            return "Junie failed to load its config (likely `~/.junie/config.json` or `<project>/.junie/config.json`). Inspect the file or remove it to fall back to defaults.".to_string();
-        }
-        if stderr.is_empty() {
-            return "Junie did not return an initialize response and no stderr was captured. First-run JetBrains login or install input is a likely cause; run `junie` in a terminal once, then retry.".to_string();
         }
     }
     if backend_id == "omp" {
@@ -4741,104 +4633,6 @@ mod tests {
     }
 
     #[test]
-    fn junie_startup_hint_reports_missing_cli() {
-        let hint = startup_hint("junie", "junie: command not found");
-
-        assert!(hint.contains("Install Junie CLI"));
-        assert!(hint.contains("junie.jetbrains.com/install.sh"));
-    }
-
-    #[test]
-    fn junie_startup_hint_reports_unknown_acp_flag() {
-        let hint = startup_hint("junie", "error: unknown option --acp");
-
-        assert!(hint.contains("predates ACP mode"));
-        assert!(hint.contains("1668.54"));
-    }
-
-    #[test]
-    fn junie_startup_hint_reports_invalid_acp_value() {
-        // Local repro from `junie --acp --help` — older CLIs that accept the
-        // flag but reject the boolean payload still need the version-update
-        // hint, not the auth fallback.
-        let hint = startup_hint("junie", "Error: invalid value for --acp: expected boolean");
-
-        assert!(hint.contains("predates ACP mode"));
-    }
-
-    #[test]
-    fn junie_startup_hint_reports_auth_when_explicit() {
-        let hint = startup_hint("junie", "Error: not authenticated to JetBrains account");
-
-        assert!(hint.contains("log in with your JetBrains Account"));
-        assert!(hint.contains("JUNIE_API_KEY"));
-    }
-
-    #[test]
-    fn junie_startup_hint_does_not_treat_bare_login_word_as_auth() {
-        let stderr = "debug: login state cache refreshed";
-        let hint = startup_hint("junie", stderr);
-
-        assert_eq!(hint, stderr);
-    }
-
-    #[test]
-    fn junie_startup_hint_reports_subscription_quota() {
-        let hint = startup_hint("junie", "ERROR: subscription quota exhausted");
-
-        assert!(hint.contains("subscription/quota issue"));
-    }
-
-    #[test]
-    fn junie_startup_hint_reports_api_key_problem() {
-        let hint = startup_hint("junie", "Error: invalid api key (status 401)");
-
-        assert!(hint.contains("API key problem"));
-        assert!(hint.contains("JUNIE_API_KEY"));
-    }
-
-    #[test]
-    fn junie_startup_hint_does_not_match_bare_forbidden_as_quota() {
-        // Cursor-1 review nit: HTTP 403 / "forbidden" alone is not a quota
-        // signal. With the matcher narrowed, an unrelated 403 stderr should
-        // fall through to the empty-stderr-tail return path instead of
-        // mis-hinting users to check their JetBrains subscription.
-        let stderr = "Network error: 403 Forbidden from internal proxy";
-        let hint = startup_hint("junie", stderr);
-
-        assert!(!hint.contains("subscription/quota issue"));
-    }
-
-    #[test]
-    fn junie_startup_hint_reports_config_corruption() {
-        let hint = startup_hint(
-            "junie",
-            "Error reading ~/.junie/config.json: invalid JSON at line 4",
-        );
-
-        assert!(hint.contains("failed to load its config"));
-    }
-
-    #[test]
-    fn junie_startup_hint_empty_stderr_is_non_diagnostic() {
-        let hint = startup_hint("junie", "");
-
-        assert!(hint.contains("no stderr was captured"));
-        assert!(hint.contains("likely cause"));
-    }
-
-    #[test]
-    fn junie_startup_hint_does_not_leak_to_other_backends() {
-        // Junie-specific substring in another backend's stderr must not match
-        // the Junie block — backend_id gates the whole arm.
-        let hint = startup_hint("claude", "could not read ~/.junie/config.json");
-
-        // Falls through to the generic Claude/auth hint instead of Junie's
-        // config-corruption row.
-        assert!(!hint.contains("Junie failed to load its config"));
-    }
-
-    #[test]
     fn omp_startup_hint_reports_missing_cli() {
         let hint = startup_hint("omp", "No such file or directory (os error 2)");
 
@@ -5304,17 +5098,11 @@ mod tests {
     }
 
     #[test]
-    fn junie_overlay_path_sanitizes_lane_label() {
-        let dir = super::junie_overlay_lane_dir("h1", "Junie-1").expect("dir");
-        let s = dir.to_string_lossy();
-        assert!(
-            s.contains("runtime/junie/h1/Junie-1") || s.contains("runtime\\junie\\h1\\Junie-1")
-        );
-        let mcp_json = dir.join("mcp.json");
-        assert!(
-            mcp_json.to_string_lossy().ends_with("Junie-1/mcp.json")
-                || mcp_json.to_string_lossy().ends_with("Junie-1\\mcp.json")
-        );
+    fn junie_backend_is_not_available() {
+        assert!(resolve_backend("junie").is_none());
+        let backends = super::acp_list_backends().expect("backend list");
+        assert!(!backends.iter().any(|backend| backend.id == "junie"));
+        assert!(resolve_backend("cline").is_some());
     }
 
     #[test]

@@ -383,15 +383,11 @@ import {
   loadProjectMcpServers,
   filterByCapability,
   dedupeByName,
-  gcJunieMcpOverlays,
-  removeJunieMcpOverlay,
-  writeJunieMcpOverlay,
   gcClineMcpOverlays,
   removeClineMcpOverlay,
   writeClineMcpOverlay,
   prepareCursorMcp,
   cleanupCursorMcp,
-  JUNIE_MCP_CAPABILITIES,
 } from './mcp-bridge';
 import { FILE_TOUCH_WINDOW_MS } from './harness-view-types';
 import { noticeText, type HarnessNotice, type NoticeTone } from './harness-notice';
@@ -1038,7 +1034,6 @@ const LANE_DEFAULTS = {
   streamingMarkdownParser: null,
   streamingMarkdownBody: null,
   streamingMarkdownItemId: null,
-  junieMcpOverlayDir: null,
   clineMcpOverlayDir: null,
   cursorMcpNames: null,
   pendingCoordinatorDrain: null,
@@ -7024,11 +7019,6 @@ export class AcpHarnessView implements ContentView {
       console.warn('[acp-harness] store command manifest failed:', e);
     }
     try {
-      await gcJunieMcpOverlays(session.harnessId, this.remoteRuntimeId, projectDir);
-    } catch (e) {
-      console.warn('[acp-harness] gc junie mcp overlays failed:', e);
-    }
-    try {
       await gcClineMcpOverlays(session.harnessId, this.remoteRuntimeId, projectDir);
     } catch (e) {
       console.warn('[acp-harness] gc cline mcp overlays failed:', e);
@@ -7992,7 +7982,7 @@ export class AcpHarnessView implements ContentView {
       lane.computerCapability = null;
       if (!this.remoteRuntimeId && this.harnessMemoryId) {
         try {
-          if (['pi-acp', 'cursor', 'junie', 'cline'].includes(lane.backendId)
+          if (['pi-acp', 'cursor', 'cline'].includes(lane.backendId)
             && !await invoke<boolean>('computer_cli_available')) {
             throw new Error('kryptonctl is not staged; run the remote-runtime staging script');
           }
@@ -8008,22 +7998,8 @@ export class AcpHarnessView implements ContentView {
         }
       }
       let seedMcp = this.memoryServerForLane(lane);
-      let junieMcpLocation: string | null = null;
       let clineMcpSettingsPath: string | null = null;
-      if (lane.backendId === 'junie') {
-        seedMcp = [];
-        if (this.harnessMemoryId) {
-          const overlayServers = await this.junieOverlayServersForLane(lane);
-          junieMcpLocation = await writeJunieMcpOverlay(
-            this.harnessMemoryId,
-            lane.displayName,
-            overlayServers,
-            this.remoteRuntimeId,
-            this.projectDir,
-          );
-          lane.junieMcpOverlayDir = junieMcpLocation;
-        }
-      } else if (lane.backendId === 'cline') {
+      if (lane.backendId === 'cline') {
         // Cline advertises no `mcpCapabilities`, so `session/new` mcpServers are
         // dropped (verified cline 3.0.24). Deliver them through a per-lane
         // `cline_mcp_settings.json` pointed at by `CLINE_MCP_SETTINGS_PATH`.
@@ -8056,13 +8032,12 @@ export class AcpHarnessView implements ContentView {
           }
         }
       }
-      // Non-Junie: seed memory only; project `.mcp.json` is injected after `initialize`.
+      // Native-overlay lanes seed no servers; other lanes inject project MCP after initialize.
       client = await AcpClient.spawn(
         lane.backendId,
         this.projectDir,
         this.laneInstanceOwner(lane),
         seedMcp,
-        junieMcpLocation,
         clineMcpSettingsPath,
         this.remoteRuntimeId,
         lane.computerCapability,
@@ -8175,14 +8150,6 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
-  private async junieOverlayServersForLane(lane: HarnessLane): Promise<AcpMcpServerDescriptor[]> {
-    const memoryServers = this.memoryServerForLane(lane);
-    const projectServers = await loadProjectMcpServers(this.projectDir, this.remoteRuntimeId);
-    if (projectServers.length === 0) return memoryServers;
-    const gated = filterByCapability(projectServers, JUNIE_MCP_CAPABILITIES);
-    return dedupeByName(gated, memoryServers);
-  }
-
   private async clineOverlayServersForLane(lane: HarnessLane): Promise<AcpMcpServerDescriptor[]> {
     // Cline's native config reads stdio/sse/streamableHttp directly, so no ACP
     // capability gating is needed — forward the per-lane memory server plus the
@@ -8205,7 +8172,7 @@ export class AcpHarnessView implements ContentView {
       type: 'http',
       url: `http://127.0.0.1:${memoryPort}/mcp/harness/${harness}/lane/${laneLabel}`,
       headers: lane.computerCapability && !this.remoteRuntimeId
-        && !['pi-acp', 'cursor', 'junie', 'cline'].includes(lane.backendId)
+        && !['pi-acp', 'cursor', 'cline'].includes(lane.backendId)
         ? [{ name: 'x-krypton-computer-capability', value: lane.computerCapability }]
         : [],
     }];
@@ -8216,7 +8183,6 @@ export class AcpHarnessView implements ContentView {
     // Claude Code's adapter loads `.mcp.json` natively — re-injecting via
     // ACP would duplicate every entry. Pi has no MCP host at all (by design),
     // so the bridge has nowhere to land for Pi-1.
-    // Junie loads MCP via `--mcp-location` overlay; session/new mcpServers is a no-op.
     // Cline advertises no mcpCapabilities and drops session/new mcpServers; it
     // gets servers via a native `cline_mcp_settings.json` (CLINE_MCP_SETTINGS_PATH).
     // Cursor ignores session/new mcpServers entirely (upstream regression); it
@@ -8226,13 +8192,11 @@ export class AcpHarnessView implements ContentView {
     if (
       lane.backendId === 'claude' ||
       lane.backendId === 'pi-acp' ||
-      lane.backendId === 'junie' ||
       lane.backendId === 'cline' ||
       lane.backendId === 'cursor' ||
       lane.backendId === 'fx'
     ) {
-      return lane.backendId === 'junie' ||
-        lane.backendId === 'cline' ||
+      return lane.backendId === 'cline' ||
         lane.backendId === 'cursor'
         ? []
         : memoryServers;
@@ -8991,7 +8955,7 @@ export class AcpHarnessView implements ContentView {
       head.push(renderToolIndex(gates));
     }
     if (!this.remoteRuntimeId && lane.computerCapability) {
-      head.push(['pi-acp', 'cursor', 'junie', 'cline'].includes(lane.backendId)
+      head.push(['pi-acp', 'cursor', 'cline'].includes(lane.backendId)
         ? 'Connected computers: use "$KRYPTONCTL_PATH" computer list --json to see targets the user connected in Krypton; use "$KRYPTONCTL_PATH" computer exec <id> -- <quoted-command> to request one remote command. If the user enabled bypassCommandApproval for that computer, any command runs without asking; otherwise read-only commands from Krypton\'s built-in list may run immediately when the computer allows it, and other commands wait for approval of the exact command. Pass --cwd instead of cd, and avoid redirection, $, globs and ~ so a read-only command qualifies. Never expose the capability from your environment.'
         : 'Connected computers: call computer_list to discover targets the user connected in Krypton, then computer_exec with a connected computerId and exact command. If the user enabled bypassCommandApproval for that computer, any command runs without asking; otherwise read-only commands from Krypton\'s built-in list may run immediately when the computer allows it, and other commands wait for approval of the exact command. Pass cwd instead of cd, and avoid redirection, $, globs and ~ so a read-only command qualifies.');
     }
@@ -11064,7 +11028,7 @@ export class AcpHarnessView implements ContentView {
         label: `${backendLabel(backendId)} session picker`,
         harness_id: this.harnessMemoryId,
         lane_id: null,
-      }, [], null, null, this.remoteRuntimeId);
+      }, [], null, this.remoteRuntimeId);
       const init = await client.initializeOnly();
       const capabilities = init.sessions;
       if (!capabilities.canList) {
@@ -11263,17 +11227,6 @@ export class AcpHarnessView implements ContentView {
         // ignore
       }
     }
-    if (lane.backendId === 'junie' && this.harnessMemoryId) {
-      void removeJunieMcpOverlay(
-        this.harnessMemoryId,
-        lane.displayName,
-        this.remoteRuntimeId,
-        this.projectDir,
-      ).catch((e) => {
-        console.warn('[acp-harness] remove junie mcp overlay failed:', e);
-      });
-    }
-    lane.junieMcpOverlayDir = null;
     if (lane.backendId === 'cline' && this.harnessMemoryId) {
       void removeClineMcpOverlay(
         this.harnessMemoryId,

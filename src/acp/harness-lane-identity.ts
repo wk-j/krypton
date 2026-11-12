@@ -14,7 +14,6 @@ export const BACKEND_LABELS: Record<string, string> = {
   'pi-acp': 'Pi',
   droid: 'Droid',
   cursor: 'Cursor',
-  junie: 'Junie',
   omp: 'OMP',
   copilot: 'Copilot',
   cline: 'Cline',
@@ -70,8 +69,6 @@ export function backendLogoId(backendId: string): string {
       return 'krypton-logo-droid';
     case 'cursor':
       return 'krypton-logo-cursor';
-    case 'junie':
-      return 'krypton-logo-junie';
     case 'omp':
       return 'krypton-logo-omp';
     case 'grok':
@@ -156,7 +153,6 @@ export function laneAccentForLabel(label: string): string {
   if (/^pi(-|$)/i.test(label)) return laneAccent(5);
   if (/droid/i.test(label)) return laneAccent(6);
   if (/cursor/i.test(label)) return laneAccent(7);
-  if (/junie/i.test(label)) return laneAccent(8);
   if (/^omp(-|$)/i.test(label)) return laneAccent(9);
   if (/grok/i.test(label)) return laneAccent(10);
   if (/copilot/i.test(label)) return laneAccent(11);

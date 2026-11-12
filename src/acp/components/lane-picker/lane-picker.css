@@ -104,7 +104,6 @@
   .acp-harness__picker-logo--pi       { color: var(--krypton-backend-pi); }
   .acp-harness__picker-logo--droid    { color: var(--krypton-backend-droid); }
   .acp-harness__picker-logo--cursor   { color: var(--krypton-backend-cursor); }
-  .acp-harness__picker-logo--junie    { color: var(--krypton-backend-junie); }
   .acp-harness__picker-logo--omp      { color: var(--krypton-backend-omp); }
   .acp-harness__picker-logo--grok     { color: var(--krypton-backend-grok); }
   .acp-harness__picker-logo--copilot  { color: var(--krypton-backend-copilot); }

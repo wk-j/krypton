@@ -267,7 +267,6 @@
   .acp-assistant-instances__logo--pi       { color: var(--krypton-backend-pi); }
   .acp-assistant-instances__logo--droid    { color: var(--krypton-backend-droid); }
   .acp-assistant-instances__logo--cursor   { color: var(--krypton-backend-cursor); }
-  .acp-assistant-instances__logo--junie    { color: var(--krypton-backend-junie); }
   .acp-assistant-instances__logo--omp      { color: var(--krypton-backend-omp); }
   .acp-assistant-instances__logo--grok     { color: var(--krypton-backend-grok); }
   .acp-assistant-instances__logo--copilot  { color: var(--krypton-backend-copilot); }

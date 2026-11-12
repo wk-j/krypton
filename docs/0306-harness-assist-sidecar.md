@@ -22,7 +22,7 @@ No new Rust and no new Tauri command: `AcpClient` already does spawn → `initia
 
 ## Research
 
-**`AcpClient` is usable headlessly today.** `spawn(backendId, cwd, mcpServers, junie, cline, remoteRuntimeId)` (`src/acp/client.ts:86-107`), `initializeOnly()` (`:144`), `sessionNew()` (`:155`), `setLaneModel(modelId)` (`:184`), `onEvent(cb)` (`:191`), `prompt(blocks)` (`:199`), `cancel()` (`:229`), `dispose()` (`:266`). Nothing in it touches a lane or the view, and the session picker already spawns a non-lane client (`acp-harness-view.ts:10045-10100`) — but **nothing in the repo prompts headlessly**, which is the gap this spec fills. `acp_spawn` injects `cached_login_env()` and never reads an API key.
+**`AcpClient` is usable headlessly today.** `spawn(backendId, cwd, mcpServers, cline, remoteRuntimeId)` (`src/acp/client.ts:86-107`), `initializeOnly()` (`:144`), `sessionNew()` (`:155`), `setLaneModel(modelId)` (`:184`), `onEvent(cb)` (`:191`), `prompt(blocks)` (`:199`), `cancel()` (`:229`), `dispose()` (`:266`). Nothing in it touches a lane or the view, and the session picker already spawns a non-lane client (`acp-harness-view.ts:10045-10100`) — but **nothing in the repo prompts headlessly**, which is the gap this spec fills. `acp_spawn` injects `cached_login_env()` and never reads an API key.
 
 **Assistant text and turn end.** Text arrives as `session/update` → `agent_message_chunk` → `{ type: 'message_chunk', text, content }` (`client.ts:294-296`, `:465-474`); `thought_chunk` is a separate event and is excluded. Per the ACP spec the `session/prompt` **response** is the turn-end signal — `await client.prompt(...)` resolving *is* the end of the turn (`client.ts:199-215`). A `{ type: 'stop' }` event carrying a `reason` means the subprocess died.
 

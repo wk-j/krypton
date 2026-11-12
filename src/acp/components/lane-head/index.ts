@@ -230,8 +230,7 @@ function headChips(next: LaneHeadProps): HeadChip[] {
     });
   }
 
-  // Backend-specific safety caveats: Pi is known to bypass the permission rail;
-  // Junie still needs manual verification of ACP write-permission semantics.
+  // Pi is known to bypass the permission rail.
   if (lane.backendId === 'pi-acp') {
     out.push({
       key: 'sandbox',
@@ -241,17 +240,6 @@ function headChips(next: LaneHeadProps): HeadChip[] {
         icon: WARN_ICON,
         trailing: ' unsandboxed',
         title: 'No permission gate — Pi runs edits and shell commands immediately. Use a sandboxed cwd or container if untrusted.',
-      },
-    });
-  } else if (lane.backendId === 'junie') {
-    out.push({
-      key: 'sandbox',
-      props: {
-        block: 'acp-harness__lane-sandbox',
-        text: '',
-        icon: WARN_ICON,
-        trailing: ' permissions unverified',
-        title: 'Junie ACP write-permission behavior has not been verified yet. Krypton does not pass force/yolo/brave flags, but use a trusted cwd until verified.',
       },
     });
   }

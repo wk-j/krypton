@@ -1929,7 +1929,7 @@ describe('ACP harness auto-allow permission detection', () => {
     }))).toBeNull();
   });
 
-  it('accepts Junie-style permission where server + tool name appear only in option labels', () => {
+  it('accepts option-label permission where server + tool name appear only in option labels', () => {
     expect(harnessAutoAllowToolName(permissionFor(
       { title: 'Allow running MCP?', kind: 'other' },
       [
@@ -1941,7 +1941,7 @@ describe('ACP harness auto-allow permission detection', () => {
     ))).toBe('peer_send');
   });
 
-  it('rejects Junie-style permission when option labels reference a third-party server', () => {
+  it('rejects option-label permission when option labels reference a third-party server', () => {
     expect(harnessAutoAllowToolName(permissionFor(
       { title: 'Allow running MCP?', kind: 'other' },
       [
@@ -1950,7 +1950,7 @@ describe('ACP harness auto-allow permission detection', () => {
     ))).toBeNull();
   });
 
-  it('rejects Junie-style permission when option labels carry only the server marker without a known tool', () => {
+  it('rejects option-label permission when option labels carry only the server marker without a known tool', () => {
     expect(harnessAutoAllowToolName(permissionFor(
       { title: 'Allow running MCP?', kind: 'other' },
       [
@@ -2035,7 +2035,7 @@ describe('Timeline permission execution without human gates', () => {
   );
 
   it.each(['timeline_record', 'timeline_merge', 'timeline_pending_resolve'])(
-    'runs Junie-style built-in %s without handing the decision to the human',
+    'runs option-label built-in %s without handing the decision to the human',
     async (name) => {
       const { lane, target, respondPermission } = setup();
       const permission = permissionFor({ title: 'Allow running MCP?', kind: 'other' }, [
@@ -3470,16 +3470,6 @@ describe('lane-context prompt block', () => {
 });
 
 describe('laneAccentForLabel', () => {
-  it('routes Junie-N labels to the 8th palette slot, not the numeric fallback', () => {
-    // Regression for the spec-119 must-fix: without the explicit /junie/i arm
-    // ordered before the -(\d+)$ fallback, 'Junie-1' would match the numeric
-    // tail and resolve to laneAccent(1) — the Codex blue — colliding visually
-    // with Codex-1.
-    expect(laneAccentForLabel('Junie-1')).toBe(laneAccent(8));
-    expect(laneAccentForLabel('Junie-2')).toBe(laneAccent(8));
-    expect(laneAccentForLabel('Junie-1')).not.toBe(laneAccent(1));
-  });
-
   it('routes Grok labels to the 10th palette slot, not the numeric fallback', () => {
     // Spec 135: Grok is the 10th named lane. Without the explicit /grok/i arm,
     // 'Grok-1' would hit the -(\d+)$ fallback → laneAccent(1) (Codex blue).
@@ -3517,7 +3507,7 @@ describe('laneAccentForLabel', () => {
   });
 
   it('keeps a 15-color palette wider than the 15 named lanes', () => {
-    // Junie=8 … Antigravity=14, fx=15 all occupy distinct slots, so the
+    // Slots 8 … Antigravity=14, fx=15 all occupy distinct slots, so the
     // palette must have at least 15 distinct entries — otherwise
     // laneAccent(15) wraps modulo to Codex blue.
     const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map(laneAccent);
@@ -3602,7 +3592,6 @@ describe('spec 125 lane rail disambiguation', () => {
       expect(backendLogoId('pi-acp')).toBe('krypton-logo-pi');
       expect(backendLogoId('droid')).toBe('krypton-logo-droid');
       expect(backendLogoId('cursor')).toBe('krypton-logo-cursor');
-      expect(backendLogoId('junie')).toBe('krypton-logo-junie');
       expect(backendLogoId('omp')).toBe('krypton-logo-omp');
       expect(backendLogoId('grok')).toBe('krypton-logo-grok');
       expect(backendLogoId('copilot')).toBe('krypton-logo-copilot');
