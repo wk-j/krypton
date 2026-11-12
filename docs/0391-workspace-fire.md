@@ -3,6 +3,7 @@
 > Status: Implemented
 > Date: 2026-11-12
 > Milestone: Window chrome — program status presentation (moves [0362](./0362-program-status-fire.md); keeps [0363](./0363-program-status-fire-look.md) looks and the [0365](./0365-harness-tool-error-fire.md) trigger)
+> Amended by [0392 — Titlebar Fire](./0392-titlebar-fire.md). The original 0391 design, scope and verification below are historical records of the workspace move. Their “no window canvas,” single-context and bottom-only claims do not restrict 0392; the current extension is summarized after Solution. Workspace placement and aggregation remain unchanged.
 
 ## Problem
 
@@ -11,6 +12,45 @@ The program-status fire burns inside each window, along the bottom of its conten
 ## Solution
 
 Fire becomes a single workspace band. One WebGL2 canvas sits along the bottom of `#krypton-workspace`, right above the workspace footer, under every window. The triggers stay the same. Each window still computes its burn state exactly as in 0362/0365 (`winTop` plus the content-view trigger, filtered by `[fire] on`). The workspace burns while any window has a burn state, and it uses the look of the highest-priority one. Windows no longer get a canvas. The 0363 looks, the ease between looks, the heat envelope, reduced motion and context-loss handling all stay as they are. Only the host and the aggregation change.
+
+### 0392 Amendment — Current Fire Contract
+
+The workspace fire remains above the footer and beneath every window, with the aggregate
+highest-priority burn state and unchanged flame/ember behaviour. In addition, a burning window's
+own configured state and look burn along its progress band: flames only as wide as the band (its
+existing horizontal margins) rise from the band's lower edge over the titlebar's text, tab strip,
+status and controls, and past the top of the window. The canvas is a child of
+`.krypton-window__chrome` with its bottom on the band's lower edge, above titlebar content and the
+progress fill; while it exists the chrome stops clipping (`krypton-window__chrome--fire`) so the
+part above the window shows, and while it shows the window carries `krypton-window--fire`
+(z-index 1) so those flames paint over sibling windows. It ignores pointer events and
+is hidden from accessibility; chrome height, hit testing and dragging stay unchanged. No
+content-area fire or surface thinning returns.
+
+`FireController(host, floor)` stays unchanged. Its required sync signature is now
+`sync(windowId, state, trigger, titlebar: HTMLElement | null)`. The fourth argument remains the
+titlebar host; the controller finds its parent chrome and sibling progress band. Each window's
+`fireLookState(state, trigger, on)` result drives that titlebar; `workspaceFireState` still chooses
+the workspace look. The existing `[fire]` keys, state priority and Harness `tool_error` trigger
+apply to both surfaces. There is no new configuration key, shortcut or OSC 9;4 fire trigger.
+
+There are at most **two fire WebGL2 contexts total**: the existing workspace context plus one
+shared, hidden scratch context for every titlebar. Shared shader/draw code renders each window
+into the scratch viewport, then copies it immediately with `drawImage()` to that host's Canvas 2D
+display (`krypton-titlebar-fire-canvas`). No window owns a GL context. ResizeObserver watches the
+titlebar, chrome and band, caching the band's left, width and lower edge relative to chrome; the
+canvas takes that box (and the look's height) so the shared shader draws it 1:1 with its own band
+geometry. Cached geometry and reusable
+buffers/draw lists avoid per-frame layout measurement and allocation;
+IntersectionObserver and document visibility stop titlebar drawing when no host is visible.
+Reduced motion draws static images on state/look/size changes and hides fire immediately on
+stop. Host replacement and window removal detach observers and remove the old display/state;
+windows that have never burned need no canvas. A failed/lost renderer hides only its own surface.
+
+The separate progress band keeps its full 6px height, fill and all OSC 9;4 state/timing behaviour
+from [0390](./0390-header-band-progress.md). `progress_display = "ring"` hides its fill, not fire.
+The verification recorded under Implementation Notes predates this extension and does not
+verify titlebar coverage, compositing, copies or lifecycle.
 
 ## Research
 
@@ -151,10 +191,10 @@ Deviations from the approved design:
 - WebKit compositing of the band under translucent windows. The smoke ran in Chromium.
 - The rAF count after put-out. The browser driver evaluates in an isolated world, so the page's `requestAnimationFrame` could not be wrapped. The loop-stop path is the unchanged 0362 code.
 
-## Out of Scope
+## Out of Scope (0391 Historical Scope; Amended by 0392 Above)
 
 - Keeping a per-window fire or a `[fire] where` switch.
-- Raising the fire above windows, or thinning any window or Harness surface while it burns.
+- Raising the workspace fire above windows, or thinning any window or Harness surface while it burns. (0392's per-window titlebar fire does paint over sibling windows; the workspace band does not.)
 - New triggers, new look keys, or more embers for the wider band (the 24-ember table stays).
 - Fire on any edge other than the bottom.
 

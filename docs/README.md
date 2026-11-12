@@ -19,7 +19,6 @@ Listed by spec number. Older specs remain in this directory.
 
 | # | Spec |
 |---|------|
-| 372 | [Prompt Dialog → Harness Lanes](./0372-prompt-dialog-harness-lanes.md) |
 | 373 | [Prompt Dialog Typewriter Slip](./0373-prompt-dialog-typewriter-slip.md) |
 | 374 | [Harness Lane Stats Toggle](./0374-harness-lane-stats-toggle.md) |
 | 375 | [Commit Browser](./0375-commit-browser.md) |
@@ -39,6 +38,7 @@ Listed by spec number. Older specs remain in this directory.
 | 389 | [Remove ACP Harness Directives](./0389-remove-harness-directives.md) |
 | 390 | [Header Band Progress](./0390-header-band-progress.md) |
 | 391 | [Workspace Fire](./0391-workspace-fire.md) |
+| 392 | [Titlebar Fire](./0392-titlebar-fire.md) |
 
 ## ADRs (31)
 

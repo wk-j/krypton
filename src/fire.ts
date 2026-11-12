@@ -1,4 +1,4 @@
-// Krypton — Workspace Fire (specs 0362, 0363, 0365, 0391).
+// Krypton — Workspace and Titlebar Fire (specs 0362, 0363, 0365, 0391, 0392).
 //
 // A window counts as burning while its program-status aggregate (OSC 7501,
 // spec 0284) is one of the states listed in `[fire] on`, or while a content
@@ -7,10 +7,11 @@
 // `paintProgramStatus`, the only driver, so each window's entry always matches
 // what the window holds.
 // The workspace burns while any window does, with the look of the most urgent
-// burning state (spec 0391). One WebGL2 canvas is pinned to the bottom of the
-// workspace, above the footer and under every window. The context is created
-// on the first ignite, the loop stops once the fire is out, and a workspace
-// that never burns allocates nothing.
+// burning state (spec 0391). Each burning window also burns along its progress
+// band: flames as wide as the band rise through the titlebar and past the top
+// of the window (spec 0392). Two lazy WebGL2 contexts serve the workspace and all titlebars;
+// titlebars copy the shared scratch renderer into their own 2D canvases.
+// The loops stop once the fire is out; an unlit workspace allocates nothing.
 // Each state has its own look (`[fire]` + `[fire.<state>]`, spec 0363); a lit
 // fire eases to the new look when the top state changes.
 //
@@ -113,6 +114,18 @@ export function fireBand(contentW: number, contentH: number, height: number): Fi
   const h = Math.max(0, Math.round(contentH));
   const flameMax = flameBase(h) * height;
   return { cssWidth: w, cssHeight: Math.min(h, Math.ceil(flameMax * 2.2)), flameMax };
+}
+
+/**
+ * Titlebar canvas (spec 0392): exactly as wide as the progress band, its bottom
+ * edge on the band's bottom edge. `baseline` is that edge's depth below the top
+ * of the chrome; the tallest flame is twice it (kept within 40–120, scaled by
+ * the look's `height`), so flames rise through the titlebar and past the top of
+ * the window. Tall enough for the flame and its embers, like `fireBand`.
+ */
+export function titlebarFireBand(bandWidth: number, baseline: number, height: number): FireBand {
+  const flameMax = Math.min(120, Math.max(40, 2 * baseline)) * height;
+  return { cssWidth: Math.max(0, Math.round(bandWidth)), cssHeight: Math.ceil(flameMax * 2.2), flameMax };
 }
 
 /** Exponential approach to the target: τ 0.25 s igniting, τ 0.45 s putting out. */
@@ -390,17 +403,151 @@ const CONTEXT_OPTIONS: WebGLContextAttributes = {
   powerPreference: 'low-power',
 };
 
+/** Shared GL resources and shader draw path; animation owners keep their clocks. */
+class FirePainter {
+  private gl: WebGL2RenderingContext | null = null;
+  private program: WebGLProgram | null = null;
+  private vao: WebGLVertexArrayObject | null = null;
+  private uniforms: FireUniforms | null = null;
+  private readonly embers = new Float32Array(FIRE_EMBER_VEC4S * 4);
+
+  constructor(
+    private readonly canvas: HTMLCanvasElement,
+    private readonly onFailure: (reason: string) => void,
+  ) {}
+
+  init(): boolean {
+    if (this.gl) return this.program !== null;
+    this.gl = this.canvas.getContext('webgl2', CONTEXT_OPTIONS);
+    if (!this.gl) {
+      this.onFailure('WebGL2 is unavailable');
+      return false;
+    }
+    return this.restore();
+  }
+
+  restore(): boolean {
+    const gl = this.gl;
+    if (!gl) return false;
+    const vs = this.compile(gl, gl.VERTEX_SHADER, FIRE_VERTEX_SHADER);
+    const fs = this.compile(gl, gl.FRAGMENT_SHADER, FIRE_FRAGMENT_SHADER);
+    if (!vs || !fs) {
+      if (vs) gl.deleteShader(vs);
+      if (fs) gl.deleteShader(fs);
+      return false;
+    }
+    const program = gl.createProgram();
+    if (!program) {
+      gl.deleteShader(vs);
+      gl.deleteShader(fs);
+      this.onFailure('fire shader program allocation failed');
+      return false;
+    }
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    gl.deleteShader(vs);
+    gl.deleteShader(fs);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      const reason = `fire shader link failed: ${gl.getProgramInfoLog(program) ?? ''}`;
+      gl.deleteProgram(program);
+      if (!gl.isContextLost()) this.onFailure(reason);
+      return false;
+    }
+    const at = (name: string): WebGLUniformLocation | null => gl.getUniformLocation(program, name);
+    this.program = program;
+    this.vao = gl.createVertexArray();
+    this.uniforms = {
+      res: at('u_res'), time: at('u_time'), heat: at('u_heat'), seed: at('u_seed'),
+      height: at('u_height'), radius: at('u_radius'), p0: at('u_p0'), p1: at('u_p1'),
+      low: at('u_low'), mid: at('u_mid'), hot: at('u_hot'),
+      embers: at('u_embers[0]'), emberCount: at('u_emberCount'),
+    };
+    return true;
+  }
+
+  invalidate(): void {
+    this.program = null;
+    this.vao = null;
+    this.uniforms = null;
+  }
+
+  dispose(): void {
+    if (this.program) this.gl?.deleteProgram(this.program);
+    if (this.vao) this.gl?.deleteVertexArray(this.vao);
+    this.gl?.getExtension('WEBGL_lose_context')?.loseContext();
+    this.gl = null;
+    this.invalidate();
+  }
+
+  draw(
+    band: FireBand, live: LiveLook, heat: number, t: number, seed: number,
+    radius: number, height: number, withEmbers: boolean,
+  ): void {
+    const gl = this.gl;
+    const u = this.uniforms;
+    if (!gl || !u || !this.program || gl.isContextLost()) return;
+    const w = band.cssWidth;
+    const h = band.cssHeight;
+    if (w <= 0 || h <= 0) return;
+    const count = withEmbers ? fireEmbers(t, seed, band, radius, height, this.embers) : 0;
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(this.program);
+    gl.bindVertexArray(this.vao);
+    gl.uniform2f(u.res, w, h);
+    gl.uniform1f(u.time, t);
+    gl.uniform1f(u.heat, heat);
+    gl.uniform1ui(u.seed, seed);
+    gl.uniform1f(u.height, height);
+    gl.uniform1f(u.radius, radius);
+    gl.uniform4f(u.p0, FIRE.scale, FIRE.speed, FIRE.warp, FIRE.baseGlow);
+    gl.uniform4f(u.p1, FIRE.occlusion, FIRE.intensity * live.intensity, FIRE.glowRadius, FIRE.glowReach);
+    gl.uniform3fv(u.low, live.low);
+    gl.uniform3fv(u.mid, live.mid);
+    gl.uniform3fv(u.hot, live.hot);
+    gl.uniform4fv(u.embers, this.embers);
+    gl.uniform1i(u.emberCount, count);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  private compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader | null {
+    const shader = gl.createShader(type);
+    if (!shader) {
+      this.onFailure('fire shader allocation failed');
+      return null;
+    }
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (gl.getShaderParameter(shader, gl.COMPILE_STATUS)) return shader;
+    const reason = `fire shader compile failed: ${gl.getShaderInfoLog(shader) ?? ''}`;
+    gl.deleteShader(shader);
+    if (!gl.isContextLost()) this.onFailure(reason);
+    return null;
+  }
+}
+
+function createLiveLook(): LiveLook {
+  return { height: 1, intensity: 1, speed: 1, low: [0, 0, 0], mid: [0, 0, 0], hot: [0, 0, 0] };
+}
+
+function resolveLiveLook(probe: HTMLElement, look: FireLook, target: LiveLook): void {
+  target.height = look.height;
+  target.intensity = look.intensity;
+  target.speed = look.speed;
+  target.low = readFireColor(probe, 'low', look.low);
+  target.mid = readFireColor(probe, 'mid', look.mid);
+  target.hot = readFireColor(probe, 'hot', look.hot);
+}
+
 /** The workspace fire: a WebGL2 band canvas along the bottom of `host`, `floor`
  *  px above its bottom edge (the workspace footer), under every window. */
 export class FireAnimation implements BackgroundAnimation {
   private readonly canvas: HTMLCanvasElement;
   private readonly reduceMotion: MediaQueryList;
   private readonly seed = (Math.random() * 0x100000000) >>> 0;
-  private readonly embers = new Float32Array(FIRE_EMBER_VEC4S * 4);
-  private gl: WebGL2RenderingContext | null = null;
-  private program: WebGLProgram | null = null;
-  private vao: WebGLVertexArrayObject | null = null;
-  private uniforms: FireUniforms | null = null;
+  private readonly painter: FirePainter;
   private band: FireBand = { cssWidth: 0, cssHeight: 0, flameMax: 40 };
   /** Built-in tallest flame for the current host height; the look scales it. */
   private flameBase = 40;
@@ -410,8 +557,8 @@ export class FireAnimation implements BackgroundAnimation {
   /** The look the window's state asks for. `target` is it with colours
    *  resolved; `live` is what is drawn and eases toward `target`. */
   private look: FireLook = BUILT_IN_LOOK;
-  private readonly target: LiveLook = { height: 1, intensity: 1, speed: 1, low: [0, 0, 0], mid: [0, 0, 0], hot: [0, 0, 0] };
-  private readonly live: LiveLook = { height: 1, intensity: 1, speed: 1, low: [0, 0, 0], mid: [0, 0, 0], hot: [0, 0, 0] };
+  private readonly target = createLiveLook();
+  private readonly live = createLiveLook();
   /** `live` has reached `target`. */
   private settled = true;
   /** Target is lit (heat → 1). */
@@ -426,11 +573,12 @@ export class FireAnimation implements BackgroundAnimation {
   constructor(
     private readonly host: HTMLElement,
     private floor: number,
-    private readonly onFailure: (reason: string) => void,
+    onFailure: (reason: string) => void,
   ) {
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'krypton-fire-canvas';
     this.canvas.style.bottom = `${floor}px`;
+    this.painter = new FirePainter(this.canvas, onFailure);
     this.reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
     this.reduceMotion.addEventListener('change', this.onMotionChange);
     this.canvas.addEventListener('webglcontextlost', this.onContextLost);
@@ -447,16 +595,19 @@ export class FireAnimation implements BackgroundAnimation {
 
   start(): void {
     if (this.disposed || this.running) return;
-    if (!this.gl && !this.initContext()) return;
+    if (this.lost) {
+      this.running = true;
+      return;
+    }
+    if (!this.painter.init()) return;
     const wasOut = this.rafId === 0;
     this.running = true;
-    if (this.lost) return;
     if (wasOut) {
       this.t = 0;
       this.heat = 0;
       this.lastDraw = 0;
       // Igniting never eases from a stale look; colours re-read theme tokens here.
-      this.resolveTarget();
+      resolveLiveLook(this.canvas, this.look, this.target);
       copyLook(this.live, this.target);
       this.settled = true;
       this.setShown(true);
@@ -481,7 +632,7 @@ export class FireAnimation implements BackgroundAnimation {
     if (this.disposed || look === this.look) return;
     this.look = look;
     if (!this.running && this.rafId === 0) return;
-    this.resolveTarget();
+    resolveLiveLook(this.canvas, this.look, this.target);
     if (this.rafId === 0) {
       // No loop to ease with (reduced motion, or a lost context): switch at once.
       copyLook(this.live, this.target);
@@ -522,73 +673,10 @@ export class FireAnimation implements BackgroundAnimation {
     this.reduceMotion.removeEventListener('change', this.onMotionChange);
     this.canvas.removeEventListener('webglcontextlost', this.onContextLost);
     this.canvas.removeEventListener('webglcontextrestored', this.onContextRestored);
-    this.gl?.getExtension('WEBGL_lose_context')?.loseContext();
-    this.gl = null;
-    this.program = null;
-    this.vao = null;
-    this.uniforms = null;
+    this.painter.dispose();
     this.canvas.remove();
   }
 
-  private initContext(): boolean {
-    const gl = this.canvas.getContext('webgl2', CONTEXT_OPTIONS);
-    if (!gl) {
-      this.onFailure('WebGL2 is unavailable');
-      return false;
-    }
-    this.gl = gl;
-    return this.initResources();
-  }
-
-  /** Program, VAO and uniform locations; again after a context restore. */
-  private initResources(): boolean {
-    const gl = this.gl;
-    if (!gl) return false;
-    const vs = this.compile(gl, gl.VERTEX_SHADER, FIRE_VERTEX_SHADER);
-    const fs = this.compile(gl, gl.FRAGMENT_SHADER, FIRE_FRAGMENT_SHADER);
-    if (!vs || !fs) return false;
-    const program = gl.createProgram();
-    gl.attachShader(program, vs);
-    gl.attachShader(program, fs);
-    gl.linkProgram(program);
-    gl.deleteShader(vs);
-    gl.deleteShader(fs);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      if (!gl.isContextLost()) this.onFailure(`fire shader link failed: ${gl.getProgramInfoLog(program) ?? ''}`);
-      gl.deleteProgram(program);
-      return false;
-    }
-    const at = (name: string): WebGLUniformLocation | null => gl.getUniformLocation(program, name);
-    this.program = program;
-    this.vao = gl.createVertexArray();
-    this.uniforms = {
-      res: at('u_res'),
-      time: at('u_time'),
-      heat: at('u_heat'),
-      seed: at('u_seed'),
-      height: at('u_height'),
-      radius: at('u_radius'),
-      p0: at('u_p0'),
-      p1: at('u_p1'),
-      low: at('u_low'),
-      mid: at('u_mid'),
-      hot: at('u_hot'),
-      embers: at('u_embers[0]'),
-      emberCount: at('u_emberCount'),
-    };
-    return true;
-  }
-
-  private compile(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader | null {
-    const shader = gl.createShader(type);
-    if (!shader) return null;
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-    if (gl.getShaderParameter(shader, gl.COMPILE_STATUS)) return shader;
-    if (!gl.isContextLost()) this.onFailure(`fire shader compile failed: ${gl.getShaderInfoLog(shader) ?? ''}`);
-    gl.deleteShader(shader);
-    return null;
-  }
 
   private ensureLoop(): void {
     if (this.rafId === 0 && !this.lost && !this.disposed) this.rafId = requestAnimationFrame(this.frame);
@@ -609,16 +697,6 @@ export class FireAnimation implements BackgroundAnimation {
     this.canvas.style.display = shown ? 'block' : 'none';
   }
 
-  /** `target` = the current look with its colours resolved through the cascade. */
-  private resolveTarget(): void {
-    const { look, target } = this;
-    target.height = look.height;
-    target.intensity = look.intensity;
-    target.speed = look.speed;
-    target.low = readFireColor(this.canvas, 'low', look.low);
-    target.mid = readFireColor(this.canvas, 'mid', look.mid);
-    target.hot = readFireColor(this.canvas, 'hot', look.hot);
-  }
 
   private readonly frame = (ts: number): void => {
     this.rafId = requestAnimationFrame(this.frame);
@@ -649,33 +727,9 @@ export class FireAnimation implements BackgroundAnimation {
   }
 
   private draw(withEmbers: boolean): void {
-    const gl = this.gl;
-    const u = this.uniforms;
-    if (!gl || !u || !this.program || this.lost) return;
-    const { cssWidth: w, cssHeight: h } = this.band;
-    if (w <= 0 || h <= 0) return;
-    const live = this.live;
-    const height = this.flameBase * live.height * (0.45 + 0.55 * this.heat);
-    const count = withEmbers ? fireEmbers(this.t, this.seed, this.band, this.radius, height, this.embers) : 0;
-    gl.viewport(0, 0, w, h);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.useProgram(this.program);
-    gl.bindVertexArray(this.vao);
-    gl.uniform2f(u.res, w, h);
-    gl.uniform1f(u.time, this.t);
-    gl.uniform1f(u.heat, this.heat);
-    gl.uniform1ui(u.seed, this.seed);
-    gl.uniform1f(u.height, height);
-    gl.uniform1f(u.radius, this.radius);
-    gl.uniform4f(u.p0, FIRE.scale, FIRE.speed, FIRE.warp, FIRE.baseGlow);
-    gl.uniform4f(u.p1, FIRE.occlusion, FIRE.intensity * live.intensity, FIRE.glowRadius, FIRE.glowReach);
-    gl.uniform3fv(u.low, live.low);
-    gl.uniform3fv(u.mid, live.mid);
-    gl.uniform3fv(u.hot, live.hot);
-    gl.uniform4fv(u.embers, this.embers);
-    gl.uniform1i(u.emberCount, count);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (this.lost) return;
+    const height = this.flameBase * this.live.height * (0.45 + 0.55 * this.heat);
+    this.painter.draw(this.band, this.live, this.heat, this.t, this.seed, this.radius, height, withEmbers);
   }
 
   private readonly onMotionChange = (): void => {
@@ -699,24 +753,345 @@ export class FireAnimation implements BackgroundAnimation {
     this.lost = true;
     this.cancelLoop();
     this.setShown(false);
-    this.program = null;
-    this.vao = null;
-    this.uniforms = null;
+    this.painter.invalidate();
   };
 
   private readonly onContextRestored = (): void => {
     this.lost = false;
-    if (this.disposed || !this.initResources() || !this.running) return;
-    this.setShown(true);
+    if (this.disposed || !this.painter.restore() || !this.running) return;
+    this.running = false;
+    this.start();
+  };
+}
+
+/** Flames taper over the band's last ~11px at each end instead of stopping at
+ *  the canvas edge; embers stay inside the same inset. */
+const TITLEBAR_FIRE_RADIUS = 12;
+/** Chrome modifier that lets the canvas rise past the top of the window. */
+const CHROME_FIRE_CLASS = 'krypton-window__chrome--fire';
+/** Window modifier while the canvas shows: lifts the window above its siblings
+ *  so the flames above it paint over neighbouring windows. */
+const WINDOW_FIRE_CLASS = 'krypton-window--fire';
+
+interface TitlebarFire {
+  readonly host: HTMLElement;
+  readonly surface: HTMLElement;
+  readonly edge: HTMLElement;
+  /** The `.krypton-window` that owns the chrome, raised while the fire shows. */
+  readonly win: HTMLElement | null;
+  readonly canvas: HTMLCanvasElement;
+  readonly ctx: CanvasRenderingContext2D;
+  readonly seed: number;
+  readonly live: LiveLook;
+  readonly target: LiveLook;
+  /** Band geometry in chrome px, read only on observer/state events. */
+  left: number;
+  baseline: number;
+  width: number;
+  /** The canvas: band-wide, bottom on the band's bottom edge. */
+  band: FireBand;
+  /** Built-in tallest flame for the band; the look scales it. */
+  flameBase: number;
+  look: FireLook;
+  running: boolean;
+  visible: boolean;
+  settled: boolean;
+  heat: number;
+  t: number;
+}
+
+/** One scratch WebGL context and clock for every titlebar, never one per window. */
+class TitlebarFires {
+  private readonly scratch = document.createElement('canvas');
+  private readonly painter = new FirePainter(this.scratch, (reason) => this.disable(reason));
+  private readonly entries = new Map<WindowId, TitlebarFire>();
+  private readonly hosts = new Map<Element, TitlebarFire>();
+  private readonly drawing: TitlebarFire[] = [];
+  private readonly reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  private readonly sizes = new ResizeObserver((entries) => {
+    for (const observed of entries) {
+      const entry = this.hosts.get(observed.target);
+      if (!entry) continue;
+      this.measure(entry);
+    }
+    this.resizeScratch();
+    this.refresh();
+  });
+  private readonly visibility = new IntersectionObserver((entries) => {
+    for (const observed of entries) {
+      const entry = this.hosts.get(observed.target);
+      if (entry) entry.visible = observed.isIntersecting;
+    }
+    this.refresh();
+  });
+  private rafId = 0;
+  private lastDraw = 0;
+  private lost = false;
+  private disposed = false;
+
+  constructor(private readonly onFailure: (reason: string) => void) {
+    this.reduceMotion.addEventListener('change', this.onMotionChange);
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
+    this.scratch.addEventListener('webglcontextlost', this.onContextLost);
+    this.scratch.addEventListener('webglcontextrestored', this.onContextRestored);
+  }
+
+  sync(id: WindowId, host: HTMLElement | null, look: FireLook | null): void {
+    if (this.disposed) return;
+    let entry = this.entries.get(id);
+    const surface = host?.parentElement ?? null;
+    const edge = surface?.querySelector<HTMLElement>(':scope > .krypton-window__header-accent') ?? null;
+    if (entry && (entry.host !== host || entry.surface !== surface || entry.edge !== edge)) {
+      this.remove(id);
+      entry = undefined;
+    }
+    if (!host || !surface || !edge || (!entry && !look)) return;
+    if (!entry) {
+      if (!look) return;
+      const canvas = document.createElement('canvas');
+      canvas.className = 'krypton-titlebar-fire-canvas';
+      canvas.setAttribute('aria-hidden', 'true');
+      canvas.style.display = 'none';
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        this.disable('Canvas 2D is unavailable');
+        return;
+      }
+      entry = {
+        host, surface, edge, win: surface.closest<HTMLElement>('.krypton-window'), canvas, ctx, seed: (Math.random() * 0x100000000) >>> 0,
+        look, live: createLiveLook(), target: createLiveLook(),
+        left: 0, baseline: 0, width: 0,
+        band: { cssWidth: 0, cssHeight: 0, flameMax: 40 }, flameBase: 40,
+        running: false, visible: false, settled: true, heat: 0, t: 0,
+      };
+      this.entries.set(id, entry);
+      this.hosts.set(host, entry);
+      this.hosts.set(surface, entry);
+      this.hosts.set(edge, entry);
+      surface.prepend(canvas);
+      surface.classList.add(CHROME_FIRE_CLASS);
+      this.measure(entry);
+      this.sizes.observe(host);
+      this.sizes.observe(surface);
+      this.sizes.observe(edge);
+      this.visibility.observe(host);
+    }
+    const starting = look !== null && !entry.running;
+    if (look && (starting || entry.look !== look)) {
+      entry.look = look;
+      resolveLiveLook(entry.canvas, look, entry.target);
+      if (entry.heat < OUT_HEAT) {
+        entry.heat = 0;
+        entry.t = 0;
+        copyLook(entry.live, entry.target);
+        entry.settled = true;
+      } else {
+        entry.settled = false;
+      }
+      // A taller target grows the canvas now; the frame loop shrinks it once the ease ends.
+      this.layout(entry);
+      this.resizeScratch();
+    } else if (entry.running === (look !== null)) {
+      return;
+    }
+    entry.running = look !== null;
+    this.refresh();
+  }
+
+  remove(id: WindowId): void {
+    const entry = this.entries.get(id);
+    if (!entry) return;
+    this.entries.delete(id);
+    this.hosts.delete(entry.host);
+    this.hosts.delete(entry.surface);
+    this.hosts.delete(entry.edge);
+    this.sizes.unobserve(entry.host);
+    this.sizes.unobserve(entry.surface);
+    this.sizes.unobserve(entry.edge);
+    this.visibility.unobserve(entry.host);
+    entry.canvas.remove();
+    entry.surface.classList.remove(CHROME_FIRE_CLASS);
+    entry.win?.classList.remove(WINDOW_FIRE_CLASS);
+    this.resizeScratch();
+    this.refresh();
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.cancelLoop();
+    this.sizes.disconnect();
+    this.visibility.disconnect();
+    this.reduceMotion.removeEventListener('change', this.onMotionChange);
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
+    this.scratch.removeEventListener('webglcontextlost', this.onContextLost);
+    this.scratch.removeEventListener('webglcontextrestored', this.onContextRestored);
+    this.painter.dispose();
+    for (const entry of this.entries.values()) {
+      entry.canvas.remove();
+      entry.surface.classList.remove(CHROME_FIRE_CLASS);
+      entry.win?.classList.remove(WINDOW_FIRE_CLASS);
+    }
+    this.entries.clear();
+    this.hosts.clear();
+    this.drawing.length = 0;
+  }
+
+  /** Read the band's box in chrome px (observer and creation paths only). */
+  private measure(entry: TitlebarFire): void {
+    entry.left = entry.edge.offsetLeft;
+    entry.baseline = entry.edge.offsetTop + entry.edge.clientHeight;
+    entry.width = entry.edge.clientWidth;
+    this.layout(entry);
+  }
+
+  /** Fit the canvas to the band and the taller of the drawn and target look.
+   *  Writes only; the canvas bottom sits on the band's bottom edge and its top
+   *  reaches above the chrome (negative `top`). */
+  private layout(entry: TitlebarFire): void {
+    const scale = Math.max(entry.live.height, entry.target.height);
+    const band = titlebarFireBand(entry.width, entry.baseline, scale);
+    entry.band = band;
+    entry.flameBase = band.flameMax / scale;
+    const { canvas } = entry;
+    if (canvas.width !== band.cssWidth) canvas.width = band.cssWidth;
+    if (canvas.height !== band.cssHeight) canvas.height = band.cssHeight;
+    canvas.style.left = `${entry.left}px`;
+    canvas.style.top = `${entry.baseline - band.cssHeight}px`;
+    canvas.style.width = `${band.cssWidth}px`;
+    canvas.style.height = `${band.cssHeight}px`;
+  }
+
+  private resizeScratch(): void {
+    let w = 0;
+    let h = 64;
+    for (const entry of this.entries.values()) {
+      w = Math.max(w, entry.band.cssWidth);
+      h = Math.max(h, entry.band.cssHeight);
+    }
+    if (this.scratch.width !== w) this.scratch.width = w;
+    if (this.scratch.height !== h) this.scratch.height = h;
+  }
+
+  /** Rebuild only on state/observer events, not in the frame loop. */
+  private refresh(): void {
+    if (this.disposed) return;
+    this.drawing.length = 0;
+    for (const entry of this.entries.values()) {
+      const visible = !document.hidden && !this.lost && entry.visible && entry.host.isConnected
+        && entry.canvas.width > 0 && entry.canvas.height > 0;
+      if (!visible || (!entry.running && this.reduceMotion.matches)) {
+        if (!entry.running) entry.heat = 0;
+        this.show(entry, false);
+      } else if (entry.running || entry.heat >= OUT_HEAT) {
+        this.drawing.push(entry);
+      }
+    }
+    if (this.drawing.length === 0) {
+      this.cancelLoop();
+    } else if (this.reduceMotion.matches) {
+      this.cancelLoop();
+      if (!this.painter.init()) return;
+      for (const entry of this.drawing) {
+        copyLook(entry.live, entry.target);
+        entry.settled = true;
+        entry.heat = 1;
+        entry.t = 0;
+        this.layout(entry); // never taller than before: the scratch still fits
+        this.draw(entry, false);
+      }
+      this.resizeScratch();
+    } else if (this.rafId === 0) {
+      this.lastDraw = 0;
+      this.rafId = requestAnimationFrame(this.frame);
+    }
+  }
+
+  private draw(entry: TitlebarFire, withEmbers: boolean): void {
+    const { band } = entry;
+    const height = entry.flameBase * entry.live.height * (0.45 + 0.55 * entry.heat);
+    this.painter.draw(band, entry.live, entry.heat, entry.t, entry.seed, TITLEBAR_FIRE_RADIUS, height, withEmbers);
+    entry.ctx.clearRect(0, 0, band.cssWidth, band.cssHeight);
+    // GL viewports start at bottom-left; drawImage source rectangles at top-left.
+    // Same size on both sides: a 1:1 copy, no scaling.
+    entry.ctx.drawImage(
+      this.scratch, 0, this.scratch.height - band.cssHeight, band.cssWidth, band.cssHeight,
+      0, 0, band.cssWidth, band.cssHeight,
+    );
+    this.show(entry, true);
+  }
+
+  /** The canvas and the window lift change together, and only on a change. */
+  private show(entry: TitlebarFire, shown: boolean): void {
+    const display = shown ? 'block' : 'none';
+    if (entry.canvas.style.display === display) return;
+    entry.canvas.style.display = display;
+    entry.win?.classList.toggle(WINDOW_FIRE_CLASS, shown);
+  }
+
+  private readonly frame = (ts: number): void => {
+    this.rafId = 0;
+    if (this.lastDraw !== 0 && ts - this.lastDraw < 1000 / FIRE.fpsCap - 2) {
+      this.rafId = requestAnimationFrame(this.frame);
+      return;
+    }
+    if (!this.painter.init()) return;
+    const dt = this.lastDraw === 0 ? 1 / FIRE.fpsCap : Math.min(0.1, (ts - this.lastDraw) / 1000);
+    this.lastDraw = ts;
+    let active = false;
+    let shrunk = false;
+    for (let i = 0; i < this.drawing.length; i++) {
+      const entry = this.drawing[i];
+      entry.heat = stepHeat(entry.heat, entry.running ? 1 : 0, dt);
+      if (!entry.running && entry.heat < OUT_HEAT) {
+        this.show(entry, false);
+        continue;
+      }
+      if (!entry.settled && stepLook(entry.live, entry.target, dt)) {
+        entry.settled = true;
+        this.layout(entry); // the ease ended: shrink the canvas if the look got shorter
+        shrunk = true;
+      }
+      entry.t = (entry.t + dt * entry.live.speed) % TIME_WRAP_S;
+      this.draw(entry, true);
+      active = true;
+    }
+    if (shrunk) this.resizeScratch();
+    if (active) this.rafId = requestAnimationFrame(this.frame);
+  };
+
+  private cancelLoop(): void {
+    if (this.rafId !== 0) cancelAnimationFrame(this.rafId);
+    this.rafId = 0;
     this.lastDraw = 0;
-    if (this.reduceMotion.matches) this.drawStatic();
-    else this.ensureLoop();
+  }
+
+  private disable(reason: string): void {
+    this.dispose();
+    this.onFailure(reason);
+  }
+
+  private readonly onMotionChange = (): void => { this.refresh(); };
+  private readonly onVisibilityChange = (): void => { this.refresh(); };
+
+  private readonly onContextLost = (event: Event): void => {
+    event.preventDefault();
+    this.lost = true;
+    this.painter.invalidate();
+    this.cancelLoop();
+    this.refresh();
+  };
+
+  private readonly onContextRestored = (): void => {
+    if (this.disposed) return;
+    this.lost = false;
+    if (this.painter.restore()) this.refresh();
   };
 }
 
 // ─── Controller ─────────────────────────────────────────────────
 
-/** The workspace fire, driven by the compositor's per-window program-status paint. */
+/** Workspace aggregate plus each window's own titlebar, from one status driver. */
 export class FireController {
   private on: ReadonlySet<FireState | FireTrigger> = new Set();
   private looks: Record<FireState, FireLook> = {
@@ -729,6 +1104,8 @@ export class FireController {
   private readonly burning = new Map<WindowId, FireState>();
   /** Created on the first ignite; disposed only when fire is unavailable. */
   private fire: FireAnimation | null = null;
+  private titlebars: TitlebarFires | null = null;
+  private disposed = false;
   /** The band's bottom edge above the workspace bottom: the footer height, 0 when hidden. */
   private floor: number;
   /** Config warnings already printed; a Reload Config repeats none of them. */
@@ -741,6 +1118,7 @@ export class FireController {
 
   /** `[fire]`: keep known `on` values and resolve every state's look. */
   configure(cfg: FireConfig | null | undefined): void {
+    if (this.disposed) return;
     const next = new Set<FireState | FireTrigger>();
     for (const value of cfg?.on ?? []) {
       if (isFireState(value)) next.add(value);
@@ -751,17 +1129,25 @@ export class FireController {
     this.looks = resolveFireLooks(cfg, this.warnOnce, (value) => CSS.supports('color', value));
   }
 
-  /** Record whether window `windowId` burns, from its program-status aggregate
-   *  and content-view trigger, then light, re-look or put out the workspace. */
-  sync(windowId: WindowId, state: ProgramState | null, trigger: FireTrigger | null): void {
+  /** Derive a window's burn state once for its titlebar and the workspace aggregate. */
+  sync(
+    windowId: WindowId, state: ProgramState | null, trigger: FireTrigger | null,
+    titlebar: HTMLElement | null,
+  ): void {
+    if (this.disposed) return;
     const look = fireLookState(state, trigger, this.on);
     if (look === null) this.burning.delete(windowId);
     else this.burning.set(windowId, look);
+    if (look !== null && titlebar && !this.titlebars) {
+      this.titlebars = new TitlebarFires((reason) => this.warnOnce(`Titlebar fire disabled: ${reason}`));
+    }
+    this.titlebars?.sync(windowId, titlebar, look === null ? null : this.looks[look]);
     this.apply();
   }
 
   /** A closed window stops counting; the workspace may go out. */
   remove(windowId: WindowId): void {
+    this.titlebars?.remove(windowId);
     if (this.burning.delete(windowId)) this.apply();
   }
 
@@ -796,6 +1182,16 @@ export class FireController {
   /** Re-measure after relayout or a viewport resize. */
   resize(): void {
     if (this.fire?.isRunning()) this.fire.resize();
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.fire?.dispose();
+    this.titlebars?.dispose();
+    this.fire = null;
+    this.titlebars = null;
+    this.burning.clear();
   }
 
   /** WebGL2 or the shader failed: it would fail again, so stop trying for the session. */
