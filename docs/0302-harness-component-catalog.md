@@ -820,7 +820,7 @@ agent  ⚠ rate_limited · 429 — retry in 32s
 
 **Emits** `.acp-harness__fs-activity(--err)`, `.acp-harness__fs-review(--resolved)` (uses `DiffBlock`),
 `.acp-harness__provider-error`.
-Filesystem operation verbs use the same compact readout (spec 383) instead of separate emoji icons. Activity LEDs derive from `ok`; write-review LEDs derive from `resolved` (pending/accepted/rejected), through a label-local `data-state`. Resolution updates preserve the paired diff nodes.
+Filesystem operation verbs use the same compact readout (spec 383) instead of separate emoji icons. Activity LEDs derive from `ok`; write-review LEDs derive from `resolved` (pending/accepted/rejected), through a label-local `data-state`. Resolution removes the pending action hints and preserves the paired diff nodes; the head LED carries the outcome without an accepted/rejected footer.
 **Replaces** `harness-transcript-render.ts:827-852,854-907,909-950`.
 
 ## 3.11 `InterLaneRow`

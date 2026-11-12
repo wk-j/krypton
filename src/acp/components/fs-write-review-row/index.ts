@@ -1,12 +1,12 @@
 // Spec 302 §3.9 — `FsWriteReviewRow`.
 //
 // The gated `write_text_file` card (spec 89): a path head, a paired diff, and
-// either the accept/reject hint line or the resolution stamp.
+// accept/reject hints while pending. Resolved state stays in the head's LED.
 //
 // Resolving the card used to rebuild the row, which re-ran `diffLines()` and
 // re-parsed the whole preview into a fresh `innerHTML` tree. Here the diff rows
 // are memoised on `(oldText, newText)` and handed to a `DiffBlock` field, so
-// the resolve flips one class and swaps one tail node — the diff nodes keep
+// the resolve flips one class and removes the hints — the diff nodes keep
 // their identity.
 //
 // Ported from `harness-transcript-render.ts:854-907` (`renderFsWriteReviewBody`)
@@ -89,14 +89,7 @@ export class FsWriteReviewRow extends TranscriptRow {
     this.diff.update({ mode: 'paired', rows: this.rows, prefix: 'acp-harness' });
 
     const nodes: HTMLElement[] = [this.head, this.diff.el];
-    if (payload.resolved) {
-      nodes.push(
-        el('div', {
-          class: `acp-harness__fs-review-resolved acp-harness__fs-review-resolved--${payload.resolved}`,
-          text: payload.resolved === 'accepted' ? '✓ accepted' : '✗ rejected',
-        }),
-      );
-    } else {
+    if (!payload.resolved) {
       nodes.push(
         el('div', { class: 'acp-harness__fs-review-actions' }, ...actionNodes()),
       );

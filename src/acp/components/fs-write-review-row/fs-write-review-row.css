@@ -81,10 +81,4 @@
   .acp-harness__fs-review-action--reject { color: var(--agent-error, #ff6b8b); }
   .acp-harness__fs-review-action--accept-all { color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.72)); }
   .acp-harness__fs-review--resolved .acp-harness__fs-review-head { color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55)); }
-  .acp-harness__fs-review-resolved {
-    font-family: var(--agent-font, var(--krypton-font-family, monospace));
-    font-size: 0.82em;
-    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.55));
-  }
-  .acp-harness__fs-review-resolved--rejected { color: var(--agent-error, #ff6b8b); }
 }

@@ -53,14 +53,14 @@ describe('FsWriteReviewRow', () => {
     row.dispose();
   });
 
-  it('flips --resolved and keeps every diff node identical', () => {
+  it.each(['accepted', 'rejected'] as const)('resolves as %s without a footer and keeps every diff node identical', (resolved) => {
     const payload = review();
     const { row, body } = mount(payload);
     const diff = body.children[1];
     const lines = [...body.querySelectorAll('.acp-harness__diff-line')];
     const observer = watch(diff as HTMLElement);
 
-    payload.resolved = 'accepted';
+    payload.resolved = resolved;
     row.update(props(payload));
 
     expect(body.className)
@@ -70,9 +70,8 @@ describe('FsWriteReviewRow', () => {
     expect(observer.takeRecords()).toHaveLength(0);
     observer.disconnect();
 
-    expect(body.children[2].outerHTML).toBe(
-      '<div class="acp-harness__fs-review-resolved acp-harness__fs-review-resolved--accepted">✓ accepted</div>',
-    );
+    expect(body.querySelector<HTMLElement>('.acp-harness__fs-review-verb')?.dataset.state).toBe(resolved);
+    expect(body.textContent).not.toMatch(/accepted|rejected/);
     expect(body.querySelector('.acp-harness__fs-review-actions')).toBeNull();
     row.dispose();
   });
@@ -80,12 +79,12 @@ describe('FsWriteReviewRow', () => {
   it('re-derives the class and the action row when a resolution is withdrawn', () => {
     const payload = review({ resolved: 'rejected' });
     const { row, body } = mount(payload);
-    expect(body.children[2].textContent).toBe('✗ rejected');
+    expect(body.querySelector<HTMLElement>('.acp-harness__fs-review-verb')?.dataset.state).toBe('rejected');
 
     payload.resolved = undefined;
     row.update(props(payload));
     expect(body.className).toBe('acp-harness__msg-body acp-harness__fs-review');
-    expect(body.querySelector('.acp-harness__fs-review-resolved')).toBeNull();
+    expect(body.querySelector<HTMLElement>('.acp-harness__fs-review-verb')?.dataset.state).toBe('pending');
     expect(body.querySelectorAll('.acp-harness__fs-review-action')).toHaveLength(3);
     row.dispose();
   });
