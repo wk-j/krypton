@@ -171,6 +171,8 @@ describe('ToolRow output', () => {
     expect(gridded.textContent).toBe(frame);
     expect(plain.childNodes.length).toBe(1);
     expect(plain.firstChild?.nodeType).toBe(Node.TEXT_NODE);
+    expect(gridded.closest('[title]')).toBeNull();
+    expect(plain.closest('[title]')).toBeNull();
   });
 
   it('seals a gridded section without touching it again (spec 326)', () => {
@@ -189,7 +191,7 @@ describe('ToolRow output', () => {
     expect(records(host, () => row.update(done)).length).toBe(0);
   });
 
-  it('renders a 500-line section verbatim — the cap lives in the lane decoder', () => {
+  it('renders a 500-line section verbatim without an output tooltip, keeping the subject tooltip', () => {
     const text = Array.from({ length: 500 }, (_, i) => `line ${i + 1}`).join('\n');
     const tool = payload({ kind: 'read', command: '', subject: 'src/ui/list.ts', sections: [{ label: 'content', text }] });
     const row = new ToolRow(props(tool));
@@ -197,6 +199,8 @@ describe('ToolRow output', () => {
 
     const pre = row.el.querySelector('.acp-harness__tool-section-text');
     expect(pre?.textContent?.split('\n').length).toBe(500);
+    expect(pre?.closest('[title]')).toBeNull();
+    expect(row.el.querySelector('.acp-harness__tool-subject')?.getAttribute('title')).toBe('src/ui/list.ts');
   });
 
   it('renders the git diff --stat bar through Meter', () => {

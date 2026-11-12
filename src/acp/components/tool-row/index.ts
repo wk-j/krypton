@@ -97,7 +97,7 @@ function plainSection(section: ToolSection): HTMLElement {
   if (tone !== 'output') {
     label = el('div', { class: `${PREFIX}__tool-section-label`, text: section.label });
   }
-  const text = el('pre', { class: `${PREFIX}__tool-section-text`, text: section.text, attrs: { title: section.text } });
+  const text = el('pre', { class: `${PREFIX}__tool-section-text`, text: section.text });
   gridifyText(text);
   return el(
     'div',

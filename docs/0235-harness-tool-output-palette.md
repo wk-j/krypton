@@ -80,6 +80,8 @@ Generic dump rendering uses no highlight.js or language grammar: line-oriented r
 
 Body `color` is `var(--krypton-fg)` (or `--agent-text`). Glow on the body is dropped. Label glow stays at the section color, including a muted foreground for `output`.
 
+Plain output sections, including cell-gridded text, do not put the dump in a native HTML `title` tooltip. Hovering output must not cover the transcript with a second copy of the dump. Tool subjects and control tooltips are unchanged.
+
 ### Structure tokens
 
 Tried in `renderToolOutput` after the existing git-stat / unidiff / git-status rich path, for `stdout`/`output`/`content` when the tool is `search` **or** the command matches `\b(rg|grep|ag|ack)\b`.
