@@ -26,15 +26,15 @@ const LAST_LINE_MAX = 200;
 const INSTRUCTION = 'Fix each finding and each failed check, or explain why the rule does not apply here. '
   + 'Never weaken, skip or delete a check, or edit a rule, to make it pass.';
 
-/** What Send-all delivers now (spec 368 amendment A). */
+/** What Send-all delivers now (spec 368 amendments A and B). */
 export interface RailsSendSet {
-  /** The newest run when it has open findings, else null. */
+  /** The newest run when it has open findings or a failed check, else null. */
   readonly run: RailsRunRecord | null;
   /** Failed manual results the dock shows, in manifest order. */
   readonly manual: readonly RailsCheckRun[];
   /** `run:<runId>` when `run` is set, then `check:<name>@<finishedAt>` per result. */
   readonly keys: readonly string[];
-  /** `3 open findings and failed osv` · `failed osv` · `1 open finding`; empty for an empty set. */
+  /** `3 open findings and failed typecheck, osv` · `failed typecheck` · `1 open finding`; empty for an empty set. */
   readonly label: string;
 }
 
@@ -57,18 +57,21 @@ export function isFailedCheck(outcome: RailsCheckOutcome): boolean {
   return outcome === 'fail' || outcome === 'timeout';
 }
 
-/** `failed osv`, `failed osv, suite`: the manual part of a Send label. */
+/** `failed osv`, `failed typecheck, osv`: the failed-check part of a Send label. */
 export function failedChecksLabel(names: readonly string[]): string {
   return `failed ${names.join(', ')}`;
 }
 
-/** Manual results are read as the check rows read them; the check running now
- *  is left out, because its row shows `RUNNING` instead of the old result. */
+/** The newest run goes when it has an open finding or a failed check (spec 368
+ *  amendment B): either one is something for a lane to fix. Manual results are
+ *  read as the check rows read them; the check running now is left out, because
+ *  its row shows `RUNNING` instead of the old result. */
 export function railsSendSet(
   model: Pick<RailsDockModel, 'snapshot' | 'history' | 'checkRuns' | 'checkInFlight'>,
 ): RailsSendSet {
   const latest = model.history[0];
-  const run = latest && latest.open.length > 0 ? latest : null;
+  const runFailed = latest?.checks.filter((check) => isFailedCheck(check.outcome)).map((check) => check.name) ?? [];
+  const run = latest && (latest.open.length > 0 || runFailed.length > 0) ? latest : null;
   const manual: RailsCheckRun[] = [];
   for (const decl of model.snapshot?.checks ?? []) {
     if (!decl.manual || decl.name === model.checkInFlight) continue;
@@ -76,10 +79,12 @@ export function railsSendSet(
     if (result && isFailedCheck(result.result.outcome)) manual.push(result);
   }
   const keys = manual.map((result) => `check:${result.name}@${result.finishedAt}`);
-  const parts = manual.length > 0 ? [failedChecksLabel(manual.map((result) => result.name))] : [];
+  // A check made manual after the run still sits in that run's checks: name it once.
+  const failed = [...new Set([...runFailed, ...manual.map((result) => result.name)])];
+  const parts = failed.length > 0 ? [failedChecksLabel(failed)] : [];
   if (run) {
     keys.unshift(`run:${run.runId}`);
-    parts.unshift(plural(run.open.length, 'open finding'));
+    if (run.open.length > 0) parts.unshift(plural(run.open.length, 'open finding'));
   }
   return { run, manual, keys, label: parts.join(' and ') };
 }
@@ -112,8 +117,8 @@ function shellWord(arg: string): string {
   return /^[A-Za-z0-9_./:=@%+,-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`;
 }
 
-/** One message for a lane: the open findings of `run` (or just `run.only`) and
- *  the failed manual results in `manual`. */
+/** One message for a lane: the failed checks and open findings of `run` (or just
+ *  `run.only`) and the failed manual results in `manual`. */
 export function railsEnvelope(run: RailsEnvelopeRun | null, manual: readonly RailsEnvelopeCheck[]): string {
   const head: string[] = [run ? `[rails] run ${run.record.runId} — verdict ${run.record.verdict}` : '[rails] manual checks'];
   const failed = run?.record.checks.filter((check) => isFailedCheck(check.outcome)) ?? [];

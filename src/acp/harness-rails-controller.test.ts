@@ -1017,13 +1017,46 @@ describe('HarnessRailsController manual checks (spec 368)', () => {
     press('j');
     press('j'); // check:osv
     press('s');
-    expect(r.flashes).toEqual(['rails: no open findings or failed manual checks', 'rails: osv is running']);
+    expect(r.flashes).toEqual(['rails: no open findings or failed checks', 'rails: osv is running']);
 
     release({ ...FAIL, outcome: 'error', exitCode: null });
     await check;
     press('s');
     await r.ctl.runCommand(r.lanes[0], ['send'], '#rails send');
-    expect(r.flashes.slice(2)).toEqual(['rails: osv has no failed result to send', 'rails: no open findings or failed manual checks']);
+    expect(r.flashes.slice(2)).toEqual(['rails: osv has no failed result to send', 'rails: no open findings or failed checks']);
     expect(r.envelopes).toEqual([]);
+  });
+
+  // Spec 368 amendment B: a failed auto check with no open finding rides Send.
+
+  it('sends a run whose only fault is a failed auto check, from Send and s on the head row', async () => {
+    const failed = { ...PASS, outcome: 'fail' as const, exitCode: 2 };
+    const r = rig({ history: [priorRun({ verdict: 'check_failed', checks: [failed], open: [] })] });
+    await r.ctl.mount();
+    const send = (): HTMLButtonElement => {
+      const node = r.ctl.dockEl.querySelector<HTMLButtonElement>('[data-rails-action="send"]');
+      if (!node) throw new Error('no send button');
+      return node;
+    };
+    expect(send().disabled).toBe(false);
+    expect(send().title).toBe('Send failed typecheck to claude-1 (#rails send · s on the head row)');
+
+    send().click();
+    expect(r.envelopes).toHaveLength(1);
+    expect(r.envelopes[0].laneId).toBe('lane-1');
+    const lines = r.envelopes[0].message.split('\n');
+    expect(lines[0]).toBe('[rails] run 20261027T010000Z-0001 — verdict check_failed');
+    expect(lines[1]).toBe('Failed checks: typecheck (exit 2)');
+    expect(r.envelopes[0].message).not.toContain('Open findings');
+    expect(r.envelopes[0].message).toContain('Run file: /repo/.krypton/rails/runs/20261027T010000Z-0001.json');
+    expect(r.flashes).toEqual(['rails: sent failed typecheck → claude-1']);
+    expect(send().className).toBe('acp-dock-action acp-dock-action--done');
+
+    // The head row's s is the same Send-all.
+    const press = (key: string): boolean => r.ctl.handleDockKey(new KeyboardEvent('keydown', { key }));
+    press('1');
+    press('s');
+    expect(r.envelopes).toHaveLength(2);
+    expect(r.flashes[r.flashes.length - 1]).toBe('rails: sent failed typecheck → claude-1');
   });
 });

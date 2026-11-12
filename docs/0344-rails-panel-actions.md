@@ -12,6 +12,9 @@
 > Amended by: 368 amendment A (2026-11-07). Send delivers the Send set: the newest run's open
 > findings (when it has any) and every manual check result shown as `FAIL` or `TIMEOUT`. The Send
 > mark records the set's keys instead of a `runId`; the Send row below is current.
+> Amended by: 368 amendment B (2026-11-12). The Send set also takes the newest run when one of its
+> checks failed or timed out, with no open finding; the empty-set reason is `no open findings or
+> failed checks`, and the label names the failed auto checks too.
 > Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): `DESIGN.console.md` merged into DESIGN.md; dock tokens are `--mat-*`.
 
 ## Problem
@@ -158,7 +161,7 @@ export function railsDockActions(input: {
 | Button | running | done | disabled (tooltip) | idle tooltip |
 |--------|---------|------|--------------------|--------------|
 | Run | A run is in flight: badge `progressText(progress)` while `checking` / `judging`, else `running` (an older `held` or `cooling` line is not progress) | never | mode `off`: `rails is off · #rails manual`; a run or a manual check (spec 368) in flight: `a run is already in progress` | trusted: `Run the auto checks and the judge now (#rails now · r)`; otherwise `Judge only — checks wait for trust (#rails now · r)` |
-| Send | never | the Send set is not empty and every key is in `lastSend.keys`: badge `✓ <time>`, tooltip `<label> sent to <lane> <date time>` | empty Send set: `no open findings or failed manual checks`; no active lane: `no active lane` | `Send <label> to <lane> (#rails send · s on the head row)`, where `<label>` is `3 open findings and failed osv` (spec 368 amendment A) |
+| Send | never | the Send set is not empty and every key is in `lastSend.keys`: badge `✓ <time>`, tooltip `<label> sent to <lane> <date time>` | empty Send set: `no open findings or failed checks`; no active lane: `no active lane` | `Send <label> to <lane> (#rails send · s on the head row)`, where `<label>` is `3 open findings and failed typecheck, osv` or `failed typecheck` (spec 368 amendments A and B) |
 | Trust | never | `trust === 'trusted'`: badge `✓ trusted`, tooltip `rails.toml is trusted · <n> checks may run` | never | `untrusted`: `Allow the <n> checks listed above to run (#rails trust)`; `changed`: `rails.toml changed since trust — allow the <n> checks listed above (#rails trust)`; no checks: `Trust rails.toml so auto runs can start (#rails trust)` |
 | Update | `updateLane` set: badge `running · <lane>`, tooltip `Update running in <lane>` | never | `ticketWorkActionDisabledReason(activeLane)` | `<lane> proposes rails changes, then waits for you (#rails update)` |
 
@@ -204,8 +207,9 @@ Send
    "rails: sent 3 open findings and failed osv → codex-1".
 3. lastSend = { keys, label, laneName, at } → renderDock() → Send repaints as "✓ 14:02" in the
    done colour and stays enabled.
-4. Open findings in a newer run, or a newer failed manual result, put an unsent key in the set →
-   Send is idle again. A clean run after the send leaves it done (spec 368 amendment A).
+4. Open findings or a failed check in a newer run, or a newer failed manual result, put an unsent
+   key in the set → Send is idle again. A clean run after the send leaves it done (spec 368
+   amendments A and B).
 
 Update
 1. Click Update while the active lane is idle → update(lane, '') → rails_load →

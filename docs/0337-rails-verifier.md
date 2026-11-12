@@ -1,6 +1,6 @@
 # Rails Verifier — Implementation Spec
 
-> Status: Implemented (rev 3, 2026-10-28: the Rails dock is a second tab in the Active Ticket dock's place; amended by spec 344, 2026-10-29: an Actions bar with Run, Send, Trust and Update buttons; by spec 345, 2026-10-29: a display budget for the dock content; and by spec 368, 2026-11-07: a check may be `manual`, skipped by Rails runs and run alone from its dock row, and Send carries a failed manual result (amendment A))
+> Status: Implemented (rev 3, 2026-10-28: the Rails dock is a second tab in the Active Ticket dock's place; amended by spec 344, 2026-10-29: an Actions bar with Run, Send, Trust and Update buttons; by spec 345, 2026-10-29: a display budget for the dock content; and by spec 368, 2026-11-07: a check may be `manual`, skipped by Rails runs and run alone from its dock row, and Send carries a failed manual result (amendment A); amended by spec 368 amendment B, 2026-11-12: Send carries a run whose only fault is a failed auto check)
 > Date: 2026-10-27
 > Milestone: ACP Harness — architecture conformance
 > Builds on: 306 (assist sidecar) · 276 / ADR-0021 (harness-owned verdict) · 145 (`#review` diff subject) · 328 (`#e2e` process runner) · 238 / 320 / 331 (ticket dock, panel toggles) · ADR-0001 · ADR-0004 · ADR-0007 · ADR-0008 · ADR-0017
@@ -18,7 +18,7 @@ Add a per-harness background **Rails verifier**. When the harness goes quiet, it
 
 Code, not the model, decides the verdict. Every run is kept in `.krypton/rails/runs/`. The **Rails dock** is a dedicated panel that sits where the Active Ticket dock sits, as a second tab of the harness's right dock column. It tracks the current run, open findings and how long each has been open, what got resolved, every rule's latest status, and recent runs. A footer indicator shows the verdict outside the harness.
 
-The human sends findings, and failed manual check results (spec 368), to a lane from the dock or with `#rails send`. The verifier never blocks a lane, never edits code, and never creates attention items. `#rails init` asks the current lane to turn existing ADRs into rails: it adds `## Rails` sections, writes `.krypton/rails.toml`, and writes architecture tests for the bullets that code can check. `#rails update` (spec 338) asks the current lane to change the existing rails from the human's own words.
+The human sends findings and failed checks, auto and manual (spec 368), to a lane from the dock or with `#rails send`. The verifier never blocks a lane, never edits code, and never creates attention items. `#rails init` asks the current lane to turn existing ADRs into rails: it adds `## Rails` sections, writes `.krypton/rails.toml`, and writes architecture tests for the bullets that code can check. `#rails update` (spec 338) asks the current lane to change the existing rails from the human's own words.
 
 ## Research
 
@@ -181,7 +181,7 @@ struct RailsCheckResult { name: String, outcome: CheckOutcome, exit_code: Option
   - `selectGlossary(entries, addedLines)` keeps entries whose term or `_Avoid_` word appears in the added lines.
 - `judge.ts`: `railsJudge: AssistCall<RailsFindingSet, RailsJudgeContext>`.
 - `track.ts`: finding lifecycle and rule status (see Tracking).
-- `envelope.ts`: the text that `send` delivers, and the Send set (spec 368 amendment A).
+- `envelope.ts`: the text that `send` delivers, and the Send set (spec 368 amendments A and B).
 - **Engine refactor.** `AssistEngine.run<T, C>(call: AssistCall<T, C>, ctx: C, cfg)`, where `AssistCall` is `{ id, system, payload, parse }` and `AssistTask<T>` extends `AssistCall<T, AssistContext>`. The rails controller owns its own `AssistEngine` and `AcpAssistSession`, so its single-flight and breaker are separate from the assist tasks; it disposes the session after 10 min without a run.
 - At mount the controller calls `rails_load` and `rails_history(root, 20)`, so the dock shows tracking before the first run.
 
@@ -248,7 +248,7 @@ There is no new key binding; the Leader map is full (spec 222). The command is `
 - **bare**: selects and focuses the Rails tab, clearing its own hidden flag first; a hidden right panel (`#panels hide right`, spec 347) still wins and the chip says `right panel hidden · #panels show right`.
 - **now**: starts a manual run (manual checks are skipped). With mode `off`, it refuses and says so, as `#assist` does.
 - **check `<name>`** (spec 368): runs that one manual check alone, recording its result in `.krypton/rails/checks/<name>.json`. Bare, it lists the manual check names in a chip (`rails: manual checks — osv`).
-- **send**: sends the Send set to the lane the command was typed in, as one `[rails]` envelope through `injectHarnessEnvelope`: the open findings of the newest run (when it has any) and every manual check whose row shows `FAIL` or `TIMEOUT` (spec 368 amendment A), at most 4 000 chars plus the run file path and each check file path, asking the lane to fix each finding and each failed check or explain why the rule does not apply, and never to weaken a check. A manual result goes as its last output line, its check file and its rerun command, never its output.
+- **send**: sends the Send set to the lane the command was typed in, as one `[rails]` envelope through `injectHarnessEnvelope`: the newest run when it has open findings or a check that failed or timed out (its failed checks and open findings; spec 368 amendment B) and every manual check whose row shows `FAIL` or `TIMEOUT` (spec 368 amendment A), at most 4 000 chars plus the run file path and each check file path, asking the lane to fix each finding and each failed check or explain why the rule does not apply, and never to weaken a check. A manual result goes as its last output line, its check file and its rerun command, never its output.
 - **trust**: calls `rails_trust`.
 - **init**: sends the one-shot `railsInitPrompt` to the current lane.
 - **update**: sends `railsUpdatePrompt` to the current lane, carrying a fresh `rails_load` snapshot and the newest runs as fenced state plus the human's request; bare, the lane only proposes. Spec 338.

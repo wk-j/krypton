@@ -1,6 +1,6 @@
 # Rails Manual Checks — Implementation Spec
 
-> Status: Implemented (approved 2026-11-07: "ลงมือตามสเปก docs/0368-rails-manual-checks.md ตามที่เสนอ"). Amendment A (Send carries failed manual results): Implemented, approved 2026-11-07 ("อนุมัติ Amendment A ใน docs/0368-rails-manual-checks.md แล้วลงมือแก้โค้ดตามหัวข้อ Send (amendment A)")
+> Status: Implemented (approved 2026-11-07: "ลงมือตามสเปก docs/0368-rails-manual-checks.md ตามที่เสนอ"). Amendment A (Send carries failed manual results): Implemented, approved 2026-11-07 ("อนุมัติ Amendment A ใน docs/0368-rails-manual-checks.md แล้วลงมือแก้โค้ดตามหัวข้อ Send (amendment A)"). Amendment B (Send carries a run whose only fault is a failed auto check): Implemented, approved 2026-11-12 ("แก้ spec 368 และ railsSendSet ให้ Send ส่ง run ที่ auto check ล้มแต่ไม่มี finding ได้ด้วย พร้อมปรับข้อความบนปุ่มและ test")
 > Date: 2026-11-07
 > Milestone: ACP Harness — Rails
 > Builds on: 337 (Rails verifier) · 344 (Actions bar) · 345 (display budget) · ADR-0025 · ADR-0029
@@ -19,6 +19,11 @@ on demand.
 newest run (spec 344), so on 2026-11-07 Send stayed disabled (`no open findings`) beside `osv FAIL
 19:40`, and `s` on the `osv` row answered `select a finding, or the head row to send all`.
 
+**Amendment B.** A run whose only fault is a failed auto check cannot reach a lane. The Send set
+takes the newest run only when it has an open finding, so on 2026-11-12 Send stayed disabled (`no
+open findings or failed manual checks`) beside `17:27 ✗ CHECK FAILED 0 open`. The run's envelope
+already lists its failed checks; it was never sent.
+
 ## Solution
 
 A check may declare `manual = true`. Rails runs skip it: the quiet-point run, `#rails now`, `r` and
@@ -31,6 +36,10 @@ marks `osv` manual, and `osv` then scans every lockfile whole.
 **Amendment A.** Send-all (the Send button, `#rails send`, `s` on the head row) also carries every
 manual result whose row shows `FAIL` or `TIMEOUT`; `s` on such a row sends it alone. The envelope
 points at the result (last line, file, rerun command) and never pastes the output.
+
+**Amendment B.** The Send set also takes the newest run when one of its checks shows `fail` or
+`timeout`, with or without open findings. The Send label names every failed check it carries, auto
+and manual: `failed typecheck`, `3 open findings and failed typecheck, osv`.
 
 ## Research
 
@@ -55,6 +64,10 @@ points at the result (last line, file, rerun command) and never pastes the outpu
   Scope section kept a per-finding Send button off because `s` already does it.
 - **Send today** (amendment A): `send` (`controller:919-933`) needs an open finding in `history[0]`;
   `sendSelected` (`:935-940`) knows finding and head rows; `RailsSendMark` is keyed by `runId`.
+- **Amendment B.** `railsSendSet` (`envelope.ts:67-85`) took `history[0]` only when `open.length > 0`.
+  `railsEnvelope` already writes `Failed checks:` from the run's own checks, and the run file keeps
+  each check's 80-line tail, so the envelope needs no change. The label named only manual checks,
+  so a run with findings and a failed `typecheck` read `3 open findings`.
 - **The `osv` output does not fit an envelope.** The 19:40 tail is 80 lines, 6 650 chars: 39 of 185
   rows, all from `src-tauri/Cargo.lock` (rows sort by lockfile), then the count line, which ADR-0029
   puts last so the tail keeps it. Pasted, it passes the 4 000-char cap and shows a slice as the whole.
@@ -67,6 +80,10 @@ points at the result (last line, file, rerun command) and never pastes the outpu
 - **`mode = "auto" | "manual"` per check.** A third value has no use, so a boolean is enough.
 - **Amendment A.** Sending a manual result only when the run has no open finding: what Send sends
   would depend on an unrelated run. Pasting the tail: over the cap, and a slice.
+- **Amendment B.** Gating on `verdict === 'check_failed'`: the verdict comes from the same outcomes,
+  and reading the outcomes keeps the Send set and the envelope's `Failed checks:` line on one rule.
+  `s` on an auto check row: Send-all already carries the run, and one auto check alone stays out of
+  scope, as running one does.
 
 ## Prior Art
 
@@ -102,6 +119,9 @@ the file and rerun the check.
 | **Amendment A:** `src/acp/rails/envelope.ts`, `actions.ts` (+ tests) | `railsSendSet`; `railsEnvelope(run, manual)`; `RailsSendMark` keys on the Send set; `sendSet` replaces `latest` in the actions input |
 | **Amendment A:** `src/acp/harness-rails-controller.ts` (+ test), `components/rails-dock/rails-dock.test.ts` | `send` uses the Send set; `s` on a manual check row; chips; the actions input shape |
 | **Amendment A:** Docs | 0337 (Tracking, Commands `send`, Keys `s`), 0344 (Send state row, Send mark, Paths table, Send data flow), `0005-data-flow.md` (`#rails send`), ADR-0025 (item 1), `CONTEXT.md` (Check) |
+| **Amendment B:** `src/acp/rails/envelope.ts`, `actions.ts` (+ tests) | `railsSendSet` takes a run with a failed check; the label names failed auto checks; the empty-set reason |
+| **Amendment B:** `src/acp/harness-rails-controller.ts` (+ test) | The empty-set chip |
+| **Amendment B:** Docs | 0337 (status, overview, Commands `send`), 0344 (amendment note, Send state row, Send data flow), `0005-data-flow.md` (`#rails send`), ADR-0025 (item 1), `CONTEXT.md` (Check) |
 
 ## Design
 
@@ -229,25 +249,30 @@ osv                    RUNNING   running
 `#rails check <name>` runs one manual check. Bare `#rails check` lists the names in a chip, for
 example `rails: manual checks — osv`. `hash-commands.ts` adds it to the `rails` anatomy.
 
-### Send (amendment A)
+### Send (amendments A and B)
 
-The **Send set** is what Send-all delivers: the newest run when it has open findings, plus each manual
-result the dock shows as `FAIL` or `TIMEOUT`, in manifest order. It reads manual results as the check
+The **Send set** is what Send-all delivers: the newest run when it has open findings or a check that
+shows `fail` or `timeout` (amendment B), plus each manual result the dock shows as `FAIL` or
+`TIMEOUT`, in manifest order. It reads manual results as the check
 rows do and leaves out the check running now, whose row shows `RUNNING`, not the old result. An
 `error` result stays out, as a run's envelope leaves out `error` checks.
 
 ```ts
 // src/acp/rails/envelope.ts
 export interface RailsSendSet {
-  readonly run: RailsRunRecord | null;       // null when the newest run has no open finding
+  readonly run: RailsRunRecord | null;       // null when the newest run has no open finding and no failed check
   readonly manual: readonly RailsCheckRun[]; // failed manual results, manifest order
   readonly keys: readonly string[];          // `run:<runId>` if run; `check:<name>@<finishedAt>` each
-  readonly label: string;                    // `3 open findings and failed osv` · `failed osv`
+  readonly label: string;                    // `3 open findings and failed typecheck, osv` · `failed typecheck` · `failed osv`
 }
 export function railsSendSet(model: RailsDockModel): RailsSendSet;
 // run: { record, path, only? }; manual: { result, decl, path }, where path is the check file
 export function railsEnvelope(run: RailsEnvelopeRun | null, manual: readonly RailsEnvelopeCheck[]): string;
 ```
+
+**Label** (amendment B). `<n> open finding(s)` when the run has any, then `failed <names>`: the run's
+failed checks in run order, then the failed manual results in manifest order, each name once (a check
+made manual after the run can fail in both). Empty for an empty set.
 
 **Envelope.** Each manual result adds a line to the head and a file line to the foot; the foot (run
 file, check files, instruction) always survives the 4 000-char cap. The check file path is built as
@@ -266,16 +291,26 @@ Fix each finding and each failed check, or explain why the rule does not apply h
 
 With a run, its lines stay as today and `Failed manual checks (n):` sits between `Failed checks:` and
 `Open findings (n):`. A timed-out result reads `- <name> (timeout) at …`. Every envelope's instruction
-gains `and each failed check`.
+gains `and each failed check`. A run with no open finding (amendment B) sends its header, `Failed
+checks:`, the run file and the instruction, with no `Open findings` line; the lane reads each check's
+tail in the run file:
+
+```
+[rails] run 20261112T102700Z-1a2b — verdict check_failed
+Failed checks: typecheck (exit 2)
+
+Run file: /Users/wk/Source/krypton/.krypton/rails/runs/20261112T102700Z-1a2b.json
+Fix each finding and each failed check, or explain why the rule does not apply here. Never weaken, skip or delete a check, or edit a rule, to make it pass.
+```
 
 **Send button** (replaces the Send row of spec 344 §State rules). Never running. Done (badge
 `✓ <time>`, tooltip `<label> sent to <lane> <date time>`) while the set is not empty and every key is
-in `lastSend.keys`, so a clean run after a send keeps it, and open findings in a newer run or a newer
-failed result clear it. Disabled on an empty set (`no open findings or failed manual checks`) or with
-no active lane (`no active lane`). Idle tooltip: `Send <label> to <lane> (#rails send · s on the head row)`.
+in `lastSend.keys`, so a clean run after a send keeps it, and open findings or a failed check in a
+newer run, or a newer failed manual result, clear it. Disabled on an empty set (`no open findings or
+failed checks`) or with no active lane (`no active lane`). Idle tooltip: `Send <label> to <lane> (#rails send · s on the head row)`.
 
 **Flow.** Send-all calls `send(laneId, null)`: an empty set flashes `rails: no open findings or failed
-manual checks`; otherwise `injectEnvelope`, chip `rails: sent <label> → <lane>`, and `lastSend = { keys,
+checks`; otherwise `injectEnvelope`, chip `rails: sent <label> → <lane>`, and `lastSend = { keys,
 label, laneName, at }`. `s` on a manual check row calls `sendCheck(laneId, name)`, which refuses while
 the check runs (`rails: osv is running`) or unless its result is `fail` / `timeout` (`rails: osv has no
 failed result to send`), then sends that result alone with chip `rails: sent failed osv → <lane>` and
@@ -317,6 +352,10 @@ manual check, or the head row to send all`.
 - **Amendment A.** An old result is sent with its date (the row shows `MM-DD`). A rerun takes the
   check out of the Send set while it runs; a new `fail` has a new `finishedAt`, so Send shows idle.
   Trust does not gate Send, which runs nothing.
+- **Amendment B.** A newer run that still fails has a new `runId`, so Send shows idle again, as it does
+  for open findings in a newer run. A check whose outcome is `error` (it could not start) does not put its
+  run in the Send set, as the envelope leaves it out. An untrusted run skips its checks, so only its
+  open findings can put it in the set.
 
 ## Open Questions
 
@@ -329,6 +368,7 @@ None. These choices are deliberate, and each can be flipped before approval:
    red. ADR-0029 records that cut.
 3. The dock has no stop key for a running check. `#rails off` cancels it, as it cancels a run.
 4. Amendment A: a failed result rides every Send-all while it fails, rather than once per result.
+5. Amendment B: a failed auto check rides every Send-all while the newest run has it, the same rule.
 
 ## Out of Scope
 
@@ -336,7 +376,7 @@ None. These choices are deliberate, and each can be flipped before approval:
 - Running an auto check alone.
 - `#rails send <name>`: Send paths take no argument (spec 344); `s` on the row sends one check.
 - A manual result's output in the envelope (see Send), and an `error` or `pass` result in Send.
-- A run with a failed auto check but no open finding in Send-all (spec 337, unchanged).
+- `s` on an auto check row: Send-all carries the run's failed checks (amendment B).
 - A "tree changed since" mark on a manual result.
 - Running manual checks on a schedule or in CI.
 

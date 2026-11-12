@@ -29,7 +29,7 @@ export function railsDockActionFromData(value: string | undefined): RailsDockAct
 /** A Send-all delivered these Send-set keys (spec 368 amendment A). Memory only. */
 export interface RailsSendMark {
   readonly keys: readonly string[];
-  /** The set's label at send time: `3 open findings and failed osv`. */
+  /** The set's label at send time: `3 open findings and failed typecheck, osv`. */
   readonly label: string;
   readonly laneName: string;
   readonly at: number;
@@ -99,11 +99,12 @@ function checkDisabledReason(input: RailsDockActionsInput): string | null {
 }
 
 /** Done while the set is not empty and every item in it was sent: a clean run
- *  keeps it; open findings in a newer run, or a newer failed result, clear it. */
+ *  keeps it; open findings or a failed check in a newer run, or a newer failed
+ *  manual result, clear it. */
 function sendView(input: RailsDockActionsInput): RailsActionView {
   const { sendSet, lastSend, activeLane, now } = input;
   const empty = sendSet.keys.length === 0;
-  const disabledReason = empty ? 'no open findings or failed manual checks' : activeLane ? null : 'no active lane';
+  const disabledReason = empty ? 'no open findings or failed checks' : activeLane ? null : 'no active lane';
   if (!empty && lastSend && sendSet.keys.every((key) => lastSend.keys.includes(key))) {
     return {
       state: {

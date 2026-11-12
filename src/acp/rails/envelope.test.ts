@@ -67,6 +67,17 @@ describe('railsEnvelope', () => {
     expect(text).toMatch(/never weaken/i);
   });
 
+  // Spec 368 amendment B: a run with a failed check and no open finding is sent too.
+  it('sends a run with failed checks and no open finding as its failed checks and its run file', () => {
+    const text = railsEnvelope({ record: run({ open: [] }), path: PATH }, []);
+    const lines = text.split('\n');
+    expect(lines[0]).toBe('[rails] run 20261027T100000Z-ab12 — verdict check_failed');
+    expect(lines[1]).toBe('Failed checks: typecheck (exit 2), tests (timeout)');
+    expect(text).not.toContain('Open findings');
+    expect(text).toContain(`Run file: ${PATH}`);
+    expect(text).toMatch(/each failed check/);
+  });
+
   it('sends only the given finding', () => {
     const only = run().open[1];
     const text = railsEnvelope({ record: run(), path: PATH, only }, []);
@@ -115,7 +126,7 @@ describe('railsEnvelope', () => {
   });
 });
 
-describe('railsSendSet (spec 368 amendment A)', () => {
+describe('railsSendSet (spec 368 amendments A and B)', () => {
   const snapshot = {
     checks: [
       { name: 'typecheck', argv: ['npx', 'tsc'], timeoutS: 300, manual: false },
@@ -131,8 +142,13 @@ describe('railsSendSet (spec 368 amendment A)', () => {
     ['osv', checkRun('osv', 'fail')],
     ['audit', checkRun('audit', 'error')],
   ]);
+  const cleanRun = (): RailsRunRecord => run({
+    verdict: 'clean',
+    checks: [{ name: 'lint', outcome: 'pass', exitCode: 0, durationMs: 1, outputTail: '' }],
+    open: [],
+  });
 
-  it('takes the newest run only with open findings, and failed manual results in manifest order', () => {
+  it('takes the newest run with its findings and failed checks, and failed manual results in manifest order', () => {
     const set = railsSendSet({ snapshot, history: [run(), run({ runId: 'older' })], checkRuns, checkInFlight: null });
     expect(set.run?.runId).toBe('20261027T100000Z-ab12');
     expect(set.manual.map((result) => result.name)).toEqual(['osv', 'suite']);
@@ -141,11 +157,40 @@ describe('railsSendSet (spec 368 amendment A)', () => {
       'check:osv@2026-11-07T12:40:13.761Z',
       'check:suite@2026-11-07T13:00:00.000Z',
     ]);
-    expect(set.label).toBe('2 open findings and failed osv, suite');
+    expect(set.label).toBe('2 open findings and failed typecheck, tests, osv, suite');
 
-    const clean = railsSendSet({ snapshot, history: [run({ open: [] })], checkRuns, checkInFlight: null });
+    const clean = railsSendSet({ snapshot, history: [cleanRun()], checkRuns, checkInFlight: null });
     expect(clean.run).toBeNull();
     expect(clean.label).toBe('failed osv, suite');
+  });
+
+  it('takes a run whose only fault is a failed check, but not one whose check could not start', () => {
+    const set = railsSendSet({ snapshot, history: [run({ open: [] })], checkRuns: new Map(), checkInFlight: null });
+    expect(set.run?.runId).toBe('20261027T100000Z-ab12');
+    expect(set.keys).toEqual(['run:20261027T100000Z-ab12']);
+    expect(set.label).toBe('failed typecheck, tests');
+
+    const withManual = railsSendSet({ snapshot, history: [run({ open: [] })], checkRuns, checkInFlight: null });
+    expect(withManual.keys[0]).toBe('run:20261027T100000Z-ab12');
+    expect(withManual.label).toBe('failed typecheck, tests, osv, suite');
+
+    const error = run({
+      verdict: 'error',
+      checks: [{ name: 'typecheck', outcome: 'error', exitCode: null, durationMs: 1, outputTail: '' }],
+      open: [],
+    });
+    expect(railsSendSet({ snapshot, history: [error], checkRuns: new Map(), checkInFlight: null }))
+      .toEqual({ run: null, manual: [], keys: [], label: '' });
+  });
+
+  it('names a check once when the run and its manual result both failed it', () => {
+    const before = run({
+      open: [],
+      checks: [{ name: 'osv', outcome: 'fail', exitCode: 1, durationMs: 1, outputTail: '' }],
+    });
+    const set = railsSendSet({ snapshot, history: [before], checkRuns: new Map([['osv', checkRun('osv', 'fail')]]), checkInFlight: null });
+    expect(set.keys).toEqual(['run:20261027T100000Z-ab12', 'check:osv@2026-11-07T12:40:13.761Z']);
+    expect(set.label).toBe('failed osv');
   });
 
   it('leaves out the manual check running now, and is empty with nothing failed', () => {
@@ -153,7 +198,7 @@ describe('railsSendSet (spec 368 amendment A)', () => {
     expect(running.manual.map((result) => result.name)).toEqual(['suite']);
 
     const passed = new Map([['osv', checkRun('osv', 'pass')]]);
-    expect(railsSendSet({ snapshot, history: [run({ open: [] })], checkRuns: passed, checkInFlight: null }))
+    expect(railsSendSet({ snapshot, history: [cleanRun()], checkRuns: passed, checkInFlight: null }))
       .toEqual({ run: null, manual: [], keys: [], label: '' });
   });
 });

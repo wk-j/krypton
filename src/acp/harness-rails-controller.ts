@@ -915,7 +915,7 @@ export class HarnessRailsController {
     await this.host.enqueueSystemPrompt(lane, railsUpdatePrompt(request, state), undefined, RAILS_UPDATE_LABEL);
   }
 
-  /** `only` null: Send-all, the Send set (spec 368 amendment A); else one finding of the newest run. */
+  /** `only` null: Send-all, the Send set (spec 368 amendments A and B); else one finding of the newest run. */
   private send(laneId: string, only: TrackedFinding | null): void {
     const name = this.host.lanes.find((lane) => lane.id === laneId)?.displayName ?? laneId;
     if (only) {
@@ -927,7 +927,7 @@ export class HarnessRailsController {
     }
     const set = railsSendSet(this.model());
     if (set.keys.length === 0) {
-      this.host.flashChip('rails: no open findings or failed manual checks');
+      this.host.flashChip('rails: no open findings or failed checks');
       return;
     }
     const run = set.run ? { record: set.run, path: this.runPath(set.run) } : null;

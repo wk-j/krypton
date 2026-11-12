@@ -110,9 +110,16 @@ describe('railsDockActions', () => {
   it('disables Send with nothing to send or without a lane', () => {
     const mark = { keys: ['run:r2'], label: '3 open findings', laneName: 'claude-1', at: AT_1402 };
     const empty = railsDockActions(input({ lastSend: mark, sendSet: sendSet([], '') })).states.send;
-    expect(empty.disabledReason).toBe('no open findings or failed manual checks');
+    expect(empty.disabledReason).toBe('no open findings or failed checks');
     expect(empty.state.kind).toBe('idle');
     expect(railsDockActions(input({ activeLane: null })).states.send.disabledReason).toBe('no active lane');
+  });
+
+  // Spec 368 amendment B: a failed auto check with no open finding is something to send.
+  it('enables Send for a run whose only fault is a failed check', () => {
+    const send = railsDockActions(input({ sendSet: sendSet(['run:r4'], 'failed typecheck') })).states.send;
+    expect(send.disabledReason).toBeNull();
+    expect(send.state).toEqual({ kind: 'idle', detail: 'Send failed typecheck to codex-1 (#rails send · s on the head row)' });
   });
 
   it('shows Trust done when trusted and names a changed manifest otherwise', () => {
