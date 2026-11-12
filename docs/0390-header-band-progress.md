@@ -3,7 +3,7 @@
 > Status: Implemented
 > Date: 2026-11-11
 > Milestone: Window chrome — progress presentation (amends [0018](./0018-progress-bar.md), [0364](./0364-progress-gauge-hide-working.md))
-> Amended by [0392 — Titlebar Fire](./0392-titlebar-fire.md): fire burns along the existing progress band — only as wide as the band — and rises from its lower edge over the titlebar's text, tabs, status and controls and past the top of the window. The band retains its full 6px layout and fill beneath the fire canvas; OSC 9;4 progress is not a fire trigger.
+> Amended by [0392 — Titlebar Fire](./0392-titlebar-fire.md): fire burns along the existing progress band — only as wide as the band — and hangs from its top edge down over the window's own terminal, a third as tall as the workspace fire, with embers falling below the flames; the titlebar's text, tabs, status and controls stay clear. The band retains its full 6px layout and fill beneath the fire canvas; OSC 9;4 progress is not a fire trigger.
 
 ## Problem
 
@@ -169,15 +169,15 @@ progress_display = "band"   # Where OSC 9;4 progress shows: "band" (header band 
 `progress_gauge_working = false` still hides only the busy ring. The band shows busy in any mode
 that includes it.
 
-### 0392 Amendment — Fire Rises from the Progress Band
+### 0392 Amendment — Fire Hangs from the Progress Band
 
 The progress band retains its full 6px height, layout and full-height fill described above. Fire
-starts at the band's lower edge and is only as wide as the band (its existing horizontal margins,
-ends faded over 24px), never the full titlebar length. It rises through the titlebar and past the
-top of the window, not a 2px lane in the band or a source placed directly inside the titlebar.
-The Canvas 2D display is a child of `.krypton-window__chrome` with its bottom on the band's lower
-edge, above titlebar content and the progress fill; while it exists the chrome stops clipping
-(`krypton-window__chrome--fire`) so it is not cut at the titlebar or window top. Chrome height,
+starts at the band's top edge and is only as wide as the band (its existing horizontal margins,
+ends faded over 24px), never the full titlebar length. It hangs down over the progress fill and
+the window's own terminal, not a 2px lane in the band or a source placed directly inside the
+titlebar. The Canvas 2D display is a child of `.krypton-window__chrome` with its top on the band's
+top edge, above the progress fill and the terminal's first lines; while it exists the chrome stops
+clipping (`krypton-window__chrome--fire`) so it is not cut at the chrome's bottom edge. Chrome height,
 hit testing and dragging stay unchanged. The two displays have independent lifetimes: all
 OSC 9;4 states, tab/pane refresh, completion flash, fade and dismissal timings remain as specified here.
 

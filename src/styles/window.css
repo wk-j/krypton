@@ -243,16 +243,18 @@
   --krypton-title-tail-zoom: 2.9;
 }
 
-/* Spec 392: a canvas as wide as the progress band, its bottom edge on the
-   band's bottom edge (fire.ts sets left/top/width/height). Flames rise over
-   the titlebar — over its label, LEDs, tab strip and controls, and over the
-   band track/fill — and on past the top of the window. While a window holds
-   one, the chrome stops clipping so the part above the window shows; the
-   titlebar and band still clip their own contents. While the canvas shows,
-   fire.ts puts `krypton-window--fire` on the window: z-index 1 lifts it over
-   sibling windows (z-index auto) so the flames above it are not covered by
-   the window above. Overlays, the Quick Terminal and the footer stay above
-   it; Stage's inline z-index still wins. */
+/* Spec 392: a canvas as wide as the progress band, its top edge on the
+   band's top edge (fire.ts sets left/top/width/height and copies the flames
+   upside down). Flames hang over the band track/fill and down over the
+   window's own terminal (`.krypton-window__content`, z-index auto, below the
+   chrome), a third as tall as the workspace fire, their embers falling below
+   them; the titlebar stays clear. While a window holds one, the chrome stops
+   clipping so the part below it shows; the titlebar and band still clip their
+   own contents. While the canvas shows, fire.ts puts `krypton-window--fire`
+   on the window: z-index 1 lifts it over sibling windows (z-index auto) so
+   the part reaching past a short window's bottom is not covered by the
+   window below. Overlays, the Quick Terminal and the footer stay above it;
+   Stage's inline z-index still wins. */
 .krypton-window__chrome--fire {
   overflow: visible;
 }
@@ -270,7 +272,7 @@
   display: none;
   transform: translateZ(0);
   /* Fade the band's ends so flames and glow never stop at a hard vertical
-     edge above the window. Static: no per-frame cost. */
+     edge over the terminal. Static: no per-frame cost. */
   -webkit-mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
   mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent);
 }

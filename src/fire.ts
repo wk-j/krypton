@@ -8,9 +8,10 @@
 // what the window holds.
 // The workspace burns while any window does, with the look of the most urgent
 // burning state (spec 0391). Each burning window also burns along its progress
-// band: flames as wide as the band rise through the titlebar and past the top
-// of the window (spec 0392). Two lazy WebGL2 contexts serve the workspace and all titlebars;
-// titlebars copy the shared scratch renderer into their own 2D canvases.
+// band: flames as wide as the band and a third as tall as the workspace's hang
+// from it down over the window's own terminal, their embers falling below them
+// (spec 0392). Two lazy WebGL2 contexts serve the workspace and all titlebars;
+// titlebars copy the shared scratch renderer, flipped, into their own 2D canvases.
 // The loops stop once the fire is out; an unlit workspace allocates nothing.
 // Each state has its own look (`[fire]` + `[fire.<state>]`, spec 0363); a lit
 // fire eases to the new look when the top state changes.
@@ -102,9 +103,16 @@ export interface FireBand {
   flameMax: number;
 }
 
+/** Cap of the workspace's built-in tallest flame (px); any content area at
+ *  least 546px tall reaches it, so a fullscreen workspace always burns at it. */
+const WORKSPACE_FLAME_MAX = 120;
+
+/** Titlebar flames are a third of the workspace's (spec 0392). */
+const TITLEBAR_FLAME_MAX = WORKSPACE_FLAME_MAX / 3;
+
 /** Built-in tallest flame for a content height (px): 22% of it, kept within 40–120. */
 function flameBase(contentH: number): number {
-  return Math.min(120, Math.max(40, 0.22 * contentH));
+  return Math.min(WORKSPACE_FLAME_MAX, Math.max(40, 0.22 * contentH));
 }
 
 /** Canvas band for a content area: tall enough for the tallest flame (scaled by
@@ -117,15 +125,26 @@ export function fireBand(contentW: number, contentH: number, height: number): Fi
 }
 
 /**
- * Titlebar canvas (spec 0392): exactly as wide as the progress band, its bottom
- * edge on the band's bottom edge. `baseline` is that edge's depth below the top
- * of the chrome; the tallest flame is twice it (kept within 40–120, scaled by
- * the look's `height`), so flames rise through the titlebar and past the top of
- * the window. Tall enough for the flame and its embers, like `fireBand`.
+ * Titlebar canvas (spec 0392): exactly as wide as the progress band, its top
+ * edge on the band's top edge. The tallest flame is a third of the
+ * workspace's (40px, scaled by the look's `height` like the workspace), so
+ * flames hang from the band down over the window's terminal. Tall enough for
+ * the flame and its embers, like `fireBand`; the embers fall below the flames.
  */
-export function titlebarFireBand(bandWidth: number, baseline: number, height: number): FireBand {
-  const flameMax = Math.min(120, Math.max(40, 2 * baseline)) * height;
+export function titlebarFireBand(bandWidth: number, height: number): FireBand {
+  const flameMax = TITLEBAR_FLAME_MAX * height;
   return { cssWidth: Math.max(0, Math.round(bandWidth)), cssHeight: Math.ceil(flameMax * 2.2), flameMax };
+}
+
+/**
+ * Titlebar glow scale (spec 0392): the workspace glow (`FIRE.glowRadius`,
+ * `FIRE.glowReach`) shrunk with the flame it lights. A fixed 80px reach outruns
+ * a canvas 2.2× a 40px-or-shorter flame, and the canvas edge then cuts the
+ * still-lit glow into a hard line over the terminal; scaled, it fades out at
+ * two thirds of the flame, inside the canvas at every look height.
+ */
+export function titlebarGlowScale(band: FireBand): number {
+  return band.flameMax / WORKSPACE_FLAME_MAX;
 }
 
 /** Exponential approach to the target: τ 0.25 s igniting, τ 0.45 s putting out. */
@@ -480,9 +499,10 @@ class FirePainter {
     this.invalidate();
   }
 
+  /** `glow` scales the built-in glow radius and reach (1 for the workspace). */
   draw(
     band: FireBand, live: LiveLook, heat: number, t: number, seed: number,
-    radius: number, height: number, withEmbers: boolean,
+    radius: number, height: number, withEmbers: boolean, glow = 1,
   ): void {
     const gl = this.gl;
     const u = this.uniforms;
@@ -503,7 +523,7 @@ class FirePainter {
     gl.uniform1f(u.height, height);
     gl.uniform1f(u.radius, radius);
     gl.uniform4f(u.p0, FIRE.scale, FIRE.speed, FIRE.warp, FIRE.baseGlow);
-    gl.uniform4f(u.p1, FIRE.occlusion, FIRE.intensity * live.intensity, FIRE.glowRadius, FIRE.glowReach);
+    gl.uniform4f(u.p1, FIRE.occlusion, FIRE.intensity * live.intensity, FIRE.glowRadius * glow, FIRE.glowReach * glow);
     gl.uniform3fv(u.low, live.low);
     gl.uniform3fv(u.mid, live.mid);
     gl.uniform3fv(u.hot, live.hot);
@@ -767,10 +787,10 @@ export class FireAnimation implements BackgroundAnimation {
 /** Flames taper over the band's last ~11px at each end instead of stopping at
  *  the canvas edge; embers stay inside the same inset. */
 const TITLEBAR_FIRE_RADIUS = 12;
-/** Chrome modifier that lets the canvas rise past the top of the window. */
+/** Chrome modifier that lets the canvas (and its embers) hang below the chrome over the terminal. */
 const CHROME_FIRE_CLASS = 'krypton-window__chrome--fire';
 /** Window modifier while the canvas shows: lifts the window above its siblings
- *  so the flames above it paint over neighbouring windows. */
+ *  so flames reaching past a short window's bottom paint over the window below. */
 const WINDOW_FIRE_CLASS = 'krypton-window--fire';
 
 interface TitlebarFire {
@@ -786,9 +806,9 @@ interface TitlebarFire {
   readonly target: LiveLook;
   /** Band geometry in chrome px, read only on observer/state events. */
   left: number;
-  baseline: number;
+  top: number;
   width: number;
-  /** The canvas: band-wide, bottom on the band's bottom edge. */
+  /** The canvas: band-wide, top on the band's top edge. */
   band: FireBand;
   /** Built-in tallest flame for the band; the look scales it. */
   flameBase: number;
@@ -860,7 +880,7 @@ class TitlebarFires {
       entry = {
         host, surface, edge, win: surface.closest<HTMLElement>('.krypton-window'), canvas, ctx, seed: (Math.random() * 0x100000000) >>> 0,
         look, live: createLiveLook(), target: createLiveLook(),
-        left: 0, baseline: 0, width: 0,
+        left: 0, top: 0, width: 0,
         band: { cssWidth: 0, cssHeight: 0, flameMax: 40 }, flameBase: 40,
         running: false, visible: false, settled: true, heat: 0, t: 0,
       };
@@ -940,24 +960,24 @@ class TitlebarFires {
   /** Read the band's box in chrome px (observer and creation paths only). */
   private measure(entry: TitlebarFire): void {
     entry.left = entry.edge.offsetLeft;
-    entry.baseline = entry.edge.offsetTop + entry.edge.clientHeight;
+    entry.top = entry.edge.offsetTop;
     entry.width = entry.edge.clientWidth;
     this.layout(entry);
   }
 
   /** Fit the canvas to the band and the taller of the drawn and target look.
-   *  Writes only; the canvas bottom sits on the band's bottom edge and its top
-   *  reaches above the chrome (negative `top`). */
+   *  Writes only; the canvas top sits on the band's top edge and its bottom
+   *  reaches below the chrome, over the terminal. */
   private layout(entry: TitlebarFire): void {
     const scale = Math.max(entry.live.height, entry.target.height);
-    const band = titlebarFireBand(entry.width, entry.baseline, scale);
+    const band = titlebarFireBand(entry.width, scale);
     entry.band = band;
     entry.flameBase = band.flameMax / scale;
     const { canvas } = entry;
     if (canvas.width !== band.cssWidth) canvas.width = band.cssWidth;
     if (canvas.height !== band.cssHeight) canvas.height = band.cssHeight;
     canvas.style.left = `${entry.left}px`;
-    canvas.style.top = `${entry.baseline - band.cssHeight}px`;
+    canvas.style.top = `${entry.top}px`;
     canvas.style.width = `${band.cssWidth}px`;
     canvas.style.height = `${band.cssHeight}px`;
   }
@@ -1010,7 +1030,14 @@ class TitlebarFires {
   private draw(entry: TitlebarFire, withEmbers: boolean): void {
     const { band } = entry;
     const height = entry.flameBase * entry.live.height * (0.45 + 0.55 * entry.heat);
-    this.painter.draw(band, entry.live, entry.heat, entry.t, entry.seed, TITLEBAR_FIRE_RADIUS, height, withEmbers);
+    this.painter.draw(
+      band, entry.live, entry.heat, entry.t, entry.seed, TITLEBAR_FIRE_RADIUS, height, withEmbers,
+      titlebarGlowScale(band),
+    );
+    // Flip vertically: the shader's flames rise from the image's bottom edge;
+    // here they hang from the canvas's top edge (the band). Set every frame
+    // because resizing the canvas resets the context's transform.
+    entry.ctx.setTransform(1, 0, 0, -1, 0, band.cssHeight);
     entry.ctx.clearRect(0, 0, band.cssWidth, band.cssHeight);
     // GL viewports start at bottom-left; drawImage source rectangles at top-left.
     // Same size on both sides: a 1:1 copy, no scaling.

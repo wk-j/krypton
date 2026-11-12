@@ -28,6 +28,8 @@ interface CanvasFixture {
   rendered: Map<HTMLCanvasElement, Paint>;
   copied: Map<HTMLCanvasElement, Paint>;
   sources: Map<HTMLCanvasElement, HTMLCanvasElement>;
+  /** Whether the last copy into a canvas ran under a vertical flip of its height. */
+  flipped: Map<HTMLCanvasElement, boolean>;
   contexts: Map<HTMLCanvasElement, object>;
 }
 
@@ -42,14 +44,17 @@ function canvasFixture(): CanvasFixture {
   const rendered = new Map<HTMLCanvasElement, Paint>();
   const copied = new Map<HTMLCanvasElement, Paint>();
   const sources = new Map<HTMLCanvasElement, HTMLCanvasElement>();
+  const flipped = new Map<HTMLCanvasElement, boolean>();
   const contexts = new Map<HTMLCanvasElement, object>();
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (
     this: HTMLCanvasElement, kind: string,
   ) {
     const canvas = this;
     if (kind === '2d') {
+      let transform = [1, 0, 0, 1, 0, 0];
       return {
         fillStyle: '#000000',
+        setTransform: (...matrix: number[]) => { transform = matrix; },
         clearRect: () => copied.delete(canvas),
         fillRect: () => {},
         getImageData: () => ({ data: new Uint8ClampedArray([138, 20, 5, 255]) }),
@@ -57,6 +62,8 @@ function canvasFixture(): CanvasFixture {
           const paint = rendered.get(source);
           if (paint) copied.set(canvas, { ...paint });
           sources.set(canvas, source);
+          const [a, b, c, d, e, f] = transform;
+          flipped.set(canvas, a === 1 && b === 0 && c === 0 && d === -1 && e === 0 && f === canvas.height);
         },
       } as unknown as CanvasRenderingContext2D;
     }
@@ -94,7 +101,7 @@ function canvasFixture(): CanvasFixture {
     }
     return contexts.get(canvas) as WebGL2RenderingContext;
   } as typeof HTMLCanvasElement.prototype.getContext);
-  return { rendered, copied, sources, contexts };
+  return { rendered, copied, sources, flipped, contexts };
 }
 
 /** Native observers deliver their initial geometry asynchronously, after sync. */
@@ -355,7 +362,7 @@ describe('FireController titlebar lifecycle (spec 0392)', () => {
     expect(frames.size).toBe(0);
   });
 
-  it('spans only the progress band and rises past the top of the window while keeping progress dismissal independent', () => {
+  it('spans only the progress band, burns a third as tall as the workspace hanging from the band over the terminal while keeping progress dismissal independent', () => {
     const { win, titlebar, band, chrome } = makeWindow(workspace);
     const gauge = new ProgressGauge({
       getWindowElement: (id) => id === FIRST ? win : null,
@@ -375,21 +382,25 @@ describe('FireController titlebar lifecycle (spec 0392)', () => {
     expect(canvas.style.left).toBe(`${band.offsetLeft}px`);
     expect(canvas.style.width).toBe(`${band.clientWidth}px`);
     expect(canvas.width).toBe(band.clientWidth);
-    // Bottom edge on the band's bottom edge; the top reaches above the chrome.
-    const baseline = band.offsetTop + band.clientHeight;
+    // Top edge on the band's top edge; the bottom hangs below the chrome, over the terminal.
     const top = parseFloat(canvas.style.top);
-    expect(top + parseFloat(canvas.style.height)).toBe(baseline);
+    expect(top).toBe(band.offsetTop);
     expect(canvas.height).toBe(parseFloat(canvas.style.height));
-    expect(top).toBeLessThan(-chrome.clientHeight);
-    expect(titlebarFireBand(band.clientWidth, baseline, 1)).toEqual({
-      cssWidth: band.clientWidth, cssHeight: canvas.height, flameMax: 2 * baseline,
+    expect(top + canvas.height).toBeGreaterThan(chrome.clientHeight);
+    // Copied upside down: flames rise from the scratch image's bottom, so they
+    // hang from the canvas top.
+    expect(graphics.flipped.get(canvas)).toBe(true);
+    // The tallest flame is a third of the workspace's 120px cap.
+    expect(titlebarFireBand(band.clientWidth, 1)).toEqual({
+      cssWidth: band.clientWidth, cssHeight: canvas.height, flameMax: 40,
     });
 
-    // Drawn 1:1 at the canvas size, flames taller than the whole chrome.
+    // Drawn 1:1 at the canvas size, flames a third as tall as the workspace's.
     const paint = graphics.copied.get(canvas)!;
     expect(paint.width).toBe(canvas.width);
     expect(paint.height).toBe(canvas.height);
-    expect(paint.flame).toBeGreaterThan(chrome.clientHeight);
+    expect(paint.flame).toBeGreaterThan(36);
+    expect(paint.flame).toBeLessThanOrEqual(40);
     expect(paint.radius).toBeGreaterThan(0);
 
     gauge.handleProgress(1, ProgressState.Normal, 100, FIRST);
@@ -459,9 +470,8 @@ describe('FireController titlebar lifecycle (spec 0392)', () => {
 
   it('grows the canvas for a taller look at once and shrinks it only after the ease ends', () => {
     const { titlebar, band } = makeWindow(workspace);
-    const baseline = band.offsetTop + band.clientHeight;
-    const tall = titlebarFireBand(band.clientWidth, baseline, 2).cssHeight;
-    const normal = titlebarFireBand(band.clientWidth, baseline, 1).cssHeight;
+    const tall = titlebarFireBand(band.clientWidth, 2).cssHeight;
+    const normal = titlebarFireBand(band.clientWidth, 1).cssHeight;
     controller.sync(FIRST, 'working', null, titlebar);
     observers.flush();
     advanceFrames();
@@ -471,7 +481,8 @@ describe('FireController titlebar lifecycle (spec 0392)', () => {
     controller.configure({ on: ['working'], working: { height: 2 } });
     controller.sync(FIRST, 'working', null, titlebar);
     expect(canvas.height).toBe(tall);
-    expect(parseFloat(canvas.style.top)).toBe(baseline - tall);
+    // The top stays on the band: a taller look grows the canvas downward.
+    expect(parseFloat(canvas.style.top)).toBe(band.offsetTop);
     advanceFrames(3000);
     expect(canvas.height).toBe(tall);
 
@@ -480,7 +491,7 @@ describe('FireController titlebar lifecycle (spec 0392)', () => {
     expect(canvas.height).toBe(tall);
     advanceFrames(3000);
     expect(canvas.height).toBe(normal);
-    expect(parseFloat(canvas.style.top)).toBe(baseline - normal);
+    expect(parseFloat(canvas.style.top)).toBe(band.offsetTop);
     expectPaint(canvas, 1);
   });
 

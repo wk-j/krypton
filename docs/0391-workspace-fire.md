@@ -18,14 +18,16 @@ Fire becomes a single workspace band. One WebGL2 canvas sits along the bottom of
 The workspace fire remains above the footer and beneath every window, with the aggregate
 highest-priority burn state and unchanged flame/ember behaviour. In addition, a burning window's
 own configured state and look burn along its progress band: flames only as wide as the band (its
-existing horizontal margins) rise from the band's lower edge over the titlebar's text, tab strip,
-status and controls, and past the top of the window. The canvas is a child of
-`.krypton-window__chrome` with its bottom on the band's lower edge, above titlebar content and the
-progress fill; while it exists the chrome stops clipping (`krypton-window__chrome--fire`) so the
-part above the window shows, and while it shows the window carries `krypton-window--fire`
-(z-index 1) so those flames paint over sibling windows. It ignores pointer events and
-is hidden from accessibility; chrome height, hit testing and dragging stay unchanged. No
-content-area fire or surface thinning returns.
+existing horizontal margins) and a third as tall as the workspace fire (40 px built in) hang from
+the band's top edge down over the window's own terminal; their embers fall below the flames and
+the titlebar's text, tab strip, status and controls stay clear. The canvas is a child of
+`.krypton-window__chrome` with its top on the band's top edge, above the progress fill and the
+terminal's first lines; while it exists the chrome stops clipping (`krypton-window__chrome--fire`)
+so the part below the chrome shows, and while it shows the window carries `krypton-window--fire`
+(z-index 1) so the part past a short window's bottom paints over sibling windows. It ignores
+pointer events and is hidden from accessibility; chrome height, hit testing and dragging stay
+unchanged. That band-hung flame is the only fire over window content: no full content-area fire
+or surface thinning returns.
 
 `FireController(host, floor)` stays unchanged. Its required sync signature is now
 `sync(windowId, state, trigger, titlebar: HTMLElement | null)`. The fourth argument remains the
@@ -36,9 +38,9 @@ apply to both surfaces. There is no new configuration key, shortcut or OSC 9;4 f
 
 There are at most **two fire WebGL2 contexts total**: the existing workspace context plus one
 shared, hidden scratch context for every titlebar. Shared shader/draw code renders each window
-into the scratch viewport, then copies it immediately with `drawImage()` to that host's Canvas 2D
+into the scratch viewport, then copies it immediately and upside down with `drawImage()` to that host's Canvas 2D
 display (`krypton-titlebar-fire-canvas`). No window owns a GL context. ResizeObserver watches the
-titlebar, chrome and band, caching the band's left, width and lower edge relative to chrome; the
+titlebar, chrome and band, caching the band's left, width and top edge relative to chrome; the
 canvas takes that box (and the look's height) so the shared shader draws it 1:1 with its own band
 geometry. Cached geometry and reusable
 buffers/draw lists avoid per-frame layout measurement and allocation;

@@ -10,6 +10,8 @@ import {
   resolveFireLooks,
   stepHeat,
   stepLook,
+  titlebarFireBand,
+  titlebarGlowScale,
   type FireLook,
   type FireState,
   type LiveLook,
@@ -84,6 +86,33 @@ describe('fireBand', () => {
     expect(fireBand(800, 2000, 2).flameMax).toBe(240);
     expect(fireBand(800, 2000, 2).cssHeight).toBe(2 * fireBand(800, 2000, 1).cssHeight);
     expect(fireBand(800, 400, 0.5).flameMax).toBeCloseTo(44);
+  });
+});
+
+describe('titlebarFireBand', () => {
+  it('burns a third as tall as a fullscreen workspace at every look height', () => {
+    // Any workspace at least 546px tall reaches the 120px cap.
+    for (const contentH of [546, 900, 2000]) {
+      for (const height of [0.25, 1, 2, FIRE_LOOK_LIMITS.height.max]) {
+        expect(titlebarFireBand(800, height).flameMax * 3).toBeCloseTo(fireBand(800, contentH, height).flameMax);
+      }
+    }
+  });
+
+  it('spans the band and leaves room for embers like the workspace band', () => {
+    expect(titlebarFireBand(440.4, 1)).toEqual({ cssWidth: 440, cssHeight: 88, flameMax: 40 });
+    expect(titlebarFireBand(-5, 1).cssWidth).toBe(0);
+  });
+});
+
+describe('titlebarGlowScale', () => {
+  it('shrinks the glow with the flame so it fades out inside the canvas at every look height', () => {
+    expect(titlebarGlowScale(titlebarFireBand(800, 3))).toBeCloseTo(1);
+    for (const height of [FIRE_LOOK_LIMITS.height.min, 0.5, 1, 2, FIRE_LOOK_LIMITS.height.max]) {
+      const band = titlebarFireBand(800, height);
+      // bloom() is zero from `reach` on; the canvas's far row must lie past it.
+      expect(FIRE.glowReach * titlebarGlowScale(band)).toBeLessThan(band.cssHeight - 1);
+    }
   });
 });
 
