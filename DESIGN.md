@@ -1,6 +1,6 @@
 ---
 name: Krypton Console
-version: 2.4.0
+version: 2.4.1
 description: Skeuomorphic instrument faceplate — brushed graphite (aluminium in the light scheme) with engraved labels, recessed display wells, raised keys and lit lamps, over a transparent desktop
 appliesTo: "Every surface in the Tauri webview and the live-assist webview. Materials: src/styles/materials.css (--mat-*)."
 colors:
@@ -51,11 +51,11 @@ spacing:
 motion:
   press: "a held key sinks 1px with an inset shadow (:active); no transition"
   layout: "WAAPI transform/opacity for window morph, workspace slide, entrance"
-  ambient: "none — lamps glow steadily; only text carets and terminal cursors blink"
+  ambient: "none in default chrome — lamps glow steadily; opt-in [fire] may also burn along the progress band, rising through and above the titlebar (spec 392)"
 forbidden:
   - "backdrop-filter: blur()"
   - "fully opaque plate (max alpha 0.94; a narrow overlay adds a solid underlay)"
-  - "infinite or decorative animation: pulses, sweeps, shimmers, orbits, scanlines, vignettes"
+  - "infinite or decorative chrome animation: pulses, sweeps, shimmers, orbits, scanlines, vignettes; only the existing opt-in [fire] effect may animate titlebars (spec 392)"
   - "glow on anything but a lamp, an LED lens or the terminal progress ring's arc: legends, labels and titles never glow (the one exception is the composer bloom's one-shot afterimage flash)"
   - "coloured outlines or frame glows on status labels, tags and badges; state colour belongs to their ink, tint and LED, never their border"
   - "box-shadow, text-shadow or gradient on a repeated row (transcript row, diff line, list row), except the compact label readouts defined in spec 383"
@@ -366,8 +366,9 @@ Links use the theme link colour, underlined with a 2px offset; no glow. Inline c
 
 ## Motion
 
-- **None ambient.** No pulse, breathing, sweep, shimmer, orbit, scanline, radar ping or vignette.
-  Live state is a steady lit lamp.
+- **None ambient in default chrome.** No pulse, breathing, sweep, shimmer, orbit, scanline, radar
+  ping or vignette. Live state is a steady lit lamp. The opt-in `[fire]` exception below does not
+  permit other decorative chrome animation.
 - **Blinks** — only text carets, the terminal cursor and the selection-mode cursor; they stop under
   `prefers-reduced-motion`. A JS spinner glyph and ticking counters stay: they change content, not
   light.
@@ -376,11 +377,25 @@ Links use the theme link colour, underlined with a 2px offset; no glow. Inline c
   the 220ms transcript row enter.
 - **Reduced motion** — entrances capped at 120ms; caret blinks stop; hover and focus changes are
   instant.
-- **Config effects** keep their own behaviour and are not part of the chrome: `[shader]`, cursor
-  trail, `[fire]`, the `[music]` circuit trace, perspective tilt. The header band is a static
-  display well filled with one flat accent tint; it does not animate (the spec 188 oscilloscope was removed).
-  While a program reports progress it is a gauge whose fill moves only when the reported value
-  changes (spec 390).
+- **Config effects** keep their own behaviour: `[shader]`, cursor trail, `[fire]`, the `[music]`
+  circuit trace, perspective tilt. The existing opt-in `[fire] on` effect rises from the existing
+  progress band's lower edge through each burning window's titlebar and on past the top of the
+  window (spec 392), over everything in the titlebar: its text, tab strip, status, controls and
+  the gauge fill. The flames are only as wide as the band (its existing margins), fading over its
+  last 24px at each end, never the full titlebar length. A canvas in `.krypton-window__chrome` sits
+  on the band's lower edge as the chrome's top layer; while it exists the chrome stops clipping so
+  the part above the window shows, and while it shows the window is lifted over its sibling windows
+  so the flames above it paint over the window above (overlays, the Quick Terminal and the footer
+  stay on top). Each titlebar uses its own window's configured burn state; the workspace fire stays
+  beneath all windows and uses the aggregate priority. No new trigger or config key; OSC 9;4 progress
+  alone never ignites fire. Keys and readouts keep their materials, hit testing and drag behaviour;
+  chrome height is unchanged. Under reduced motion, fire is static and redraws only on state,
+  look or size changes.
+- **Header progress band** — the separate 6px display well keeps its full height and flat accent
+  tint at rest; the spec 188 oscilloscope remains removed. OSC 9;4 drives its gauge fill and
+  existing completion/fade/dismiss behaviour (spec 390). Fire uses the band's lower edge as its
+  source without replacing or subdividing the full-height progress fill; `progress_display = "ring"`
+  hides only that fill, not fire.
 
 ## Elevation and z-index
 
@@ -451,6 +466,11 @@ selector, and nothing in it bleeds out of that selector.
 
 ## Changelog
 
+- **2.4.1** — The existing opt-in `[fire]` config effect burns along the progress band, as wide as
+  the band, and rises from its lower edge through the titlebar and past the top of the window,
+  over text, tabs, controls and the unchanged 6px progress fill (spec 392), independently per
+  window; a window whose fire shows is lifted over sibling windows. Workspace fire stays unchanged. This is a narrow motion exception, static under reduced motion, not permission
+  for arbitrary chrome animation.
 - **2.4.0** — The header band is the terminal progress gauge (spec 390): an unlit track and a flat
   fill in the state colour from the left, busy as a steady half-lit band, no glow. The centre ring
   becomes optional (`[visual] progress_display`).

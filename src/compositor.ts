@@ -1487,7 +1487,10 @@ export class Compositor {
         winTop = tabTop;
       }
     }
-    this.fire.sync(win.id, winTop?.state ?? null, fireTrigger);
+    this.fire.sync(
+      win.id, winTop?.state ?? null, fireTrigger,
+      win.element.querySelector<HTMLElement>('.krypton-window__chrome > .krypton-window__titlebar'),
+    );
 
     const label = winTop ? programStatusLabel(winTop) : null;
     let chip = win.element.querySelector<HTMLElement>('.krypton-window__program-status');
