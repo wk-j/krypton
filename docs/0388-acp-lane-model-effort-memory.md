@@ -170,7 +170,7 @@ Picker (Cmd+P then ,):
    `switched; not remembered: <reason>`. The switch stays.
 
 Spawn (fresh HarnessLane only):
-1. acp_spawn sets model_override = lane_models.<backend>.active (unchanged, incl. MiMo default)
+1. acp_spawn sets model_override = lane_models.<backend>.active (empty values use the adapter default)
 2. acp_session_new parses model state and effort state
 3. If memory.model[backend] is advertised, model_override is set to it
 4. apply_session_model sends model_override and refreshes effort from the reply

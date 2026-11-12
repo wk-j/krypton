@@ -17,7 +17,6 @@ export const BACKEND_LABELS: Record<string, string> = {
   junie: 'Junie',
   omp: 'OMP',
   copilot: 'Copilot',
-  mimo: 'MiMo',
   cline: 'Cline',
   antigravity: 'Antigravity',
   fx: 'fx',
@@ -32,8 +31,8 @@ export const HARNESS_BACKEND_ORDER: readonly string[] = [
   'pi-acp',
 ];
 
-/** Add-lane picker entries: drops local-only backends (`antigravity`,
- * spec 287) when `options.remote` is set. */
+/** Add-lane picker entries: excludes removed backends even when advertised by
+ * an older runtime, and local-only Antigravity (spec 287) in remote harnesses. */
 export function harnessBackends(
   backends: AcpBackendDescriptor[],
   options: { remote?: boolean } = {},
@@ -43,6 +42,7 @@ export function harnessBackends(
     return index === -1 ? HARNESS_BACKEND_ORDER.length : index;
   };
   return backends
+    .filter((backend) => backend.id !== 'mimo')
     .filter((backend) => !(options.remote && backend.id === 'antigravity'))
     .slice()
     .sort((a, b) => {
@@ -78,8 +78,6 @@ export function backendLogoId(backendId: string): string {
       return 'krypton-logo-grok';
     case 'copilot':
       return 'krypton-logo-copilot';
-    case 'mimo':
-      return 'krypton-logo-mimo';
     case 'cline':
       return 'krypton-logo-cline';
     case 'antigravity':
@@ -162,7 +160,6 @@ export function laneAccentForLabel(label: string): string {
   if (/^omp(-|$)/i.test(label)) return laneAccent(9);
   if (/grok/i.test(label)) return laneAccent(10);
   if (/copilot/i.test(label)) return laneAccent(11);
-  if (/mimo/i.test(label)) return laneAccent(12);
   if (/cline/i.test(label)) return laneAccent(13);
   if (/antigravity/i.test(label)) return laneAccent(14);
   if (/^fx(-|$)/i.test(label)) return laneAccent(15);

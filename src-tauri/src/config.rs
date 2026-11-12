@@ -886,14 +886,13 @@ pub struct AcpHarnessConfig {
     /// absolute remote project directory.
     pub remote_profiles: Vec<RemoteHarnessProfile>,
     /// Per-backend model selection. Keyed by backend id (`opencode`,
-    /// `claude`, `codex`, `cursor`, `droid`, `junie`, `mimo`, `cline`, `fx`). `active` is the
+    /// `claude`, `codex`, `cursor`, `droid`, `junie`, `cline`, `fx`). `active` is the
     /// model applied to the lane: Droid via `-m`, OpenCode and fx
     /// via `session/set_config_option`, and any ACP-native backend that advertises
-    /// model state in `session/new` (verified: `claude`, `mimo`) via a post-`session/new`
+    /// model state in `session/new` (verified: `claude`) via a post-`session/new`
     /// `session/set_model` (sent verbatim so aliases like `opus`/`sonnet`
     /// resolve adapter-side; a failure is non-fatal — the lane keeps the agent
-    /// default). MiMo defaults to its anonymous free `mimo/mimo-auto` model when
-    /// `active` is empty. `models` is an informational allow-list shown in the UI; it is
+    /// default). `models` is an informational allow-list shown in the UI; it is
     /// not enforced and is not the model discovery source. Backends that do not
     /// advertise model state yet (Cursor, Junie, OMP, Pi, Grok, Cline) are accepted but
     /// ignored at spawn — the entry only drives the model chip; they auto-enable

@@ -3494,13 +3494,6 @@ describe('laneAccentForLabel', () => {
     expect(laneAccentForLabel('Copilot-1')).not.toBe(laneAccent(1));
   });
 
-  it('routes MiMo labels to the 12th palette slot, not the numeric fallback', () => {
-    // MiMo is the 12th named lane. Without the explicit /mimo/i arm,
-    // 'MiMo-1' would hit the -(\d+)$ fallback → laneAccent(1) (Codex blue).
-    expect(laneAccentForLabel('MiMo-1')).toBe(laneAccent(12));
-    expect(laneAccentForLabel('MiMo-1')).not.toBe(laneAccent(1));
-  });
-
   it('routes Cline labels to the 13th palette slot, not the numeric fallback', () => {
     // Spec 159: Cline is the 13th named lane. Without the explicit /cline/i arm,
     // 'Cline-1' would hit the -(\d+)$ fallback → laneAccent(1) (Codex blue).
@@ -3559,6 +3552,15 @@ describe('pickLaneAccent', () => {
 });
 
 describe('harnessBackends', () => {
+  it('excludes removed MiMo backends advertised by older runtimes', () => {
+    const backends = [
+      { id: 'mimo', display_name: 'MiMo', command: 'mimo' },
+      { id: 'claude', display_name: 'Claude', command: 'npx' },
+    ];
+    expect(harnessBackends(backends).map((backend) => backend.id)).toEqual(['claude']);
+    expect(harnessBackends(backends, { remote: true }).map((backend) => backend.id)).toEqual(['claude']);
+  });
+
   it('offers Antigravity locally but drops it in a remote harness', () => {
     const backends = [
       { id: 'claude', display_name: 'Claude', command: 'npx' },
@@ -3604,7 +3606,6 @@ describe('spec 125 lane rail disambiguation', () => {
       expect(backendLogoId('omp')).toBe('krypton-logo-omp');
       expect(backendLogoId('grok')).toBe('krypton-logo-grok');
       expect(backendLogoId('copilot')).toBe('krypton-logo-copilot');
-      expect(backendLogoId('mimo')).toBe('krypton-logo-mimo');
       expect(backendLogoId('cline')).toBe('krypton-logo-cline');
       expect(backendLogoId('antigravity')).toBe('krypton-logo-antigravity');
       expect(backendLogoId('fx')).toBe('krypton-logo-fx');

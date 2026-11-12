@@ -65,12 +65,6 @@ export const BACKEND_LOGO_SVG_DEFS = [
     '<ellipse cx="6.2" cy="8.7" rx="0.95" ry="1.5" fill="currentColor"/>' +
     '<ellipse cx="9.8" cy="8.7" rx="0.95" ry="1.5" fill="currentColor"/>' +
     '</symbol>',
-  // mimo: "mi" mark in a rounded tile (Xiaomi MiMo-Code)
-  '<symbol id="krypton-logo-mimo" viewBox="0 0 16 16">' +
-    '<rect x="2" y="2" width="12" height="12" rx="3.2" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
-    '<path d="M4.8 11 V6 H7.6 Q8.8 6 8.8 7.2 V11" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>' +
-    '<line x1="11.2" y1="6" x2="11.2" y2="11" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
-    '</symbol>',
   // cline: terminal prompt bracket + caret (CLI coding agent)
   '<symbol id="krypton-logo-cline" viewBox="0 0 16 16">' +
     '<rect x="2" y="2.5" width="12" height="11" rx="2.4" fill="none" stroke="currentColor" stroke-width="1.3"/>' +

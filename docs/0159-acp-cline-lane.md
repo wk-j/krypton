@@ -19,7 +19,7 @@
 Cline ships a CLI that speaks the Agent Client Protocol (`cline --acp`), but Krypton's
 ACP harness has no `cline` backend. Users who run Cline (a popular open-source coding
 agent with its own Skills/Hooks/MCP stack) cannot spawn it as a lane alongside Claude,
-Cursor, Junie, MiMo, etc.
+Cursor, Junie, etc.
 
 ## Solution
 
@@ -59,7 +59,7 @@ its model from its own auth/config; treated as display-only like Cursor/Codex).
   contrary to the original "no `--model` flag" note. v1 still applies no spawn-time model
   flag (Cline binds provider+model through `cline auth`/config); `lane_models.cline.active`
   is chip-only. If Cline's `session/new` later advertises `models{...}`, the generic
-  model-picker path handles it with zero extra code (same as MiMo's inheritance).
+  model-picker path handles it with zero extra code.
 
 ## Prior Art
 
@@ -70,7 +70,7 @@ existing ACP lane. Most relevant prior specs:
 |------|---------------|-----------|
 | Cursor (113) | ignores `session/new` mcpServers → native `.cursor/mcp.json` | same defect class; Cline differs (advertises *no* capability vs. advertise-then-ignore) |
 | Junie (119) | native `--mcp-location` overlay (per-lane dir under `runtime/`) | **the adopted pattern** — Cline's overlay reuses this shape (per-lane file + spawn-time pointer) |
-| MiMo (most recent) | generic model path via `session/set_model` | template for a clean, low-quirk new lane |
+| Claude | generic model path via `session/set_model` | existing model-state handling |
 | Copilot (150) | stdio ACP, env-var/`/login` auth, startup hints | template for startup-hint branch + auth messaging |
 
 **Krypton delta** — Cline joins with a native-config MCP overlay (`CLINE_MCP_SETTINGS_PATH`),
@@ -95,7 +95,7 @@ matches the harness's existing keyboard-first lane lifecycle with no new afforda
 
 ### Data Structures
 
-No new types. New `builtin_backends()` tuple (insert after the `mimo` entry):
+No new types. New `builtin_backends()` tuple (insert after the `copilot` entry):
 
 ```rust
 (

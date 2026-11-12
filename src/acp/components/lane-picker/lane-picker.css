@@ -108,7 +108,6 @@
   .acp-harness__picker-logo--omp      { color: var(--krypton-backend-omp); }
   .acp-harness__picker-logo--grok     { color: var(--krypton-backend-grok); }
   .acp-harness__picker-logo--copilot  { color: var(--krypton-backend-copilot); }
-  .acp-harness__picker-logo--mimo     { color: var(--krypton-backend-mimo); }
   .acp-harness__picker-logo--cline    { color: var(--krypton-backend-cline); }
   .acp-harness__picker-logo--antigravity { color: var(--krypton-backend-antigravity); }
   .acp-harness__picker-logo--fx       { color: var(--krypton-backend-fx); }

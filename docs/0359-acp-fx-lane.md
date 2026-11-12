@@ -78,7 +78,7 @@ ACP does say to break category ties by array order. But a provider is not a mode
 | Client | Implementation | Notes |
 |--------|---------------|-------|
 | Any ACP client (Zed, etc.) | fx docs: `{"command": "/abs/path/fx", "args": ["acp"]}`, server cwd = project | `--model`, `--permission-mode`, `--provider` flags optional |
-| Krypton MiMo / Cline | PATH entry in `builtin_backends()`, `startup_hint` branch, label/logo/palette/CSS | Same shape as fx |
+| Krypton Cline | PATH entry in `builtin_backends()`, `startup_hint` branch, label/logo/palette/CSS | Same shape as fx |
 | Krypton OpenCode | Model via `configOptions` select + `session/set_config_option` | The path fx uses after the fix |
 
 **Krypton delta.** Krypton uses the documented command with no flags, so fx keeps the user's saved provider and permission mode (default `auto`). There is no sandbox chip, because fx has its own permission gate and runs commands in a sandbox in every mode except `full-access`.

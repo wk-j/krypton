@@ -62,7 +62,6 @@
   --krypton-backend-omp:      #d9c66f;
   --krypton-backend-grok:     #5ce6a8;
   --krypton-backend-copilot:  #7fa8ff;
-  --krypton-backend-mimo:     #ff8552;
   --krypton-backend-cline:    #56d6c0;
   --krypton-backend-antigravity: #ff7ad9;
   --krypton-backend-fx:       #c6f05a;
@@ -1638,7 +1637,6 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
     --krypton-backend-omp:      #8a7820;
     --krypton-backend-grok:     #1a8a5c;
     --krypton-backend-copilot:  #3a62c4;
-    --krypton-backend-mimo:     #c45a28;
     --krypton-backend-cline:    #1a8a80;
     --krypton-backend-antigravity: #b0308a;
     --krypton-backend-fx:       #5f7f12;

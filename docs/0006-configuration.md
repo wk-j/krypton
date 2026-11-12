@@ -661,7 +661,7 @@ does not start a migration turn or prove any production candidates migrated.
 
 ### ACP Agent Backends
 
-ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `codex`, `opencode`, `pi-acp`, `droid`, `cursor`, `junie`, `omp`, `grok`, `copilot`, `mimo`, `cline`, `fx`, and `antigravity`. They run as ACP Harness lanes.
+ACP agent backends are built into Krypton rather than configured in `krypton.toml`. The built-in backend IDs are `claude`, `codex`, `opencode`, `pi-acp`, `droid`, `cursor`, `junie`, `omp`, `grok`, `copilot`, `cline`, `fx`, and `antigravity`. They run as ACP Harness lanes.
 
 | Backend | Command |
 |---------|---------|
@@ -675,14 +675,13 @@ ACP agent backends are built into Krypton rather than configured in `krypton.tom
 | OMP | `omp acp` |
 | Grok | `grok --trust agent stdio` |
 | Copilot | `copilot --acp --stdio` |
-| MiMo | `mimo acp` |
 | Cline | `cline --acp` |
 | fx | `fx acp` |
 | Antigravity | `./agy_acp_server.par` (managed install from the ACP Registry, launched from its cache directory; local-only) |
 
 Claude and Codex run through `npx` with the `@latest` tag, so every new lane resolves the newest adapter release (and the Claude/Codex CLI each adapter bundles), skipping any older global or project-local copy. Grok and OMP use the CLI installed on the machine; once per launch Krypton checks them and, when either is behind, shows an update button in the ACP Harness window titlebar that runs `grok update` / `omp update` in a terminal tab. See `docs/0322-acp-backend-update-check.md`.
 
-Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, Codex login/adapter setup, `pi /login` or provider env vars, Factory `FACTORY_API_KEY` env var or `droid` device-code flow, `cursor-agent login` or `CURSOR_API_KEY`, `junie` first-run for JetBrains Account or `JUNIE_API_KEY` / `--auth <token>` / BYOK provider keys, `omp` first-run/auth-broker or provider keys, `grok` first-run browser login or `XAI_API_KEY`, `copilot` `/login` device flow or `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`, `mimo` first-run provider setup, `cline auth`, `fx login` / `fx setup` or `AI_GATEWAY_API_KEY`). Antigravity is the exception: Krypton installs it and signs it in automatically (see below).
+Krypton resolves these commands through `PATH`; macOS GUI launches use a cached login-shell `PATH`. Authentication is the user's responsibility outside Krypton (`claude /login`, Codex login/adapter setup, `pi /login` or provider env vars, Factory `FACTORY_API_KEY` env var or `droid` device-code flow, `cursor-agent login` or `CURSOR_API_KEY`, `junie` first-run for JetBrains Account or `JUNIE_API_KEY` / `--auth <token>` / BYOK provider keys, `omp` first-run/auth-broker or provider keys, `grok` first-run browser login or `XAI_API_KEY`, `copilot` `/login` device flow or `COPILOT_GITHUB_TOKEN` / `GH_TOKEN` / `GITHUB_TOKEN`, `cline auth`, `fx login` / `fx setup` or `AI_GATEWAY_API_KEY`). Antigravity is the exception: Krypton installs it and signs it in automatically (see below).
 
 **Pi lane prerequisites.** The Pi-1 lane uses the third-party [`pi-acp`](https://github.com/svkozak/pi-acp) adapter to drive the [`pi`](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) coding agent. Install both globally:
 
@@ -813,7 +812,7 @@ See `docs/0069-acp-agent-support.md` for the original ACP design, `docs/0084-acp
 | `[[acp_harness.remote_profiles]]` | `host` | string | — | OpenSSH host alias; user, port, identity and ProxyJump remain in `~/.ssh/config` |
 | `[[acp_harness.remote_profiles]]` | `project_dir` | absolute path | — | Remote project root sent through the runtime protocol, never a shell command |
 | `[[acp_harness.remote_profiles]]` | `connect_timeout_seconds` | integer | `15` | Bounded hello-handshake timeout |
-| `[acp_harness.lane_models.<backend>]` | `active` | string | `""` | Model id/alias applied to the lane (CLI flag at spawn, or `session/set_model`/`set_config_option` after `session/new`). Empty = use the adapter default, except MiMo uses its anonymous free `mimo/mimo-auto` model. A model remembered from the picker in `acp-lane-models.toml` takes precedence for harness lanes (spec 388) |
+| `[acp_harness.lane_models.<backend>]` | `active` | string | `""` | Model id/alias applied to the lane (CLI flag at spawn, or `session/set_model`/`set_config_option` after `session/new`). Empty = use the adapter default. A model remembered from the picker in `acp-lane-models.toml` takes precedence for harness lanes (spec 388) |
 | `[acp_harness.lane_models.<backend>]` | `models` | array | `[]` | Informational allow-list (not enforced). The in-harness picker (spec 127) sources its options from the agent-advertised `availableModels`, not this array |
 | `[acp_wire]` | `capture` | string | `"off"` | ACP wire tap mode: `off`, `meta` (size, method, id, timing), or `full` (also message bodies — prompts, file contents, tool output). Applied at launch and on Reload Config; the palette `ACP Wire: Capture …` commands change it at runtime without writing back (spec 288) |
 | `[acp_wire]` | `ring_events` | int | `20000` | In-memory ring size in events, clamped to 1000–200000. Oldest evicted first |
@@ -839,7 +838,7 @@ project_dir = "/srv/repos/krypton"
 connect_timeout_seconds = 15
 ```
 
-**Lane model selection.** `<backend>` keys match the ACP Harness backend ids: `opencode`, `droid`, `cursor`, `claude`, `codex`, `pi-acp`, `junie`, `omp`, `grok`, `copilot`, `mimo`, `cline`, `fx`, and `antigravity`. Krypton applies `active` only for backends that support model selection in v1:
+**Lane model selection.** `<backend>` keys match the ACP Harness backend ids: `opencode`, `droid`, `cursor`, `claude`, `codex`, `pi-acp`, `junie`, `omp`, `grok`, `copilot`, `cline`, `fx`, and `antigravity`. Krypton applies `active` only for backends that support model selection in v1:
 
 - **OpenCode** (v2+) — `session/new` advertises no `models` object; it carries a stable ACP `configOptions` select with `category: "model"`. Krypton applies `active` via `session/set_config_option {configId, value}` right after `session/new`, and the in-harness picker lists that select's options and switches through the same request. A failure (model not in OpenCode's list — e.g. its provider is not authenticated in `opencode auth list` — or a timeout) is **non-fatal**: the lane starts on OpenCode's own default and the model chip turns amber. Empty `active` = OpenCode's default.
 - **fx** — same `configOptions` path as OpenCode. fx advertises a `provider` select ahead of its `model` select under `category: "model"`; when several model-category selects exist, Krypton uses the one whose id is `model` (otherwise the first). `active` must be one of the models fx offers for its saved provider; a rejection is non-fatal (amber chip, fx's current model keeps running).

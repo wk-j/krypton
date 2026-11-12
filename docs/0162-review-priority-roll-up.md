@@ -7,7 +7,7 @@
 
 ## Problem
 
-`mark_review_priority` (spec 160) data is currently visible **only inside the Diff Window**: a lane self-reports `high`/`routine` line ranges, and the Window folds routine hunks and marks/navigates high ones. There is no harness-level awareness — the human cannot see, without opening each lane's diff one by one, that "Claude-1 flagged 3 high spots, MiMo-1 flagged 1." The user wants the same harness-level treatment the other two self-report surfaces already have: a quiet footer indicator plus a summon-on-demand overlay.
+`mark_review_priority` (spec 160) data is currently visible **only inside the Diff Window**: a lane self-reports `high`/`routine` line ranges, and the Window folds routine hunks and marks/navigates high ones. There is no harness-level awareness — the human cannot see, without opening each lane's diff one by one, that "Claude-1 flagged 3 high spots, Codex-1 flagged 1." The user wants the same harness-level treatment the other two self-report surfaces already have: a quiet footer indicator plus a summon-on-demand overlay.
 
 ## Solution
 

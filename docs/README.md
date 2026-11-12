@@ -39,6 +39,7 @@ Listed by spec number. Older specs remain in this directory.
 | 390 | [Header Band Progress](./0390-header-band-progress.md) |
 | 391 | [Workspace Fire](./0391-workspace-fire.md) |
 | 392 | [Titlebar Fire](./0392-titlebar-fire.md) |
+| 393 | [Remove MiMo Integration](./0393-remove-mimo.md) |
 
 ## ADRs (31)
 
