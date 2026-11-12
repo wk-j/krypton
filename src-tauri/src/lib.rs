@@ -470,6 +470,7 @@ pub fn run() {
                     .level(log::LevelFilter::Info)
                     .build(),
             )?;
+            acp::remove_retired_junie_overlays();
 
             // Size the window to cover the entire screen including menu bar and dock
             // (macOS fullscreen mode breaks transparency, so we manually set position/size)

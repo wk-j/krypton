@@ -3506,9 +3506,9 @@ describe('laneAccentForLabel', () => {
     expect(laneAccentForLabel('gfx-2')).toBe(laneAccent(2));
   });
 
-  it('keeps a 15-color palette wider than the 15 named lanes', () => {
-    // Slots 8 … Antigravity=14, fx=15 all occupy distinct slots, so the
-    // palette must have at least 15 distinct entries — otherwise
+  it('keeps 15 distinct palette slots up to the highest named slot', () => {
+    // Named lanes keep their fixed slots up to fx=15 (3, 8 and 12 now have no
+    // backend), so the palette needs at least 15 distinct entries — otherwise
     // laneAccent(15) wraps modulo to Codex blue.
     const slots = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map(laneAccent);
     expect(new Set(slots).size).toBe(15);

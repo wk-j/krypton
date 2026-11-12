@@ -12,7 +12,7 @@ The ACP harness should auto-approve only Krypton's built-in lane memory tools, b
 
 ## Solution
 
-Keep memory auto-approval, but make the detector require both an allowed memory tool name and a built-in memory server marker. The accepted markers are the server name `krypton-harness-memory`, the namespaced identifier fragment `krypton_harness_memory`, or the local endpoint path `/mcp/harness/`. Tool name matching covers structured tool ids, title text, ACP content text, and `permission.options[].name` labels, case-insensitively. The option-label path was added so adapters that emit generic prompts (e.g., Junie/JetBrains, where `toolCall.title` is just `"Allow running MCP?"` and the server/tool identity appears only in option labels such as `Always allow ("krypton-harness-memory:peer_send")`) still auto-approve. Requests from `.mcp.json` bridged servers, third-party MCP servers, or arbitrary tools with the same names continue through the normal permission UI.
+Keep memory auto-approval, but make the detector require both an allowed memory tool name and a built-in memory server marker. The accepted markers are the server name `krypton-harness-memory`, the namespaced identifier fragment `krypton_harness_memory`, or the local endpoint path `/mcp/harness/`. Tool name matching covers structured tool ids, title text, ACP content text, and `permission.options[].name` labels, case-insensitively. The option-label path was added so adapters that emit generic prompts (first seen from Junie/JetBrains, whose backend was later removed in [spec 394](./0394-remove-junie-backend.md); the form stays backend-neutral — `toolCall.title` is just `"Allow running MCP?"` and the server/tool identity appears only in option labels such as `Always allow ("krypton-harness-memory:peer_send")`) still auto-approve. Requests from `.mcp.json` bridged servers, third-party MCP servers, or arbitrary tools with the same names continue through the normal permission UI.
 
 ## Research
 
@@ -70,7 +70,7 @@ interface MemoryPermissionMatch {
 Auto-approve only when both conditions are true:
 
 1. The request identifies an allowed built-in tool. Historical `memory_set` / `memory_get` / `memory_list` were replaced by spec 293; `src/acp/harness-permission-scan.ts` defines the live handoff/peer/attention/review/ticket/lesson taxonomy. Timeline's exact final names are `timeline_record`, `timeline_list`, `timeline_merge`, `timeline_pending_resolve`, `timeline_conflict_list`, `timeline_conflict_record` and `timeline_conflict_checked` ([spec 316](0316-llm-managed-timeline.md)); `timeline_suggest` is removed. Evidence-first recording/grouping/legacy resolution is agent-owned, without a human persistence request or quote. Review request/reply remain retired (spec 145); review_outcome and default-on attention triage retain their existing contracts (specs 146/130).
-2. The tool identity must belong to the built-in Harness server (`krypton-harness-memory`, `krypton_harness_memory`, `krypton-harness-bus`, `krypton_harness_bus`, or `/mcp/harness/`). Every built-in tool family pairs exact tool identity with that server identity, as Timeline did first: a qualified title (`mcp__<server>__<tool>`, fx `mcp_<server>_<tool>`), top-level server metadata paired with an exact bare title, a whole qualified `Tool: <server>/<tool>` content line, or the Junie `Always allow ("<server>:<tool>")` option label. A marker or name anywhere else — arguments (`rawInput`), free text, a shell command — never authorizes a call, and an `execute` call never qualifies (2026-11-10 fix; see [spec 380](./0380-acp-lane-adapters.md) "Auto-allow finding").
+2. The tool identity must belong to the built-in Harness server (`krypton-harness-memory`, `krypton_harness_memory`, `krypton-harness-bus`, `krypton_harness_bus`, or `/mcp/harness/`). Every built-in tool family pairs exact tool identity with that server identity, as Timeline did first: a qualified title (`mcp__<server>__<tool>`, fx `mcp_<server>_<tool>`), top-level server metadata paired with an exact bare title, a whole qualified `Tool: <server>/<tool>` content line, or the qualified `Always allow ("<server>:<tool>")` option label. A marker or name anywhere else — arguments (`rawInput`), free text, a shell command — never authorizes a call, and an `execute` call never qualifies (2026-11-10 fix; see [spec 380](./0380-acp-lane-adapters.md) "Auto-allow finding").
 
 All other requests, including a third-party MCP server that also exposes `memory_set` or `peer_send`, must enter the existing permission flow.
 
@@ -83,7 +83,7 @@ All other requests, including a third-party MCP server that also exposes `memory
 2. AcpClient's lane decoder (spec 380) runs the harness auto-allow detector once and emits
    permission_request with `harnessTool` set; AcpHarnessView.addPermission() reads it.
 4. Timeline uses qualified adapter titles, top-level server identity paired with the title,
-   standalone qualified `Tool:` content labels, or the supported Junie option-label wrapper.
+   standalone qualified `Tool:` content labels, or the qualified option-label wrapper.
    It never derives identity from `rawInput`/arguments; an explicitly foreign qualified title
    cannot be overridden by argument text, content or option labels. Since 2026-11-10 every
    built-in tool family uses this same rule, and an `execute` call never qualifies.
@@ -105,9 +105,9 @@ Add Vitest cases for:
 - Accept content text containing `Tool: krypton-harness-memory/memory_set` plus uppercase title `MEMORY_SET`.
 - Reject `{ name: 'memory_set' }` with no built-in marker.
 - Reject non-memory tools even when a marker appears.
-- Accept Junie-style payload where `toolCall.title` is generic ("Allow running MCP?") and both the server marker and tool name appear only inside `permission.options[].name`.
-- Reject Junie-style option labels that reference a third-party server, even if a known tool name is present.
-- Reject Junie-style option labels that reference the built-in server with a non-allowed tool (e.g., `shell_run`).
+- Accept an option-label payload where `toolCall.title` is generic ("Allow running MCP?") and both the server marker and tool name appear only inside `permission.options[].name`.
+- Reject option labels that reference a third-party server, even if a known tool name is present.
+- Reject option labels that reference the built-in server with a non-allowed tool (e.g., `shell_run`).
 
 ## Edge Cases
 

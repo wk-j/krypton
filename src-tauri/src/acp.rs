@@ -3757,6 +3757,29 @@ fn sanitize_overlay_path_component(s: &str) -> String {
         .collect()
 }
 
+/// Spec 394: Junie support is removed, so no lane will ever close or GC its
+/// per-lane `mcp.json` overlays again. Those files hold MCP servers with
+/// `${VAR}` already expanded, so drop the whole retired root once per launch.
+pub fn remove_retired_junie_overlays() {
+    let Some(base) = crate::config::config_dir() else {
+        return;
+    };
+    match remove_retired_junie_overlay_root(&base) {
+        Ok(true) => log::info!("removed retired Junie MCP overlays"),
+        Ok(false) => {}
+        Err(e) => log::warn!("remove retired Junie MCP overlays: {e}"),
+    }
+}
+
+fn remove_retired_junie_overlay_root(config_dir: &std::path::Path) -> Result<bool, String> {
+    let dir = config_dir.join("runtime").join("junie");
+    if !dir.exists() {
+        return Ok(false);
+    }
+    std::fs::remove_dir_all(&dir).map_err(|e| format!("remove {}: {e}", dir.display()))?;
+    Ok(true)
+}
+
 // ─── Cline native MCP overlay (ACP session/new mcpServers is dropped) ──
 //
 // cline 3.0.24 `initialize` advertises no `mcpCapabilities`, so http/sse servers
@@ -5103,6 +5126,32 @@ mod tests {
         let backends = super::acp_list_backends().expect("backend list");
         assert!(!backends.iter().any(|backend| backend.id == "junie"));
         assert!(resolve_backend("cline").is_some());
+    }
+
+    #[test]
+    fn retired_junie_overlay_root_is_removed_and_cline_kept() {
+        let base = std::env::temp_dir().join(format!(
+            "krypton-junie-retire-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        let runtime = base.join("runtime");
+        let junie_lane = runtime.join("junie/h1/Junie-1");
+        let cline_lane = runtime.join("cline/h1/Cline-1");
+        std::fs::create_dir_all(&junie_lane).expect("junie dir");
+        std::fs::create_dir_all(&cline_lane).expect("cline dir");
+        std::fs::write(junie_lane.join("mcp.json"), "{}").expect("junie overlay");
+        std::fs::write(cline_lane.join("cline_mcp_settings.json"), "{}").expect("cline overlay");
+
+        assert_eq!(super::remove_retired_junie_overlay_root(&base), Ok(true));
+        assert!(!base.join("runtime").join("junie").exists());
+        assert!(cline_lane.join("cline_mcp_settings.json").exists());
+        assert_eq!(super::remove_retired_junie_overlay_root(&base), Ok(false));
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
