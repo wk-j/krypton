@@ -1376,6 +1376,8 @@ export class AcpHarnessView implements ContentView {
   private lastLaneMarksKey: string | null = null;
   private laneMarksListeners = new Set<() => void>();
   private lanes: HarnessLane[] = [];
+  private permissionCountDisposed = false;
+  private readonly permissionCountListeners = new Set<() => void>();
   private usageProviderListeners = new Set<() => void>();
   private activeLaneId = '';
   private laneBus = new LaneBus();
@@ -5160,6 +5162,20 @@ export class AcpHarnessView implements ContentView {
     return this.toolErrorLanes.size > 0 ? 'tool_error' : null;
   }
 
+  /** Spec 395: exact ACP queues only; questions/command approvals are separate. */
+  getPendingPermissionCount(): number {
+    return this.permissionCountDisposed ? 0 : this.lanes.reduce((total, lane) => total + lane.pendingPermissions.length, 0);
+  }
+
+  onPendingPermissionCountChange(cb: () => void): () => void {
+    this.permissionCountListeners.add(cb);
+    return () => this.permissionCountListeners.delete(cb);
+  }
+
+  private notifyPendingPermissionCountChanged(): void {
+    for (const listener of this.permissionCountListeners) listener();
+  }
+
   /** spec 365: drop a lane's failed-tool mark (acknowledged, closed or restarted). */
   private clearToolError(laneId: string): void {
     if (this.toolErrorLanes.delete(laneId)) this.onFireTriggerChange?.();
@@ -5184,6 +5200,9 @@ export class AcpHarnessView implements ContentView {
   }
 
   dispose(): void {
+    this.permissionCountDisposed = true;
+    this.notifyPendingPermissionCountChanged();
+    this.permissionCountListeners.clear();
     this.element.removeEventListener('focusout', this.dictationFocusOutHandler);
     this.dictationCtl.abort(false);
     this.liveVoiceCtl.dispose();
@@ -8516,6 +8535,7 @@ export class AcpHarnessView implements ContentView {
         lane.activity = null;
         lane.pendingTurnExtractions = [];
         lane.pendingPermissions = [];
+        this.notifyPendingPermissionCountChanged();
         this.abandonPendingQuestions(lane);
         lane.acceptAllForTurn = false;
         lane.rejectAllForTurn = false;
@@ -9053,6 +9073,7 @@ export class AcpHarnessView implements ContentView {
     }
     lane.pendingTurnExtractions = [];
     lane.pendingPermissions = [];
+    this.notifyPendingPermissionCountChanged();
     this.abandonPendingQuestions(lane);
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;
@@ -9349,6 +9370,7 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     lane.pendingPermissions.push(permission);
+    this.notifyPendingPermissionCountChanged();
     this.setLaneStatus(lane, 'needs_permission');
     // A second request while already paused does not transition status, so the
     // LaneBus emit the console relies on never fires — refresh it directly.
@@ -9483,6 +9505,7 @@ export class AcpHarnessView implements ContentView {
       return;
     }
     lane.pendingPermissions.shift();
+    this.notifyPendingPermissionCountChanged();
     const label = option?.name ?? (action === 'accept' ? 'accepted' : 'rejected');
     permission.resolvedLabel = `${action === 'accept' ? '✓' : '✗'} ${label}${auto ? ` (${autoReason})` : ''}`;
     permission.auto = auto;
@@ -9497,6 +9520,7 @@ export class AcpHarnessView implements ContentView {
       await lane.client.respondPermission(permission.requestId, option?.optionId ?? null);
     } catch (e) {
       lane.pendingPermissions.unshift(permission);
+      this.notifyPendingPermissionCountChanged();
       this.setLaneStatus(lane, 'needs_permission');
       this.updatePermissionDecision(permission, 'failed', 'permission reply failed');
       this.appendPermissionReplyFailure(lane, e);
@@ -11258,6 +11282,7 @@ export class AcpHarnessView implements ContentView {
     clearToolTranscriptRetention(lane);
     const index = this.lanes.findIndex((l) => l.id === lane.id);
     if (index !== -1) this.lanes.splice(index, 1);
+    this.notifyPendingPermissionCountChanged();
     this.steerCtl.resetLane(lane.id); // spec 278
     this.updateToolTick();
     await this.ticketCtl.releaseLane(lane.id);
@@ -11415,6 +11440,7 @@ export class AcpHarnessView implements ContentView {
     lane.activity = null;
     lane.pendingUserEcho = null;
     lane.pendingPermissions = [];
+    this.notifyPendingPermissionCountChanged();
     lane.pendingQuestions = [];
     lane.pendingTurnExtractions = [];
     lane.acceptAllForTurn = false;
@@ -11454,6 +11480,7 @@ export class AcpHarnessView implements ContentView {
       lane.client = null;
     }
     lane.pendingPermissions = [];
+    this.notifyPendingPermissionCountChanged();
     lane.pendingQuestions = [];
     lane.pendingTurnExtractions = [];
     lane.acceptAllForTurn = false;
@@ -11529,6 +11556,7 @@ export class AcpHarnessView implements ContentView {
     lane.draft = '';
     lane.cursor = 0;
     lane.pendingPermissions = [];
+    this.notifyPendingPermissionCountChanged();
     lane.pendingQuestions = [];
     lane.pendingTurnExtractions = [];
     lane.stagedImages = [];
@@ -14265,6 +14293,7 @@ export class AcpHarnessView implements ContentView {
     lane.activeTurnStartedAt = null;
     lane.pendingTurnExtractions = [];
     lane.pendingPermissions = [];
+    this.notifyPendingPermissionCountChanged();
     this.abandonPendingQuestions(lane);
     lane.acceptAllForTurn = false;
     lane.rejectAllForTurn = false;

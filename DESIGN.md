@@ -1,6 +1,6 @@
 ---
 name: Krypton Console
-version: 2.4.3
+version: 2.4.7
 description: Skeuomorphic instrument faceplate — brushed graphite (aluminium in the light scheme) with engraved labels, recessed display wells, raised keys and lit lamps, over a transparent desktop
 appliesTo: "Every surface in the Tauri webview and the live-assist webview. Materials: src/styles/materials.css (--mat-*)."
 colors:
@@ -65,7 +65,7 @@ forbidden:
   - "a keyboard shortcut written as text (`[a] accept`, `esc close`) where a key cap can be drawn (the which-key legend chart prints its keys flat: nothing in it is pressable)"
   - "colouring model findings as pass/fail (ADR-0004)"
   - "declaring --mat-* anywhere but src/styles/materials.css"
-  - "raster textures; the brush is a CSS gradient"
+  - "raster textures in faceplate materials; the brush is a CSS gradient (user-selected workspace images are content, spec 395)"
 ---
 
 # Krypton Console
@@ -240,6 +240,7 @@ comment.
   Key caps and the target lamp stay faceplate parts and sit above the lamplight; in the
   dark scheme the head and foot print is dark where the lamp lights it and pale where the sheet is in
   the dark. It moves only when the caret moves; no ambient motion.
+- **Workspace backgrounds (spec 395).** A user-content layer beneath the transparent workspace, not a material: static colours, fixed gradients or imported images may be opaque. The Backgrounds manager remains a plate with flat library rows, image/colour swatches, a screen preview and selector keys. Follow the approved composition: a narrow Library sidebar on the left; a broad Preview on the right, with Appearance and then one compact Event Rules section below it. Do not replace this hierarchy with an equal-column dashboard or Base/Needs permission editing modes. Library selection always edits the normal-background preview; the single Needs permission row owns its target picker, On/Off control and Save rule key. Apply, Return to base and Restore Desktop sit along the bottom, aligned with the editor. All manager text inherits configured font family/size. Library/details scroll independently; narrow panes stack the sidebar above the same preview/control hierarchy, and short panes may also scroll the outer view rather than clip controls. The broad preview has pane-bounded height, not a viewport-aspect constraint that makes it tiny. Image fit/position controls are source-specific; other sources explain where to edit colour. Hex and percentage inputs reserve content space independently of the global border-box reset, including native number steppers. The preview's sample window uses current screen/material tokens; it is not a screenshot or a second terminal. Content dimming/opacity never reaches windows, fire, music or chrome.
 - **Quick Terminal.** A plate drawer around a screen.
 - **Harness.** The lane body is a screen (the window's screen shows through; a lane adds the well's
   inset depth, not a second fill). The lane head is a plate strip with the name engraved and status as
@@ -290,6 +291,11 @@ Monospace everywhere. Labels are uppercase engraving (11px, 600, `0.13em`); key 
 `0.09em` (which-key's flat key labels, which have no cap, take their row label's size); tab titles keep their natural case (a path or a command). Body is mixed case at normal
 spacing. Every digit that changes — timers, counts, gauges, sizes, percentages — uses
 `font-variant-numeric: tabular-nums`, and sits in a readout when it is a figure on its own.
+
+The Backgrounds manager (spec 395) uses the configured `--krypton-font-size` (`[font] size`)
+for its body, headings, labels, selector legends, readouts and preview sample, rather than fixed
+small chrome sizes. Its text controls inherit that size; directional anchor glyphs keep the
+nine-position selector compact without shrinking its text or losing accessible position names.
 
 ## Geometry
 
@@ -375,6 +381,7 @@ Links use the theme link colour, underlined with a 2px offset; no glow. Inline c
 - **Kept** — WAAPI layout transitions on transform and opacity (window morph, workspace slide,
   entrance and exit), the 1px key press, one-shot event flashes up to 600ms drawn as a lamp flash,
   the 220ms transcript row enter.
+- **Workspace permission backdrop (spec 395)** — the one opt-in Needs permission rule may make a one-shot 280ms ease-out opacity crossfade between saved base and target content; it reverses when the last ACP permission clears. No ambient animation or additional event rules. Reduced motion and hidden documents settle instantly; Restore Desktop is immediate. Local Try it animates only the preview.
 - **Reduced motion** — entrances capped at 120ms; caret blinks stop; hover and focus changes are
   instant.
 - **Config effects** keep their own behaviour: `[shader]`, cursor trail, `[fire]`, the `[music]`
@@ -413,13 +420,13 @@ Links use the theme link colour, underlined with a 2px offset; no glow. Inline c
 
 ## Transparency hierarchy
 
-1. **Workspace** — fully transparent; the desktop shows through.
+1. **Document roots and workspace** — always transparent; the desktop shows through by default. An optional independent background-content layer sits beneath the workspace (spec 395); choosing Desktop removes its paint.
 2. **Screen** — `--mat-screen`: the theme backdrop at `[visual] opacity` (default 0.5; light themes
    floor at 0.94).
 3. **Plates** — 0.9 (dark) / 0.94 (light), whatever `[visual] opacity` says, so chrome stays legible.
 4. **Floating plates** — the same plate over `--mat-scrim`.
 
-Nothing is fully opaque. A narrow overlay that must hide what is under it adds a solid underlay
+No faceplate is fully opaque; user-selected workspace background content is not a faceplate. A narrow overlay that must hide what is under it adds a solid underlay
 (`--agent-surface-solid`) beneath the plate.
 
 ## Performance
@@ -467,6 +474,10 @@ selector, and nothing in it bleeds out of that selector.
 
 ## Changelog
 
+- **2.4.7** — Restore the approved Backgrounds sidebar / broad-preview hierarchy, Appearance and compact rule below it, and bottom actions aligned with the editor. Remove competing editing modes; the rule owns its target picker and save action. Preserve configured type, real-pane scrolling and full input contents (spec 395).
+- **2.4.6** — Backgrounds fits its actual pane: height-bounded preview, four/two/one-column responsive editor, separate commit/shortcut strips, short-pane scroll fallback, and content-sized hex/percentage fields with native stepper allowance. Configured text size is unchanged (spec 395).
+- **2.4.5** — Backgrounds uses configured standard-size text throughout its manager, with equal-width Library/Preview and Appearance/Event Rules rows, a full-width aspect-correct preview, bounded library scrolling and accessible directional anchor keys (spec 395).
+- **2.4.4** — User-selected static workspace backgrounds are content beneath the transparent shell, never raster faceplate materials. One opt-in ACP Needs permission rule permits a one-shot 280ms crossfade, instant for reduced motion/hidden documents; no ambient or additional event animation (spec 395).
 - **2.4.3** — Titlebar fire hangs down instead of rising: it starts at the progress band's top
   edge and burns down over the window's own terminal, embers falling below the flames; the
   titlebar itself stays clear (spec 392).

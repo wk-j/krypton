@@ -991,10 +991,10 @@ export class InputRouter {
         break;
       }
 
-      // a — open AI agent window (pi-agent). Shift+a is unbound.
+      // a — AI Agent; A — workspace Backgrounds (spec 395).
       case 'a':
         if (e.shiftKey) {
-          this.toNormal();
+          this.compositor.openBackgrounds().then(() => this.toNormal());
         } else {
           this.compositor.openAgentView().then(() => this.toNormal());
         }

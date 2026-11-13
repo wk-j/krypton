@@ -19,8 +19,6 @@ Listed by spec number. Older specs remain in this directory.
 
 | # | Spec |
 |---|------|
-| 374 | [Harness Lane Stats Toggle](./0374-harness-lane-stats-toggle.md) |
-| 375 | [Commit Browser](./0375-commit-browser.md) |
 | 376 | [Commit Explainer Background Job](./0376-commit-explainer-background-job.md) |
 | 377 | [Commit Explainer Job Strip](./0377-commit-explainer-job-strip.md) |
 | 378 | [Codex Guardian Review Row](./0378-codex-guardian-review-row.md) |
@@ -40,6 +38,7 @@ Listed by spec number. Older specs remain in this directory.
 | 392 | [Titlebar Fire](./0392-titlebar-fire.md) |
 | 393 | [Remove MiMo Integration](./0393-remove-mimo.md) |
 | 394 | [Junie Backend Removal](./0394-remove-junie-backend.md) |
+| 395 | [Workspace Backgrounds](./0395-workspace-backgrounds.md) |
 
 ## ADRs (31)
 

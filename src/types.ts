@@ -168,7 +168,7 @@ export interface WindowBounds {
 }
 
 /** Content types that can live inside a pane */
-export type PaneContentType = 'terminal' | 'diff' | 'markdown' | 'agent' | 'acp_harness' | 'context' | 'file_manager' | 'vault' | 'hurl' | 'pencil' | 'webview' | 'usage' | 'telegram_settings' | 'connected_computers' | 'review' | 'commit_browser';
+export type PaneContentType = 'terminal' | 'diff' | 'markdown' | 'agent' | 'acp_harness' | 'context' | 'file_manager' | 'vault' | 'hurl' | 'pencil' | 'webview' | 'usage' | 'telegram_settings' | 'connected_computers' | 'review' | 'commit_browser' | 'backgrounds';
 
 /** Runtime state mirrored from a backend child webview (see docs/0102-webview-windows.md). */
 export type WebviewId = number;
@@ -288,6 +288,9 @@ export interface ContentView {
    *  the only pane of its window's shown tab, the window footer continues that
    *  plate instead of drawing a seam, so the two read as one faceplate. */
   readonly platedFoot?: boolean;
+  /** Spec 395: exact human-pending ACP permission count; other views omit these. */
+  getPendingPermissionCount?(): number;
+  onPendingPermissionCountChange?(cb: () => void): () => void;
   /** Optional working directory associated with this content view */
   getWorkingDirectory?(): string | null;
   /** Authoritative workspace identity for target-aware project operations. */

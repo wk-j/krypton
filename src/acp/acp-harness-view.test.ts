@@ -341,7 +341,7 @@ function selfHost<T extends object>(target: T): T {
 /** A view double that keeps the real prototype, so the method under test can
  *  reach its own private helpers while every collaborator stays stubbed. */
 function viewDouble<T extends object>(stubs: T): T {
-  return Object.assign(Object.create(AcpHarnessView.prototype), { uiGenerations: new Map() }, stubs) as T;
+  return Object.assign(Object.create(AcpHarnessView.prototype), { uiGenerations: new Map(), permissionCountListeners: new Set<() => void>() }, stubs) as T;
 }
 
 /** Give a prototype-backed view double the ticket controller it delegates to. */
@@ -1987,6 +1987,64 @@ describe('ACP harness auto-allow permission detection', () => {
       title: 'mcp_krypton-harness-memory_shell_run',
       kind: 'other',
     }))).toBeNull();
+  });
+});
+
+describe('workspace background permission-count observation (spec 395)', () => {
+  interface ObserverHost {
+    getPendingPermissionCount(): number;
+    onPendingPermissionCountChange(cb: () => void): () => void;
+    addPermission(lane: HarnessLane, request: PermissionRequest): void;
+    resolvePermission(lane: HarnessLane, action: 'accept' | 'reject', auto: boolean): Promise<void>;
+    notifyPendingPermissionCountChanged(): void;
+    permissionCountDisposed: boolean;
+    render: ReturnType<typeof vi.fn>;
+  }
+  function setup() {
+    const reply = vi.fn(async () => undefined);
+    const lane = { id: 'observed', status: 'needs_permission', pendingPermissions: [], pendingQuestions: [{}], pendingComputerCommands: [{}], permissionMode: 'normal', client: { respondPermission: reply } } as unknown as HarnessLane;
+    const host = viewDouble({
+      lanes: [lane], permissionCountDisposed: false,
+      describePermission: vi.fn(() => ({})), appendPermissionTranscript: vi.fn(() => ({})),
+      matchArtifactWriteForGrant: vi.fn(() => null), matchReviewWriteForGrant: vi.fn(() => null),
+      setLaneStatus: vi.fn(), refreshOrchestratorConsole: vi.fn(),
+      clearDecisionStatus: vi.fn(), updateComposerTick: vi.fn(), render: vi.fn(),
+      updatePermissionDecision: vi.fn(), appendPermissionReplyFailure: vi.fn(), publishStream: vi.fn(),
+      liveVoiceCtl: { onPermissionRequested: vi.fn(), onPermissionResolved: vi.fn() },
+    }) as unknown as ObserverHost;
+    const request = (id: number): PermissionRequest => decodedPermission({ toolCall: { toolCallId: String(id), title: 'Run command' }, options: [{ optionId: 'once', kind: 'allow_once', name: 'Allow once' }] }, id);
+    return { host, lane, reply, request };
+  }
+  it('notifies queue additions/removals even with unchanged status, excluding other attention queues', async () => {
+    const { host, lane, request } = setup(); const counts: number[] = [];
+    const unsubscribe = host.onPendingPermissionCountChange(() => counts.push(host.getPendingPermissionCount()));
+    expect(host.getPendingPermissionCount()).toBe(0);
+    host.addPermission(lane, request(1)); host.addPermission(lane, request(2));
+    expect(counts).toEqual([1, 2]); expect(lane.status).toBe('needs_permission');
+    // The observer itself never requests a transcript repaint.
+    expect(host.render).not.toHaveBeenCalled();
+    await host.resolvePermission(lane, 'reject', false);
+    expect(counts).toEqual([1, 2, 1]);
+    unsubscribe(); await host.resolvePermission(lane, 'accept', false);
+    expect(counts).toEqual([1, 2, 1]); expect(host.getPendingPermissionCount()).toBe(0);
+  });
+  it('reports failed replies requeued and exposes zero after view disposal', async () => {
+    const { host, lane, reply, request } = setup(); const counts: number[] = [];
+    host.onPendingPermissionCountChange(() => counts.push(host.getPendingPermissionCount()));
+    host.addPermission(lane, request(1)); reply.mockRejectedValueOnce(new Error('connection lost'));
+    await host.resolvePermission(lane, 'accept', false);
+    expect(counts).toEqual([1, 0, 1]); expect(lane.pendingPermissions).toHaveLength(1);
+    host.permissionCountDisposed = true; host.notifyPendingPermissionCountChanged();
+    expect(counts).toEqual([1, 0, 1, 0]);
+  });
+  it('keeps every queue mutation explicitly instrumented, independent of status/render paths', () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'acp-harness-view.ts'), 'utf8');
+    const mutations = [...source.matchAll(/lane\.pendingPermissions(?: = \[\]|\.(?:push|shift|unshift)\([^\n]*\));/g)];
+    expect(mutations).toHaveLength(9);
+    for (const mutation of mutations) {
+      const after = source.slice(mutation.index! + mutation[0].length);
+      expect(after).toMatch(/^\s*this\.notifyPendingPermissionCountChanged\(\);/);
+    }
   });
 });
 
@@ -5018,6 +5076,7 @@ describe('cancel escalation → force-restart (spec 199, issue #13)', () => {
       cancelPendingReviewsForLane: () => {},
       ticketCtl: { releaseLane: async () => {} },
       clearCancelEscalation: clear,
+      notifyPendingPermissionCountChanged: vi.fn(),
       spawnLane: async (_l: EscLane, resumeSessionId?: string | null) => {
         resumed.push(resumeSessionId);
       },
@@ -5172,6 +5231,7 @@ describe('live voice delegation routing (spec 280)', () => {
       matchReviewWriteForGrant: () => null,
       setLaneStatus: () => {},
       refreshOrchestratorConsole: () => {},
+      notifyPendingPermissionCountChanged: vi.fn(),
       resolvePermission: async (_lane: object, _action: string, _auto: boolean, reason: string) => { accepted.push(reason); },
       liveVoiceCtl: { onPermissionRequested: () => {} },
     };
@@ -5195,6 +5255,7 @@ describe('live voice delegation routing (spec 280)', () => {
         matchReviewWriteForGrant: () => null,
         setLaneStatus: () => {},
         refreshOrchestratorConsole: () => {},
+        notifyPendingPermissionCountChanged: vi.fn(),
         resolvePermission: async () => {},
         liveVoiceCtl: { onPermissionRequested: (_l: object, id: number) => announced.push(id) },
       };

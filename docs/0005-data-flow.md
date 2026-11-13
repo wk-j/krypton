@@ -40,6 +40,18 @@
     stays mounted for the next summon.
 ```
 
+## Workspace backgrounds (spec 395)
+
+1. Before terminal/recovery creation, `Compositor.initializeBackgrounds()` loads the shared `BackgroundStore` via `background_list`. Failure retains Desktop and does not block startup. The compositor owns the renderer/store/controller independently of the manager tab.
+2. Leader A / `backgrounds.open` opens or focuses the singleton's window, tab and pane. The left library always selects the normal-background draft; adjustment touches only its preview. The compact rule row owns a separate target/enabled draft, and Use current preview copies appearance settings without applying either draft. Import sends bounded file bytes to Rust, which serializes decode/thumbnail/owned-file IO on `spawn_blocking` and atomically commits the library.
+3. Apply saves only the normal background; Save rule independently saves only the rule. Each preloads owned images, then sends revision-checked `background_apply` / `background_rule_save`. Only successful commits publish new shared state. Saving the base during an override leaves that override visible. Runtime counts/effective choices are never persisted.
+4. Every mounted content view with the optional pending-permission read/subscribe hooks registers with `PermissionBackgroundController`, including hidden Harness tabs. `AcpHarnessView` notifies directly after ACP queue mutation/clear/requeue and lane removal, independently of status equality and without an observer-triggered transcript render.
+5. A microtask reads final counts after synchronous auto-policy dispatch. Positive for 150ms activates the saved opt-in target; zero cancels activation and reverses to base. Questions, OSC, Pi-agent, file-review and computer-command approvals are not this predicate. Removing a view unregisters its contribution.
+6. `WorkspaceBackground` paints at most two slots in a body sibling immediately before the transparent workspace. WAAPI uses a cancel-safe 280ms opacity fade; reduced motion and hidden documents settle instantly. Decode generations prevent a cleared permission from activating later. Fire/music/windows retain their ordering above it.
+7. Restore Desktop uses one manifest transaction for a transparent base and disabled rule, then immediately clears the backdrop. Removing an image first commits repaired references, then cleans only owned files. Closing Backgrounds releases preview/listeners, not the actual workspace backdrop.
+
+See [spec 395](0395-workspace-backgrounds.md) for command shapes, bounds and error handling.
+
 ## Keyboard Input Routing (Step-by-step)
 
 1. **User presses a key** -> webview captures `keydown` event

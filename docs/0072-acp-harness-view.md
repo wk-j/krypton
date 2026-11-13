@@ -742,6 +742,12 @@ project-backed tickets/docs/artifacts, daily notes, usage persistence, Hurl and
 Xenon are visibly unavailable rather than accidentally operating on a
 same-looking local path.
 
+## Read-only background permission signal (spec 395)
+
+`AcpHarnessView.getPendingPermissionCount()` sums its lanes' `pendingPermissions.length`; `onPendingPermissionCountChange(cb)` returns an unsubscribe. Notify directly after every ACP queue push, shift, failed-reply unshift, clear/replacement, lane removal and view disposal—even when `needs_permission` status has not changed. This observation does not render a transcript row or change any approval policy.
+
+The compositor registers every mounted view, including hidden tabs and locally hosted remote Harnesses, and unregisters before disposal. Its background controller microtask-coalesces reads after synchronous auto-policy handling and requires a positive total for 150ms. Only the saved, opt-in **Needs permission** target may temporarily override the base in a 280ms fade; clearing the last queue restores the current saved base. Questions/elicitation, filesystem write review, connected-computer command approvals and Live Assist's mirrored copy do not count. The signal contains only a count, no request contents, wire changes or new control permissions. Existing permission UI/keys remain authoritative. See [spec 395](0395-workspace-backgrounds.md).
+
 ## Connected Computers from local lanes (spec 311)
 
 Every local Harness lane can list app-connected SSH targets and request one

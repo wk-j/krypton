@@ -1,0 +1,169 @@
+@layer krypton.component {
+  .krypton-workspace-background { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  .krypton-workspace-background[hidden], .krypton-workspace-background [hidden] { display: none; }
+  .krypton-workspace-background__slot, .krypton-workspace-background__appearance,
+  .krypton-workspace-background__content, .krypton-workspace-background__scrim { position: absolute; inset: 0; }
+  /* Black is user-content dimming, never a faceplate material. */
+  .krypton-workspace-background__scrim { background: #000; }
+
+  .krypton-backgrounds {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: auto;
+    overflow-wrap: anywhere;
+    contain: layout style;
+    container-type: size;
+    padding: 20px;
+    color: var(--krypton-fg);
+    background: var(--mat-brush), var(--mat-plate);
+    font: var(--krypton-font-size, 14px)/1.5 var(--krypton-font-family, monospace);
+  }
+  .krypton-backgrounds [hidden] { display: none !important; }
+  .krypton-backgrounds h1, .krypton-backgrounds h2, .krypton-backgrounds legend {
+    color: var(--mat-silk);
+    text-shadow: var(--mat-engrave);
+    font-size: inherit;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin: 0;
+  }
+  .krypton-backgrounds p { margin: 8px 0; }
+  .krypton-backgrounds button {
+    min-height: 28px;
+    max-width: 100%;
+    padding: 4px 10px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 8px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--krypton-fg);
+    text-shadow: var(--mat-print);
+    font: inherit;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .krypton-backgrounds button:hover { background: var(--mat-key-hover); }
+  .krypton-backgrounds button:active, .krypton-backgrounds button[aria-pressed='true'] {
+    background: var(--mat-key-down); box-shadow: var(--mat-key-sunk); color: var(--mat-lit);
+  }
+  .krypton-backgrounds button:disabled, .krypton-backgrounds input:disabled { opacity: 0.45; cursor: not-allowed; }
+  .krypton-backgrounds :focus-visible { outline: 1px solid var(--mat-lit); outline-offset: 2px; }
+  .krypton-backgrounds input {
+    background: var(--mat-well); box-shadow: var(--mat-well-shadow); color: var(--krypton-fg);
+    border: 1px solid var(--mat-key-edge); border-radius: 8px; padding: 6px 8px;
+    font: inherit; caret-color: var(--krypton-cursor);
+  }
+  .krypton-backgrounds input[type='search'] { width: 100%; min-width: 0; box-sizing: border-box; }
+  .krypton-backgrounds input[type='range'] { width: 100%; min-width: 0; padding: 0; accent-color: var(--mat-silk); }
+  /* Content width excludes padding, borders and the native number stepper. */
+  .krypton-backgrounds input[type='number'] { box-sizing: content-box; flex: none; width: calc(3ch + 1.5em); font-variant-numeric: tabular-nums; }
+  .krypton-backgrounds input[name='color'] { box-sizing: content-box; flex: none; width: 8ch; }
+  .krypton-backgrounds input[type='checkbox'] { flex: none; accent-color: var(--mat-silk); }
+  .krypton-backgrounds__header, .krypton-backgrounds__section-head, .krypton-backgrounds__actions,
+  .krypton-backgrounds__hints, .krypton-backgrounds__control, .krypton-backgrounds__rule-toggle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .krypton-backgrounds__header { flex-shrink: 0; justify-content: space-between; margin-bottom: 20px; }
+  .krypton-backgrounds__header h1 { font-size: 1.35em; line-height: 1.2; letter-spacing: -0.02em; text-transform: none; color: var(--mat-lit); }
+  .krypton-backgrounds__header p { margin: 4px 0 0; }
+  /* The reference hierarchy stays two columns: a narrow library and one editor.
+     Its sections never become competing equal-width dashboard cards. */
+  .krypton-backgrounds__columns { flex: 1; min-height: 8em; min-width: 0; overflow: hidden; display: grid; grid-template-columns: clamp(11em, 19cqw, 16em) minmax(0, 1fr); gap: 26px; }
+  .krypton-backgrounds__library { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; padding-right: 20px; border-right: 1px solid var(--mat-groove-lo); overflow: auto; }
+  .krypton-backgrounds__section-head { justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .krypton-backgrounds__library > .krypton-backgrounds__section-head { margin: 0; flex-shrink: 0; }
+  .krypton-backgrounds__library > input, .krypton-backgrounds__library > p { flex-shrink: 0; }
+  .krypton-backgrounds__picker { flex: 1; min-height: 6em; overflow: auto; }
+  .krypton-backgrounds__picker h2 { margin: 0 0 8px; color: var(--krypton-ink-2, var(--krypton-fg)); font-weight: 400; }
+  .krypton-backgrounds__picker > div { border-radius: 8px; overflow: hidden; background: var(--mat-well-fill); margin-bottom: 18px; }
+  .krypton-backgrounds__picker:focus-visible { outline: none; }
+  .krypton-backgrounds__picker:focus-visible .krypton-backgrounds__row[aria-selected='true'] { outline: 1px solid var(--mat-lit); outline-offset: -1px; }
+  .krypton-backgrounds .krypton-backgrounds__row, .krypton-backgrounds .krypton-backgrounds__rule-option {
+    display: flex; align-items: center; gap: 10px; width: 100%; min-height: 60px; padding: 9px;
+    border: 0; border-bottom: 1px solid var(--mat-groove-lo); border-radius: 0;
+    background: transparent; box-shadow: none; text-shadow: none; text-align: left; white-space: normal;
+  }
+  .krypton-backgrounds .krypton-backgrounds__row:hover, .krypton-backgrounds .krypton-backgrounds__rule-option:hover { background: var(--mat-select); box-shadow: none; }
+  .krypton-backgrounds .krypton-backgrounds__row[aria-selected='true'],
+  .krypton-backgrounds .krypton-backgrounds__rule-option[aria-selected='true'] { background: var(--mat-select); }
+  .krypton-backgrounds__picker:focus-within .krypton-backgrounds__row[aria-selected='true'] { color: var(--mat-lit); }
+  .krypton-backgrounds__row-copy { min-width: 0; }
+  .krypton-backgrounds__name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .krypton-backgrounds__row-meta { display: flex; gap: 6px; flex-wrap: wrap; }
+  .krypton-backgrounds__swatch { display: block; width: 48px; height: 32px; flex-shrink: 0; border: 1px solid var(--mat-key-edge); border-radius: 6px; overflow: hidden; }
+  .krypton-backgrounds__swatch img { width: 100%; height: 100%; object-fit: cover; }
+  .krypton-backgrounds__applied { color: var(--mat-silk); }
+  .krypton-backgrounds__applied::before { content: ''; display: inline-block; width: 5px; height: 5px; margin-right: 4px; border-radius: 50%; background: var(--mat-lens-on); box-shadow: var(--mat-lens-glow); }
+  .krypton-backgrounds__detail { min-width: 0; min-height: 0; overflow: auto; padding: 2px 4px 12px 0; }
+  .krypton-backgrounds__preview-title { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; min-width: 0; }
+  .krypton-backgrounds__readout { padding: 2px 8px; border-radius: 8px; background: var(--mat-well); box-shadow: var(--mat-well-shadow); color: var(--krypton-ink-2, var(--krypton-fg)); font-variant-numeric: tabular-nums; }
+  /* A broad workspace illustration, as in the reference, not a full-screen
+     aspect ratio that pushes the controls down an entire screen. */
+  .krypton-backgrounds__preview { position: relative; box-sizing: border-box; width: 100%; height: clamp(11em, 32cqh, 22em); overflow: hidden; border: 1px solid var(--mat-key-edge); border-radius: 8px; }
+  .krypton-backgrounds__preview > .krypton-workspace-background { position: absolute; }
+  .krypton-backgrounds__sample { position: absolute; inset: 12% 8% 14%; z-index: 1; overflow: hidden; border: 1px solid var(--mat-key-edge); border-radius: 8px; background: var(--mat-screen); }
+  .krypton-backgrounds__sample-chrome { padding: 4px 10px; background: var(--mat-plate); border-bottom: 1px solid var(--mat-key-edge); color: var(--mat-lit); white-space: nowrap; overflow: hidden; }
+  .krypton-backgrounds__sample-body { padding: 8px 14px; white-space: pre; }
+  .krypton-backgrounds__preview-caption { display: flex; justify-content: space-between; gap: 8px 20px; flex-wrap: wrap; }
+  .krypton-backgrounds__dirty { color: var(--mat-lit); }
+  .krypton-backgrounds__muted, .krypton-backgrounds__hints { color: var(--krypton-ink-2, var(--krypton-fg)); }
+  .krypton-backgrounds__appearance { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 12px 20px; padding: 12px 0 18px; }
+  .krypton-backgrounds__appearance[data-kind='solid'], .krypton-backgrounds__appearance[data-kind='image'] { grid-template-columns: minmax(12em, 1.2fr) repeat(2, minmax(0, 1fr)); }
+  .krypton-backgrounds__appearance > p { grid-column: 1 / -1; margin: 0; }
+  .krypton-backgrounds__colour { margin: 0; }
+  .krypton-backgrounds__slider { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; }
+  .krypton-backgrounds__slider > input[type='range'] { grid-column: 1 / -1; }
+  .krypton-backgrounds__placement { position: relative; min-width: 0; }
+  .krypton-backgrounds__selectors { display: flex; gap: 4px; min-width: 0; margin: 0; padding: 6px; border: 1px solid var(--mat-key-edge); border-radius: 8px; }
+  .krypton-backgrounds__selectors legend { color: var(--krypton-ink-2, var(--krypton-fg)); font-weight: 400; letter-spacing: normal; }
+  .krypton-backgrounds__selectors button { flex: 1; min-width: 0; padding: 4px; }
+  .krypton-backgrounds__anchor-disclosure { position: absolute; top: 0; right: 0; z-index: 3; }
+  .krypton-backgrounds__anchor-disclosure summary { cursor: pointer; color: var(--krypton-ink-2, var(--krypton-fg)); }
+  .krypton-backgrounds__anchors { position: absolute; top: 100%; right: 0; width: 12em; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 6px 0 0; padding: 8px; border: 1px solid var(--mat-key-edge); border-radius: 8px; background: var(--mat-brush), var(--mat-plate); box-shadow: var(--mat-cast); }
+  .krypton-backgrounds__anchors button { padding: 4px; }
+  .krypton-backgrounds__anchors legend { padding: 0 4px; }
+  .krypton-backgrounds__rules { border-top: 1px solid var(--mat-groove-lo); padding-top: 18px; }
+  .krypton-backgrounds__rule-toggle { flex-wrap: nowrap; }
+  .krypton-backgrounds__rule-table { border-radius: 8px; background: var(--mat-well-fill); }
+  .krypton-backgrounds__rule-row { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.4fr) auto auto; gap: 16px; align-items: center; padding: 10px 12px; }
+  .krypton-backgrounds__rule-head { border-bottom: 1px solid var(--mat-groove-lo); color: var(--krypton-ink-2, var(--krypton-fg)); text-transform: uppercase; letter-spacing: 0.06em; }
+  .krypton-backgrounds__rule-event { min-width: 0; }
+  .krypton-backgrounds__rule-source { position: relative; min-width: 0; }
+  .krypton-backgrounds__rule-source > button { display: flex; align-items: center; gap: 8px; width: 100%; }
+  .krypton-backgrounds__rule-source > button > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .krypton-backgrounds__rule-source .krypton-backgrounds__swatch { width: 28px; height: 20px; }
+  .krypton-backgrounds__rule-picker { position: absolute; z-index: 5; bottom: 100%; right: 0; width: 24em; max-width: calc(100cqw - 4em); max-height: min(18em, 40cqh); overflow: auto; margin-bottom: 6px; border: 1px solid var(--mat-key-edge); border-radius: 8px; background: var(--agent-surface-solid, var(--mat-plate-lo)); box-shadow: var(--mat-cast); }
+  .krypton-backgrounds__confirm { border-top: 1px solid var(--mat-groove-lo); margin-top: 14px; padding-top: 8px; }
+  .krypton-backgrounds__commit-actions { flex-shrink: 0; border-top: 1px solid var(--mat-groove-lo); padding-top: 12px; margin-top: 12px; margin-inline-start: calc(clamp(11em, 19cqw, 16em) + 26px); }
+  .krypton-backgrounds__commit-actions > [data-action='refresh'] { margin-inline-start: auto; }
+  .krypton-backgrounds__commit-actions > button:first-child { color: var(--mat-lit); }
+  .krypton-backgrounds__commit-actions > [data-action='reset'], .krypton-backgrounds__commit-actions > [data-action='refresh'] { border-color: transparent; background: none; box-shadow: none; color: var(--krypton-ink-2, var(--krypton-fg)); text-decoration: underline; text-underline-offset: 3px; }
+  .krypton-backgrounds__notice { flex-shrink: 0; max-height: 4.5em; overflow: auto; }
+  .krypton-backgrounds__notice:not(:empty) { margin-top: 8px; }
+  .krypton-backgrounds__hints { flex-shrink: 0; max-height: 4em; overflow: auto; gap: 6px 14px; margin-top: 10px; padding: 2px 0; }
+  @container (max-width: 1100px) {
+    .krypton-backgrounds__appearance[data-kind='solid'], .krypton-backgrounds__appearance[data-kind='image'] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .krypton-backgrounds__placement, .krypton-backgrounds__colour { grid-column: 1 / -1; }
+    .krypton-backgrounds__placement { max-width: 24em; }
+    .krypton-backgrounds__rule-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .krypton-backgrounds__rule-head { display: none; }
+  }
+  @container (max-width: 700px) {
+    .krypton-backgrounds__columns { grid-template-columns: minmax(0, 1fr); grid-auto-rows: max-content; align-content: start; overflow: auto; }
+    .krypton-backgrounds__commit-actions { margin-inline-start: 0; }
+    .krypton-backgrounds__library { height: 20em; overflow: hidden; padding: 0 0 16px; border-right: 0; border-bottom: 1px solid var(--mat-groove-lo); }
+    .krypton-backgrounds__library > p { margin: 0; }
+    .krypton-backgrounds__picker { min-height: 0; }
+    .krypton-backgrounds__detail { overflow: visible; padding: 2px; }
+    .krypton-backgrounds__preview-section > .krypton-backgrounds__section-head { align-items: start; }
+    .krypton-backgrounds__preview-title { flex-basis: 100%; }
+  }
+  @container (max-width: 400px) {
+    .krypton-backgrounds__appearance, .krypton-backgrounds__appearance[data-kind='solid'], .krypton-backgrounds__appearance[data-kind='image'] { grid-template-columns: minmax(0, 1fr); }
+    .krypton-backgrounds__rule-row { grid-template-columns: minmax(0, 1fr); }
+  }
+}

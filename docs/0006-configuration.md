@@ -8,6 +8,14 @@ Custom themes are stored as separate TOML files:
 |---------|------|
 | Custom themes | `~/.config/krypton/themes/*.toml` |
 
+## Workspace backgrounds (app-owned preferences)
+
+Open **Backgrounds** with **Cmd+P → Shift+A** or the command palette's **Open Backgrounds**. The Library sidebar selects the normal background; adjust its preview and **Apply** to save the base. There are no editing modes. The single **Needs permission** row has its own background picker and On/Off checkbox: choose a library background or **Use current preview** to copy custom appearance settings, then **Save rule** independently (off by default, all Harness lanes). **Try it** is preview-only. **Return to base** restores the normal preview without discarding unsaved rule edits. **Restore Desktop** saves a transparent base and disables the rule, retaining its target and the image library.
+
+These preferences add **no TOML keys**. `~/.config/krypton/backgrounds/library.json` holds versioned base/rule configuration and relative asset metadata; validated source bytes live in `images/<sha256>.<ext>` and thumbnails in `thumbnails/<sha256>.png` beneath that directory. Imports are limited to static PNG/JPEG/WebP, 10 MiB each, 8192px per axis, 16,777,216 pixels and 100 entries. Original source paths are not retained. No OS wallpaper, terminal colours or window opacity is changed.
+
+The manager's **Refresh** reloads the manifest and discards both local drafts. There is no watcher; theme changes and Reload Config do not reload or reset this library. Missing preferences keep Desktop without creating files. A malformed/unsupported manifest is preserved: repair or move it aside externally, then Refresh; mutations stay disabled until it loads successfully. A stale-revision error requires Refresh and retry. See [spec 395](0395-workspace-backgrounds.md) for the exact permission predicate, persistence and removal semantics.
+
 ## Reference
 
 ```toml

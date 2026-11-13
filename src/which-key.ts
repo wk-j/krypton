@@ -115,6 +115,7 @@ const COMPOSITOR_KEYS: KeyEntry[] = [
   ]),
 
   ...groupEntries('Apps', [
+    { key: 'A', label: 'Backgrounds', icon: 'images', effect: 'important' },
     { key: 'b', label: 'File Manager', icon: 'folder-tree', effect: 'important' },
     { key: 'u', label: 'Vault Viewer', icon: 'vault', effect: 'important' },
     { key: 'e', label: 'Pencil', icon: 'pencil', effect: 'important' },

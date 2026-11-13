@@ -72,6 +72,8 @@ async function main(): Promise<void> {
 
   // Initialize compositor
   const compositor = new Compositor(workspace);
+  try { await compositor.initializeBackgrounds(); }
+  catch (error) { console.warn('[Backgrounds] Initialization unavailable:', error); }
 
   // Connect theme engine to compositor (updates terminals on theme change)
   compositor.setThemeEngine(themeEngine);

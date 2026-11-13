@@ -298,24 +298,11 @@ label_color = "#0cf"
 
 ---
 
-### `[workspace]` — Workspace Background
+### `[workspace]` — Legacy, unimplemented theme fields
 
-Controls the workspace surface behind all terminal windows. The workspace is a fullscreen transparent layer — the OS desktop is visible beneath.
+Theme `workspace.background` and `workspace.blur` still deserialize but are not consumed by the renderer. The previously documented `image` and `image_opacity` fields were never implemented. None of these fields controls the supported workspace backdrop; blur remains prohibited on the transparent WKWebView.
 
-```toml
-[workspace]
-background = "transparent"           # Overlay color (use alpha for tinting)
-blur = 0                             # Workspace-level vibrancy blur (px)
-# image = "~/.config/krypton/wallpaper.png"   # Optional background image
-# image_opacity = 0.1                          # Image opacity (0.0-1.0)
-```
-
-| Key | Type | Default | Description |
-|-----|------|---------|-------------|
-| `background` | color | `"transparent"` | Workspace background overlay color |
-| `blur` | int | `0` | Vibrancy/frosted-glass blur applied to the desktop beneath (px) |
-| `image` | string | — | Path to a background image (absolute or `~/`-relative) |
-| `image_opacity` | float | `0.1` | Background image opacity (`0.0`-`1.0`) |
+Use **Leader A → Backgrounds** or **Open Backgrounds** in the command palette instead ([spec 395](0395-workspace-backgrounds.md)). Its app-wide saved base and optional **Needs permission** target live in `~/.config/krypton/backgrounds/library.json`, independently of themes. Theme changes and Reload Config do not reset them, and there is no migration from unused theme fields. Both document roots and the workspace remain transparent; a separate content layer paints the selected background beneath the workspace.
 
 ---
 

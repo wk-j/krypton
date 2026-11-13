@@ -8,6 +8,9 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 
+import { BackgroundStore } from './backgrounds/store';
+import { WorkspaceBackground } from './backgrounds/renderer';
+import { PermissionBackgroundController } from './backgrounds/permission-controller';
 import { setCssVars } from './util/css-vars';
 import { paneContentHoldsFocus } from './content-focus';
 import { installClusterCellRendering } from './xterm-cluster-cells';
@@ -382,6 +385,15 @@ function nextPaneId(): PaneId {
 
 export class Compositor {
   private windows: Map<WindowId, KryptonWindow> = new Map();
+  private readonly backgroundStore = new BackgroundStore();
+  private backgroundRenderer: WorkspaceBackground | null = null;
+  private backgroundUnsubscribe: (() => void) | null = null;
+  private backgroundPermissionActive = false;
+  private backgroundsOpening: Promise<void> | null = null;
+  private readonly backgroundPermissions = new PermissionBackgroundController((active) => {
+    this.backgroundPermissionActive = active;
+    void this.backgroundRenderer?.update(this.backgroundStore.state, active);
+  });
   private sessionMap: Map<SessionId, SessionLocation> = new Map();
   /** pty-output bytes that arrived before sessionMap/qtSessionId was registered.
    *  Backend reader thread starts emitting before `spawn_pty` returns, so DA1
@@ -631,6 +643,34 @@ export class Compositor {
         this.processBySession.delete(session_id);
       }
     });
+  }
+
+  /** Spec 395: preferences are independent of config/themes and recovery. */
+  async initializeBackgrounds(): Promise<void> {
+    if (this.backgroundRenderer) return;
+    const parent = this.workspace.parentElement;
+    if (!parent) return;
+    this.backgroundRenderer = new WorkspaceBackground(parent, this.workspace, (message) => this.showNotification(message));
+    let previous = this.backgroundStore.state;
+    this.backgroundUnsubscribe = this.backgroundStore.subscribe(() => {
+      const state = this.backgroundStore.state;
+      if (previous === state) return;
+      previous = state;
+      const reset = state.active.source.kind === 'desktop' && !state.permissionRule.enabled;
+      void this.backgroundRenderer?.update(state, this.backgroundPermissionActive, reset);
+    });
+    window.addEventListener('pagehide', () => this.disposeBackgrounds(), { once: true });
+    try { await this.backgroundStore.refresh(); }
+    catch (error) { console.warn('[Backgrounds] Desktop fallback:', error); }
+    await this.backgroundRenderer.update(this.backgroundStore.state, this.backgroundPermissionActive, true);
+  }
+
+  private disposeBackgrounds(): void {
+    this.backgroundUnsubscribe?.();
+    this.backgroundUnsubscribe = null;
+    this.backgroundPermissions.dispose();
+    this.backgroundRenderer?.dispose();
+    this.backgroundRenderer = null;
   }
 
   /** Apply loaded config to compositor settings. Call before creating windows. */
@@ -1625,6 +1665,7 @@ export class Compositor {
         node.pane.shaderInstance = null;
       }
       if (node.pane.contentView) {
+        this.backgroundPermissions.unregister(node.pane.contentView);
         node.pane.contentView.dispose();
       }
       if (node.pane.terminal) {
@@ -3345,6 +3386,7 @@ export class Compositor {
       contentView,
       pendingInput: [],
     };
+    this.backgroundPermissions.register(contentView);
     // Spec 365: same window lookup as mountContentPane, for tab moves.
     contentView.onFireTriggerChange = (): void => {
       const info = this.findPaneInfoByViewId(pane.viewId);
@@ -4180,6 +4222,39 @@ export class Compositor {
     await this.createContentTab('TELEGRAM // controller', view);
 
     view.onClose(() => this.closeContentViewHost(view));
+  }
+
+  /** Open/focus the actual manager pane, including hidden tabs and splits. */
+  async openBackgrounds(): Promise<void> {
+    if (this.backgroundsOpening) return this.backgroundsOpening;
+    this.backgroundsOpening = this.openBackgroundsOnce().catch((error: unknown) => {
+      this.showNotification(`Cannot open Backgrounds: ${String(error)}`);
+    }).finally(() => { this.backgroundsOpening = null; });
+    return this.backgroundsOpening;
+  }
+
+  private async openBackgroundsOnce(): Promise<void> {
+    for (const [windowId, win] of this.windows) {
+      for (let i = 0; i < win.tabs.length; i++) {
+        const tab = win.tabs[i];
+        const pane = this.collectPanes(tab.paneTree).find((p) => p.contentView?.type === 'backgrounds');
+        if (!pane?.contentView) continue;
+        win.activeTabIndex = i;
+        tab.focusedPaneId = pane.id;
+        await this.focusWindow(windowId);
+        this.showActiveTab(win);
+        this.updateTabBar(win);
+        this.focusContentView(pane.contentView);
+        return;
+      }
+    }
+    const { BackgroundsView } = await import('./backgrounds/view');
+    const view = new BackgroundsView(this.backgroundStore, () => this.backgroundPermissionActive);
+    view.onClose(() => this.closeContentViewHost(view));
+    try {
+      if (this.focusedWindowId) await this.createContentTab('BACKGROUNDS // workspace', view);
+      else await this.createContentWindow('BACKGROUNDS // workspace', view);
+    } catch (error) { view.dispose(); throw error; }
   }
 
   /** Open or focus the app-owned SSH connection manager. */
@@ -6428,6 +6503,7 @@ export class Compositor {
       contentView,
       pendingInput: [],
     };
+    this.backgroundPermissions.register(contentView);
     // Spec 365: repaint whichever window holds this pane now, so the fire
     // follows the view across tab moves (a captured winId would go stale).
     contentView.onFireTriggerChange = (): void => {
@@ -6942,7 +7018,10 @@ export class Compositor {
     if (pane) {
       this.programStatus.dispose(pane.viewId);
       this.endInlineFollowUp(pane.viewId);
-      if (pane.contentView) pane.contentView.dispose();
+      if (pane.contentView) {
+        this.backgroundPermissions.unregister(pane.contentView);
+        pane.contentView.dispose();
+      }
       pane.terminal?.dispose();
       if (pane.sessionId !== null) {
         this.sessionMap.delete(pane.sessionId);

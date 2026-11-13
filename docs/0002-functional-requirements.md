@@ -305,13 +305,21 @@ The **Quick Terminal** is a fast-access, overlay terminal window that floats cen
 | FR-THM-023 | A theme shall define distinct styles for **focused** vs. **unfocused** window chrome (e.g., brighter border, stronger shadow for focused). | Must |
 | FR-THM-024 | A theme shall define the tab bar style: background, active tab color, inactive tab color, tab height, tab font. | Must |
 
-### 3.13.4 Theme Scope — Workspace Background
+### 3.13.4 Workspace Backgrounds (spec 395)
 
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-THM-030 | The workspace background shall be fully transparent by default (showing the OS desktop beneath). | Must |
-| FR-THM-031 | A theme may optionally define a workspace background color or image with configurable opacity (overlay on the transparent surface). | Should |
-| FR-THM-032 | A theme may define a workspace-level blur effect (vibrancy/frosted glass) applied to the transparent background behind windows. | Could |
+| FR-THM-031 | Superseded: theme background/image fields are not implemented; the dedicated Backgrounds manager owns the app-wide backdrop. | — |
+| FR-THM-032 | Withdrawn: workspace blur is prohibited on the transparent WKWebView. | — |
+| FR-BG-001 | Leader A and the command palette shall open/focus one Backgrounds manager, including its actual pane in a split. Bare leader a remains AI Agent. | Must |
+| FR-BG-002 | Built-in colours/gradients and bounded local PNG/JPEG/static WebP imports shall support preview-only drafts, explicit Apply, sizing, anchor, opacity and dimming. | Must |
+| FR-BG-003 | Saved base/library/rule preferences shall persist independently of themes and recovery; no OS wallpaper, terminal colour or window-opacity changes. | Must |
+| FR-BG-004 | One opt-in Needs permission rule shall temporarily override the base after a real local ACP permission queue remains positive for 150ms, across all mounted Harness lanes, using a 280ms fade. Questions and other approval surfaces do not count. | Must |
+| FR-BG-005 | Clearing the last request shall return to the saved base; Restore Desktop shall atomically restore transparency and disable the rule without removing the library or target. Reduced motion is instant. | Must |
+| FR-BG-006 | Failed persistence, stale revisions and malformed manifests shall preserve committed state; image removal shall confirm and atomically repair base/rule references without deleting source files. | Must |
+
+Full limits, lifecycle and keyboard behaviour: [Workspace Backgrounds](0395-workspace-backgrounds.md).
 
 ### 3.13.5 Theme Scope — UI Elements
 

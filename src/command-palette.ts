@@ -800,6 +800,14 @@ export class CommandScope implements SearchScope {
       execute: () => c.openTelegramSettings(),
     });
     this.register({
+      id: 'backgrounds.open',
+      label: 'Open Backgrounds',
+      category: 'Window',
+      icon: 'images',
+      keybinding: 'Leader A',
+      execute: () => c.openBackgrounds(),
+    });
+    this.register({
       id: 'computers.open',
       label: 'Connected Computers…',
       category: 'Window',

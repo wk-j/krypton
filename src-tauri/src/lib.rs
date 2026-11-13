@@ -3,6 +3,7 @@ mod acp_install;
 mod acp_lane_models;
 mod acp_updates;
 pub mod acp_wire;
+mod backgrounds;
 mod child_process;
 mod commands;
 mod computer_read_only;
@@ -168,6 +169,7 @@ pub fn run() {
         .manage(remote_harness_registry)
         .manage(Arc::new(inline_remote::InlineRemoteManager::new()))
         .manage(connected_computers.clone())
+        .manage(Arc::new(backgrounds::BackgroundManager::new()))
         .manage(hook_server.clone())
         .manage(hook_server.acp_wire.clone())
         .manage(control_server.clone())
@@ -187,6 +189,12 @@ pub fn run() {
         // MusicEngine is initialized in .setup() because it needs app_handle
         .invoke_handler(tauri::generate_handler![
             commands::spawn_pty,
+            backgrounds::background_list,
+            backgrounds::background_import,
+            backgrounds::background_apply,
+            backgrounds::background_rule_save,
+            backgrounds::background_reset,
+            backgrounds::background_remove,
             e2e::e2e_write_guides,
             e2e::e2e_status,
             e2e::e2e_run,

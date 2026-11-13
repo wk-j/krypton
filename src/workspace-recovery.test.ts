@@ -52,6 +52,16 @@ describe('workspace recovery', () => {
     expect(plan.orphanSessionIds).toEqual([4]);
   });
 
+  it('recognizes a Backgrounds pane without discarding unrelated terminals or layout', () => {
+    const saved = snapshot();
+    const tree = saved.windows[0].tabs[0].paneTree;
+    if (tree.type !== 'split' || tree.second.type !== 'leaf') throw new Error('expected split fixture');
+    tree.second.contentType = 'backgrounds';
+    const parsed = parseWorkspaceSnapshot(saved);
+    expect(parsed?.windows[0].tabs[0].paneTree).toEqual(tree);
+    expect(planWorkspaceRecovery(saved, [7]).snapshot).not.toBeNull();
+  });
+
   it('rejects malformed pane trees atomically', () => {
     const invalid = snapshot() as unknown as Record<string, unknown>;
     const windows = invalid.windows as Array<Record<string, unknown>>;

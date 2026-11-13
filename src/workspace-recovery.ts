@@ -81,6 +81,7 @@ const CONTENT_TYPES: ReadonlySet<string> = new Set([
   'webview',
   'usage',
   'telegram_settings',
+  'backgrounds',
   'review',
 ]);
 
