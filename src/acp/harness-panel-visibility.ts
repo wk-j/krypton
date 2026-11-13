@@ -6,10 +6,10 @@
 
 import type { TitlebarToggle } from '../types';
 
-export type HarnessPanelId = 'plan' | 'peek' | 'thought' | 'grammar' | 'queue' | 'ticket' | 'rails' | 'assistants';
+export type HarnessPanelId = 'plan' | 'peek' | 'thought' | 'grammar' | 'queue' | 'ticket' | 'rails' | 'assistants' | 'git';
 
 /** Ordered tabs of the `dock.right` column. */
-export type HarnessDockTab = 'ticket' | 'rails' | 'assistants';
+export type HarnessDockTab = 'ticket' | 'rails' | 'assistants' | 'git';
 
 export interface HarnessTogglePanel {
   readonly id: HarnessPanelId;
@@ -27,13 +27,14 @@ export const HARNESS_TOGGLE_PANELS: readonly HarnessTogglePanel[] = [
   { id: 'queue', label: 'Prompt queue', icon: 'krypton-icon-panel-queue' },
   { id: 'ticket', label: 'Ticket dock', icon: 'krypton-icon-panel-ticket' },
   { id: 'rails', label: 'Rails dock', icon: 'krypton-icon-panel-rails' },
+  { id: 'git', label: 'Git panel', icon: 'krypton-icon-panel-git' },
 ];
 
 /** Spec 347: the side panels — `left` is the Zen lane rail, `right` the dock column. */
 export type HarnessSide = 'left' | 'right';
 
 export const PANELS_USAGE =
-  'usage: #panels [hide | show | toggle] <left | right | plan | peek | thought | grammar | queue | ticket | rails | assistants>';
+  'usage: #panels [hide | show | toggle] <left | right | plan | peek | thought | grammar | queue | ticket | rails | assistants | git>';
 
 export type PanelsAction = 'hide' | 'show' | 'toggle';
 
@@ -51,6 +52,7 @@ const PANEL_ID: Record<HarnessPanelId, true> = {
   ticket: true,
   rails: true,
   assistants: true,
+  git: true,
 };
 
 export function isHarnessPanelId(value: string): value is HarnessPanelId {
@@ -63,7 +65,7 @@ export function isHarnessSide(value: string): value is HarnessSide {
 
 /** Dock tabs also obey the independent right-side flag. */
 export function isDockTab(panel: HarnessPanelId): panel is HarnessDockTab {
-  return panel === 'ticket' || panel === 'rails' || panel === 'assistants';
+  return panel === 'ticket' || panel === 'rails' || panel === 'assistants' || panel === 'git';
 }
 
 function isPanelsAction(value: string): value is PanelsAction {
@@ -103,7 +105,7 @@ export function sideFlash(side: HarnessSide, hidden: boolean): string {
   return hidden ? `${side} panel hidden · #panels show ${side}` : `${side} panel shown`;
 }
 
-/** The view's titlebar contribution: seven panels, a divider, then the left and right panels. */
+/** The view's titlebar contribution: eight panels, a divider, then the left and right panels. */
 export function harnessTitlebarToggles(
   hidden: ReadonlySet<HarnessPanelId>,
   sides: Readonly<Record<HarnessSide, boolean>>,
@@ -147,9 +149,36 @@ export function writeSideHidden(projectDir: string | null, side: HarnessSide, hi
 /** Persisted per project, beside the side flags. */
 const HIDDEN_PANELS_KEY_PREFIX = 'krypton:acp-harness:hidden-panels:';
 
-/** Legacy flags migrate once; only the new Assistants panel defaults hidden. */
+/** Spec 396: one-shot "Git already defaulted hidden" mark. Not part of the v2 blob. */
+const GIT_MIGRATED_KEY_PREFIX = 'krypton:acp-harness:git-panel-migrated:';
+
+function gitMigratedKey(projectDir: string | null): string {
+  return `${GIT_MIGRATED_KEY_PREFIX}${projectDir ?? ''}`;
+}
+
+function gitPanelMigrated(projectDir: string | null): boolean {
+  try {
+    return localStorage.getItem(gitMigratedKey(projectDir)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markGitPanelMigrated(projectDir: string | null): void {
+  try {
+    localStorage.setItem(gitMigratedKey(projectDir), '1');
+  } catch {
+    // localStorage unavailable — the next read will try the migration again
+  }
+}
+
+/**
+ * Legacy flags migrate once. Assistants and Git default hidden.
+ * A version-2 blob that predates Git gains `git` once, recorded by the side key,
+ * so a later explicit show is not undone. Missing storage writes nothing.
+ */
 export function readHiddenPanels(projectDir: string | null): ReadonlySet<HarnessPanelId> {
-  const defaults = new Set<HarnessPanelId>(['assistants']);
+  const defaults = new Set<HarnessPanelId>(['assistants', 'git']);
   try {
     const raw = localStorage.getItem(`${HIDDEN_PANELS_KEY_PREFIX}${projectDir ?? ''}`);
     if (!raw) return defaults;
@@ -165,6 +194,12 @@ export function readHiddenPanels(projectDir: string | null): ReadonlySet<Harness
       typeof value === 'string' && isHarnessPanelId(value)));
     if (legacy) {
       hidden.add('assistants');
+      hidden.add('git');
+      writeHiddenPanels(projectDir, hidden);
+      return hidden;
+    }
+    if (!gitPanelMigrated(projectDir)) {
+      hidden.add('git');
       writeHiddenPanels(projectDir, hidden);
     }
     return hidden;
@@ -178,6 +213,7 @@ export function writeHiddenPanels(projectDir: string | null, hidden: ReadonlySet
     const key = `${HIDDEN_PANELS_KEY_PREFIX}${projectDir ?? ''}`;
     const ordered = Object.keys(PANEL_ID).filter((id) => hidden.has(id as HarnessPanelId));
     localStorage.setItem(key, JSON.stringify({ version: 2, hidden: ordered }));
+    markGitPanelMigrated(projectDir);
   } catch {
     // localStorage unavailable — the preference simply won't persist
   }
@@ -190,7 +226,7 @@ const DOCK_TAB_KEY_PREFIX = 'krypton:acp-harness:dock-tab:';
 export function readDockTab(projectDir: string | null): HarnessDockTab {
   try {
     const tab = localStorage.getItem(`${DOCK_TAB_KEY_PREFIX}${projectDir ?? ''}`);
-    return tab === 'rails' || tab === 'assistants' ? tab : 'ticket';
+    return tab === 'rails' || tab === 'assistants' || tab === 'git' ? tab : 'ticket';
   } catch {
     return 'ticket';
   }

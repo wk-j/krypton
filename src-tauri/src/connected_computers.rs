@@ -1441,7 +1441,10 @@ mod tests {
             legacy.auto_approve_read_only,
             "omitted key defaults to true"
         );
-        assert!(!legacy.bypass_command_approval, "omitted key defaults to false");
+        assert!(
+            !legacy.bypass_command_approval,
+            "omitted key defaults to false"
+        );
         manager
             .save(
                 ComputerProfile {
@@ -1479,10 +1482,7 @@ mod tests {
             auto_approved_script(&legacy, "rm -rf build", Some("/srv")),
             None
         );
-        assert_eq!(
-            auto_approved_script(&prod, "ls -la", Some("/srv")),
-            None
-        );
+        assert_eq!(auto_approved_script(&prod, "ls -la", Some("/srv")), None);
         let _ = fs::remove_dir_all(base);
     }
 
@@ -1498,7 +1498,10 @@ mod tests {
             "id": "trusted", "host": "shared-host", "autoApproveReadOnly": false
         }))
         .unwrap();
-        assert!(!profile.bypass_command_approval, "legacy IPC defaults to false");
+        assert!(
+            !profile.bypass_command_approval,
+            "legacy IPC defaults to false"
+        );
         profile.bypass_command_approval = true;
         let saved = manager
             .save(profile.clone(), &manager.list().unwrap().revision)
@@ -1517,8 +1520,16 @@ mod tests {
         manager.save(other, &saved.revision).unwrap();
         let reloaded = ConnectedComputerManager::new_at(path.clone(), base.join("sockets"));
         let list = reloaded.list().unwrap();
-        let trusted = list.computers.iter().find(|entry| entry.profile.id == "trusted").unwrap();
-        let manual = list.computers.iter().find(|entry| entry.profile.id == "manual").unwrap();
+        let trusted = list
+            .computers
+            .iter()
+            .find(|entry| entry.profile.id == "trusted")
+            .unwrap();
+        let manual = list
+            .computers
+            .iter()
+            .find(|entry| entry.profile.id == "manual")
+            .unwrap();
         assert_eq!(trusted.state, ConnectionState::Configured);
         assert!(trusted.profile.bypass_command_approval);
         assert!(!trusted.profile.auto_approve_read_only);
@@ -1531,9 +1542,17 @@ mod tests {
 
         profile.bypass_command_approval = false;
         reloaded.save(profile, &list.revision).unwrap();
-        assert!(!fs::read_to_string(&path).unwrap().contains("bypass_command_approval"));
-        let restored = ConnectedComputerManager::new_at(path, base.join("sockets")).list().unwrap();
-        let trusted = restored.computers.iter().find(|entry| entry.profile.id == "trusted").unwrap();
+        assert!(!fs::read_to_string(&path)
+            .unwrap()
+            .contains("bypass_command_approval"));
+        let restored = ConnectedComputerManager::new_at(path, base.join("sockets"))
+            .list()
+            .unwrap();
+        let trusted = restored
+            .computers
+            .iter()
+            .find(|entry| entry.profile.id == "trusted")
+            .unwrap();
         assert!(!trusted.profile.bypass_command_approval);
         assert!(!trusted.profile.auto_approve_read_only);
         assert_eq!(auto_approved_script(&trusted.profile, "ls -la", None), None);
@@ -1555,10 +1574,15 @@ mod tests {
         for read_only in [false, true] {
             profile.auto_approve_read_only = read_only;
             for command in [shell, "ls -la"] {
-                let script = auto_approved_script(&profile, command, Some("/home/user/.ssh")).unwrap();
+                let script =
+                    auto_approved_script(&profile, command, Some("/home/user/.ssh")).unwrap();
                 assert!(matches!(&script, Cow::Borrowed(_)));
                 assert_eq!(script.as_bytes(), command.as_bytes());
-                assert_eq!(script.as_ptr(), command.as_ptr(), "bypass must borrow the command");
+                assert_eq!(
+                    script.as_ptr(),
+                    command.as_ptr(),
+                    "bypass must borrow the command"
+                );
             }
             profile.bypass_command_approval = false;
             assert_eq!(auto_approved_script(&profile, shell, None), None);
@@ -1599,7 +1623,9 @@ mod tests {
                 &manager.list().unwrap().revision,
             )
             .unwrap();
-        let token = manager.issue_capability("h1".into(), "Pi-1".into(), 7).unwrap();
+        let token = manager
+            .issue_capability("h1".into(), "Pi-1".into(), 7)
+            .unwrap();
         let request = ComputerExecRequest {
             computer_id: "trusted".into(),
             command: "printf '%s\\n' bypass-smoke".into(),
@@ -1633,7 +1659,9 @@ mod tests {
             manager.exec(&token, request.clone()).await.err().unwrap(),
             "Computer is disconnected"
         );
-        let replacement = manager.issue_capability("h1".into(), "Pi-1".into(), 8).unwrap();
+        let replacement = manager
+            .issue_capability("h1".into(), "Pi-1".into(), 8)
+            .unwrap();
         assert_eq!(
             manager.exec(&token, request.clone()).await.err().unwrap(),
             "Computer lane capability is invalid or expired"

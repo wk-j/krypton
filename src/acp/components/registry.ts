@@ -39,6 +39,7 @@ import { def as guardianReviewRow } from './guardian-review-row';
 import { def as genuiCard } from './genui-card';
 import { def as genuiCatalog } from './genui-catalog';
 import { def as genuiPanel } from './genui-panel';
+import { def as gitDock } from './git-dock';
 import { def as handoffPicker } from './handoff-picker';
 import { def as heatPanel } from './heat-panel';
 import { def as helpOverlay } from './help-overlay';
@@ -161,6 +162,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   ticketDock,
   railsDock,
   assistantInstances,
+  gitDock,
   annotationRail,
   // layer 6 — composer
   composer,

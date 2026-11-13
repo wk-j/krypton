@@ -1010,7 +1010,7 @@ reached the page falls back to the built-in krypton-dark values, scoped to
    flash the chip. Each setter writes only its own flag. Outside Zen, `left`
    reads as hidden, so showing it first calls setZenMode(true) (spec 347 rev 3).
 5. rightRail update: each renderer asks isPanelHidden(id)
-   (= hiddenPanels.has(id), or rightPanelHidden for ticket/rails/assistants) and
+   (= hiddenPanels.has(id), or rightPanelHidden for ticket/rails/assistants/git) and
    empties or unmounts its slot; with no dock tab available the column hides
    and drops --dock-active, so the dashboard gives back the dock's width. The
    left flag toggles the acp-harness--left-panel-hidden root class, which hides
@@ -1018,6 +1018,23 @@ reached the page falls back to the built-in krypton-dark values, scoped to
    setZenMode (also behind Cmd+.) notifies titlebar listeners.
 6. The listener re-runs syncTitlebarToggles() → aria-pressed update.
 7. closeWindow() fires the titlebar unsubscribe.
+```
+
+## Harness Git Panel Flow (spec 396)
+
+```
+1. The Git tab is a fourth dock.right pane (order 40), hidden on first read,
+   including an existing version-2 hidden-panel blob. A side key records that
+   one-shot hide; showing Git writes the blob through writeHiddenPanels, which
+   sets the key. The dock stays version 2.
+2. AcpHarnessView owns HarnessGitController. renderDock paints and, on show or
+   a project change, calls git_panel_status. A 4s timer runs only while the tab
+   is shown and the document is visible. A local lane going idle calls
+   noteLaneIdle. One status is in flight; a hidden tab does not poll.
+3. Status and numstat stay on the capped reader (5s, 2 MiB). Stage, unstage,
+   discard, and commit are separate commands. Paths are root-relative and
+   gated in Rust. Enter opens the local working diff for the selected path.
+4. A remote harness paints "Git is local only" and does not invoke git.
 ```
 
 ## Window Titlebar Status Badge Flow (spec 247)

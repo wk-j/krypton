@@ -44,6 +44,8 @@ export const HARNESS_LAYOUT_DEFAULT = {
   // spec 337: the Rails dock is the dock column's second tab.
   rails: { slot: 'dock.right', order: 20 },
   assistants: { slot: 'dock.right', order: 30 },
+  // spec 396: the Git dock is the dock column's fourth tab.
+  git: { slot: 'dock.right', order: 40 },
 } as const satisfies HarnessLayout;
 
 /**

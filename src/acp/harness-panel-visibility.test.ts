@@ -48,11 +48,11 @@ describe('nextHidden', () => {
 });
 
 describe('harnessTitlebarToggles', () => {
-  it('lists seven panels, then the left and right panels behind one divider', () => {
+  it('lists eight panels, then the left and right panels behind one divider', () => {
     const toggles = harnessTitlebarToggles(new Set<HarnessPanelId>(['thought']), { left: true, right: false });
 
-    expect(toggles.map((toggle) => toggle.id)).toEqual(['plan', 'peek', 'thought', 'grammar', 'queue', 'ticket', 'rails', 'left', 'right']);
-    expect(toggles.map((toggle) => toggle.pressed)).toEqual([true, true, false, true, true, true, true, false, true]);
+    expect(toggles.map((toggle) => toggle.id)).toEqual(['plan', 'peek', 'thought', 'grammar', 'queue', 'ticket', 'rails', 'git', 'left', 'right']);
+    expect(toggles.map((toggle) => toggle.pressed)).toEqual([true, true, false, true, true, true, true, true, false, true]);
     expect(toggles.filter((toggle) => toggle.separatorBefore).map((toggle) => toggle.id)).toEqual(['left']);
   });
 
@@ -60,16 +60,17 @@ describe('harnessTitlebarToggles', () => {
     const toggles = harnessTitlebarToggles(new Set<HarnessPanelId>(['grammar']), { left: true, right: true });
 
     expect(toggles.some((toggle) => toggle.disabledReason !== undefined)).toBe(false);
-    // `ticket` and `rails` show their own flag, not the right panel's.
-    expect(toggles.slice(0, 7).map((toggle) => toggle.pressed)).toEqual([true, true, true, false, true, true, true]);
+    // Dock tabs show their own flag, not the right panel's.
+    expect(toggles.slice(0, 8).map((toggle) => toggle.pressed)).toEqual([true, true, true, false, true, true, true, true]);
   });
 });
 
 describe('panelFlash', () => {
-  it('mentions the hidden right panel only for the two dock tabs', () => {
+  it('mentions the hidden right panel for every dock tab', () => {
     expect(panelFlash('ticket', false, true)).toBe('ticket shown · right panel hidden');
     expect(panelFlash('rails', true, true)).toBe('rails hidden · #panels show rails · right panel hidden');
     expect(panelFlash('assistants', false, true)).toBe('assistants shown · right panel hidden');
+    expect(panelFlash('git', false, true)).toBe('git shown · right panel hidden');
     expect(panelFlash('plan', false, true)).toBe('plan shown');
     expect(panelFlash('ticket', false, false)).toBe('ticket shown');
   });
@@ -116,28 +117,40 @@ describe('hidden panel persistence', () => {
     expect([...store.keys()]).toEqual(['krypton:acp-harness:right-panel-hidden:/repo/b']);
   });
 
-  it('keeps old panels visible and Assistants hidden for missing or invalid storage', () => {
+  it('keeps old panels visible and Assistants and Git hidden for missing or invalid storage', () => {
     store.set('krypton:acp-harness:hidden-panels:/repo', '{not json');
-    expect([...readHiddenPanels('/repo')]).toEqual(['assistants']);
+    expect([...readHiddenPanels('/repo')]).toEqual(['assistants', 'git']);
+    expect(store.has('krypton:acp-harness:git-panel-migrated:/repo')).toBe(false);
 
     store.set('krypton:acp-harness:hidden-panels:/repo', JSON.stringify({ plan: true }));
-    expect([...readHiddenPanels('/repo')]).toEqual(['assistants']);
+    expect([...readHiddenPanels('/repo')]).toEqual(['assistants', 'git']);
 
     store.delete('krypton:acp-harness:hidden-panels:/repo');
-    expect([...readHiddenPanels('/repo')]).toEqual(['assistants']);
+    expect([...readHiddenPanels('/repo')]).toEqual(['assistants', 'git']);
+    expect(store.size).toBe(0);
   });
 
-  it('migrates legacy flags into one v2 envelope, adding only the opt-in panel', () => {
+  it('migrates legacy flags into one v2 envelope, adding the opt-in panels', () => {
     const key = 'krypton:acp-harness:hidden-panels:/repo';
     store.set(key, JSON.stringify(['plan', 'ticket', 'rails', 'zen', 7, 'constructor']));
-    expect([...readHiddenPanels('/repo')]).toEqual(['plan', 'ticket', 'rails', 'assistants']);
-    expect(JSON.parse(store.get(key)!)).toEqual({ version: 2, hidden: ['plan', 'ticket', 'rails', 'assistants'] });
-    expect([...readHiddenPanels('/repo')]).toEqual(['plan', 'ticket', 'rails', 'assistants']);
+    expect([...readHiddenPanels('/repo')]).toEqual(['plan', 'ticket', 'rails', 'assistants', 'git']);
+    expect(JSON.parse(store.get(key)!)).toEqual({ version: 2, hidden: ['plan', 'ticket', 'rails', 'assistants', 'git'] });
+    expect(store.get('krypton:acp-harness:git-panel-migrated:/repo')).toBe('1');
+    expect([...readHiddenPanels('/repo')]).toEqual(['plan', 'ticket', 'rails', 'assistants', 'git']);
     writeHiddenPanels('/repo', new Set(['plan']));
     expect([...readHiddenPanels('/repo')]).toEqual(['plan']);
   });
 
-  it('keeps Assistants opt-in when storage throws without hiding older panels', () => {
+  it('hides Git once on an existing v2 blob, then keeps an explicit show', () => {
+    const key = 'krypton:acp-harness:hidden-panels:/repo';
+    store.set(key, JSON.stringify({ version: 2, hidden: ['plan'] }));
+    expect([...readHiddenPanels('/repo')].sort()).toEqual(['git', 'plan']);
+    expect(store.get('krypton:acp-harness:git-panel-migrated:/repo')).toBe('1');
+    writeHiddenPanels('/repo', new Set(['plan']));
+    expect([...readHiddenPanels('/repo')]).toEqual(['plan']);
+  });
+
+  it('keeps Assistants and Git opt-in when storage throws without hiding older panels', () => {
     vi.stubGlobal('localStorage', {
       getItem: (): string | null => { throw new Error('denied'); },
       setItem: (): void => { throw new Error('denied'); },
@@ -146,7 +159,7 @@ describe('hidden panel persistence', () => {
 
     writeHiddenPanels('/repo', new Set<HarnessPanelId>(['plan']));
     writeSideHidden('/repo', 'right', true);
-    expect([...readHiddenPanels('/repo')]).toEqual(['assistants']);
+    expect([...readHiddenPanels('/repo')]).toEqual(['assistants', 'git']);
     expect(readSideHidden('/repo', 'right')).toBe(false);
   });
 });

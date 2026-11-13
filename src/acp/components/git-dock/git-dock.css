@@ -1,0 +1,293 @@
+/* Spec 396 — `GitDock`, in the console faceplate of DESIGN.md.
+   The root `.acp-harness__git-dock` (position, width, `hidden`) lives with the
+   harness layout. This sheet declares only the `acp-git-dock` block.
+   Selection is a full-row tint, never a left-edge rail (ADR 0027).
+   Lamps glow steadily — no animation. */
+
+@layer krypton.component {
+  .acp-git-dock {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .acp-git-dock[hidden] {
+    display: none;
+  }
+
+  .acp-git-dock__head {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 12px 12px 4px;
+  }
+
+  .acp-git-dock__eyebrow {
+    margin: 0;
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-shadow: var(--mat-engrave);
+  }
+
+  .acp-git-dock__lamp {
+    --git-lamp-rgb: 255, 176, 0;
+
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    line-height: 1;
+  }
+
+  .acp-git-dock__lamp::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--mat-lens-off, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.28));
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.45);
+  }
+
+  .acp-git-dock__lamp[data-lamp="refreshing"],
+  .acp-git-dock__lamp[data-lamp="staging"],
+  .acp-git-dock__lamp[data-lamp="committing"] {
+    color: var(--mat-lit);
+  }
+
+  .acp-git-dock__lamp[data-lamp="refreshing"]::before,
+  .acp-git-dock__lamp[data-lamp="staging"]::before,
+  .acp-git-dock__lamp[data-lamp="committing"]::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
+  }
+
+  .acp-git-dock__lamp[data-lamp="failed"] {
+    --git-lamp-rgb: 255, 58, 92;
+
+    color: #ff9caf;
+  }
+
+  .acp-git-dock__lamp[data-lamp="failed"]::before {
+    background: rgb(var(--git-lamp-rgb));
+    box-shadow: 0 0 6px rgba(var(--git-lamp-rgb), 0.65);
+  }
+
+  .acp-git-dock__branch,
+  .acp-git-dock__summary,
+  .acp-git-dock__banner {
+    margin: 0;
+    padding: 0 12px 2px;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    font-size: var(--krypton-chrome-font-size, 11px);
+  }
+
+  .acp-git-dock__summary,
+  .acp-git-dock__banner {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    text-shadow: var(--mat-engrave);
+  }
+
+  .acp-git-dock__ahead {
+    color: var(--krypton-ansi-2, #39ff7f);
+  }
+
+  .acp-git-dock__behind {
+    color: var(--krypton-ansi-1, #ff3a5c);
+  }
+
+  .acp-git-dock__list {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0 0 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .acp-git-dock__empty {
+    margin: 10px 8px;
+    padding: 12px 10px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background-color: var(--mat-well-fill);
+    box-shadow: var(--mat-well-shadow);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+  }
+
+  .acp-git-dock__section {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 12px 12px 6px;
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.13em;
+    text-shadow: var(--mat-engrave);
+    text-transform: uppercase;
+  }
+
+  .acp-git-dock__row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 0 8px;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--mat-groove-lo);
+    background-color: var(--mat-well-fill);
+    box-shadow:
+      inset 1px 0 0 var(--mat-well-wall),
+      inset -1px 0 0 var(--mat-well-wall),
+      inset 0 1px 0 var(--mat-groove-hi);
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    cursor: default;
+  }
+
+  .acp-git-dock__section + .acp-git-dock__row {
+    border-top-left-radius: var(--krypton-border-radius, 8px);
+    border-top-right-radius: var(--krypton-border-radius, 8px);
+    box-shadow:
+      var(--mat-well-depth),
+      inset 1px 0 0 var(--mat-well-wall),
+      inset -1px 0 0 var(--mat-well-wall),
+      inset 0 1px 0 var(--mat-well-wall);
+  }
+
+  .acp-git-dock__row:has(+ .acp-git-dock__section),
+  .acp-git-dock__row:last-child {
+    border-bottom: 0;
+    border-bottom-left-radius: var(--krypton-border-radius, 8px);
+    border-bottom-right-radius: var(--krypton-border-radius, 8px);
+    box-shadow:
+      inset 1px 0 0 var(--mat-well-wall),
+      inset -1px 0 0 var(--mat-well-wall),
+      inset 0 -1px 0 var(--mat-well-wall),
+      inset 0 1px 0 var(--mat-groove-hi),
+      0 1px 0 var(--mat-well-lip);
+  }
+
+  .acp-git-dock__section + .acp-git-dock__row:is(:has(+ .acp-git-dock__section), :last-child) {
+    border-bottom: 0;
+    border-radius: var(--krypton-border-radius, 8px);
+    box-shadow: var(--mat-well-shadow);
+  }
+
+  .acp-git-dock__row--selected {
+    background-image: linear-gradient(var(--mat-select), var(--mat-select));
+  }
+
+  .acp-harness__git-dock:focus-within .acp-git-dock__row--selected,
+  .acp-harness__git-dock:focus-within .acp-git-dock__row--selected .acp-git-dock__code,
+  .acp-harness__git-dock:focus-within .acp-git-dock__row--selected .acp-git-dock__dir,
+  .acp-harness__git-dock:focus-within .acp-git-dock__row--selected .acp-git-dock__name,
+  .acp-harness__git-dock:focus-within .acp-git-dock__row--selected .acp-git-dock__counts {
+    color: var(--mat-lit);
+  }
+
+  .acp-git-dock__code {
+    flex: 0 0 2.2ch;
+    color: var(--mat-silk);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .acp-git-dock__path {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    direction: rtl;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-git-dock__dir,
+  .acp-git-dock__name {
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
+  .acp-git-dock__dir {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+  }
+
+  .acp-git-dock__counts {
+    flex: 0 0 auto;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .acp-git-dock__counts--dim {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+  }
+
+  .acp-git-dock__commit {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0 8px 8px;
+    padding: 8px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background-color: var(--mat-well-fill);
+    box-shadow: var(--mat-well-shadow);
+  }
+
+  .acp-git-dock__commit[hidden] {
+    display: none;
+  }
+
+  .acp-git-dock__message {
+    width: 100%;
+    min-height: 3.2em;
+    margin: 0;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    box-shadow: inset 0 1px 0 var(--mat-groove-hi);
+    color: inherit;
+    font: inherit;
+    resize: none;
+  }
+
+  .acp-git-dock__message:focus {
+    outline: 1px solid var(--mat-lit);
+    outline-offset: 1px;
+  }
+
+  .acp-git-dock__commit-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    font-size: var(--krypton-chrome-font-size, 11px);
+  }
+
+  .acp-git-dock__commit-btn {
+    padding: 3px 8px;
+    border: 1px solid var(--mat-key-edge);
+    border-radius: 6px;
+    background: var(--mat-key);
+    box-shadow: var(--mat-key-raise);
+    color: var(--mat-silk);
+    font: inherit;
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.08em;
+    cursor: default;
+  }
+
+  .acp-git-dock__keys {
+    flex: 0 0 auto;
+    padding: 7px 12px 9px;
+    border-top: 1px solid var(--mat-groove-lo);
+    box-shadow: inset 0 1px 0 var(--mat-groove-hi);
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    text-shadow: var(--mat-engrave);
+  }
+}

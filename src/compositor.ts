@@ -3967,6 +3967,78 @@ export class Compositor {
     diffView.onClose(() => this.closeContentViewHost(diffView));
   }
 
+  /**
+   * spec 396: open the local working diff for one repo path and scroll to it.
+   * A missing path still leaves the tab open and returns false. A failed collect
+   * opens nothing and does not notify.
+   */
+  async openWorkingDiff(options: { cwd: string; staged: boolean; revealPath: string }): Promise<boolean> {
+    const { cwd, staged, revealPath } = options;
+    type WorkingDiffPayload = {
+      repoRoot: string;
+      diff: string;
+      skipped: { path: string; reason: string }[];
+    };
+    let initial: WorkingDiffPayload;
+    try {
+      initial = await invoke<WorkingDiffPayload>('collect_working_diff', { cwd, staged });
+    } catch (e) {
+      console.warn('collect_working_diff failed:', e);
+      return false;
+    }
+
+    const { DiffContentView } = await import('./diff-view');
+    const container = document.createElement('div');
+    container.style.cssText = 'width:100%;height:100%;overflow:hidden;';
+
+    const diffView = new DiffContentView(initial.diff, container, {
+      skipped: initial.skipped,
+      refreshProvider: async () => {
+        const r = await invoke<WorkingDiffPayload>('collect_working_diff', {
+          cwd: initial.repoRoot,
+          staged,
+        });
+        return { diff: r.diff, skipped: r.skipped };
+      },
+      review: {
+        resolveTargets: () => this.resolveDiffReviewTargets(initial.repoRoot),
+        send: (batch) => this.sendDiffReview(batch),
+      },
+      reviewPriority: {
+        resolve: () => this.resolveDiffReviewPriority(initial.repoRoot),
+      },
+    });
+
+    const titleFor = (count: number): string => {
+      const files = `${count} file${count !== 1 ? 's' : ''}`;
+      return staged ? `DIFF_STAGED // ${files}` : `DIFF // ${files}`;
+    };
+    await this.createContentTab(titleFor(diffView.fileCount()), diffView);
+
+    if (this.bus) {
+      const repoRoot = initial.repoRoot;
+      const unsub = this.bus.onSignal({ kind: 'harness:lane-idle' }, (sig) => {
+        void this.resolveRepoRoot(sig.value.cwd).then((root) => {
+          if (root !== null && root === repoRoot) diffView.requestRefresh();
+        });
+      });
+      diffView.addDisposeListener(unsub);
+    }
+
+    const win = this.focusedWindowId ? this.windows.get(this.focusedWindowId) : null;
+    const tab = win ? win.tabs[win.activeTabIndex] : undefined;
+    if (tab) {
+      diffView.onRefreshed((count) => {
+        tab.title = titleFor(count);
+        const titleEl = tab.element.querySelector('.krypton-tab__title');
+        if (titleEl) titleEl.textContent = tab.title;
+      });
+    }
+
+    diffView.onClose(() => this.closeContentViewHost(diffView));
+    return diffView.revealLocation(revealPath);
+  }
+
   /** spec 298: open the generated global lessons index in the Markdown Viewer. */
   async openLessons(): Promise<void> {
     const snapshot = await refreshLessons();
@@ -5222,6 +5294,7 @@ export class Compositor {
       // spec 296: Shift+<label> / Alt+click open a file beside the harness.
       (path, line, column) => this.openToSide({ kind: 'file', path, line, col: column }),
     );
+    view.setOpenWorkingDiff((options) => this.openWorkingDiff(options));
 
     await this.mountAcpHarnessView(view);
   }
@@ -5271,6 +5344,7 @@ export class Compositor {
       workspace,
       null,
     );
+    view.setOpenWorkingDiff((options) => this.openWorkingDiff(options));
     await this.mountAcpHarnessView(view);
   }
 

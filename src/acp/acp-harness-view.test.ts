@@ -835,6 +835,7 @@ describe('composer git branch refresh', () => {
 
   it('re-probes when a lane goes idle', () => {
     const scheduled: string[] = [];
+    const idle: string[] = [];
     const lane = { id: 'lane-1', status: 'busy' } as unknown as HarnessLane;
     const target = {
       projectDir: '/repo',
@@ -846,6 +847,7 @@ describe('composer git branch refresh', () => {
       clearCancelEscalation: (): void => {},
       scheduleReferenceGitRefresh: (): void => {},
       scheduleGitBranchRefresh: (): void => { scheduled.push('branch'); },
+      gitCtl: { noteLaneIdle: (cwd: string): void => { idle.push(cwd); } },
       ticketCtl: { ticketWorker: null },
       updateComposerTick: (): void => {},
       updateSpinnerTicker: (): void => {},
@@ -854,6 +856,7 @@ describe('composer git branch refresh', () => {
     proto.setLaneStatus.call(target, lane, 'idle');
 
     expect(scheduled).toEqual(['branch']);
+    expect(idle).toEqual(['/repo']);
   });
 
   it('re-probes once the project dir resolves during memory init', async () => {

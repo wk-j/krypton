@@ -8,7 +8,7 @@ import { TabStrip, type TabStripTab } from './components/tab-strip';
 import { readDockTab, writeDockTab, type HarnessDockTab } from './harness-panel-visibility';
 
 /** Paint order of the tab strip, left to right. */
-const DOCK_TABS: readonly HarnessDockTab[] = ['ticket', 'rails', 'assistants'];
+const DOCK_TABS: readonly HarnessDockTab[] = ['ticket', 'rails', 'assistants', 'git'];
 
 /** The root class that reserves the column's width (`harness-shared.css`). */
 export const DOCK_ACTIVE_CLASS = 'acp-harness--dock-active';
@@ -22,6 +22,15 @@ export interface RailsTabBadge {
 
 const NO_BADGE: RailsTabBadge = { failedCheck: null, open: null };
 
+/** What the Git tab label carries: `GIT ✗` when any path conflicts, else the row count. */
+export interface GitTabBadge {
+  readonly conflicts: boolean;
+  /** Null when the tree is clean or status has not loaded. */
+  readonly rows: number | null;
+}
+
+const NO_GIT_BADGE: GitTabBadge = { conflicts: false, rows: null };
+
 
 export class HarnessDock {
   /** The column, `.acp-harness__dock`: the tab strip, then the shown dock. */
@@ -30,10 +39,11 @@ export class HarnessDock {
   readonly slotEl: HTMLElement;
   private readonly strip = new TabStrip('button');
   private readonly panes = new Map<HarnessDockTab, HTMLElement>();
-  private readonly available: Record<HarnessDockTab, boolean> = { ticket: false, rails: false, assistants: false };
+  private readonly available: Record<HarnessDockTab, boolean> = { ticket: false, rails: false, assistants: false, git: false };
   private selected: HarnessDockTab;
   private shownTab: HarnessDockTab | null = null;
   private badge: RailsTabBadge = NO_BADGE;
+  private gitBadge: GitTabBadge = NO_GIT_BADGE;
 
   /**
    * @param root the harness root, which carries `acp-harness--dock-active`.
@@ -76,6 +86,13 @@ export class HarnessDock {
   setRailsBadge(badge: RailsTabBadge): void {
     if (badge.failedCheck === this.badge.failedCheck && badge.open === this.badge.open) return;
     this.badge = badge;
+    this.paintStrip();
+  }
+
+  /** Spec 396: conflict wins over the row count. A clean tree paints `GIT` alone. */
+  setGitBadge(badge: GitTabBadge): void {
+    if (badge.conflicts === this.gitBadge.conflicts && badge.rows === this.gitBadge.rows) return;
+    this.gitBadge = badge;
     this.paintStrip();
   }
 
@@ -170,7 +187,7 @@ export class HarnessDock {
       role: 'tablist',
       ariaLabel: 'Dock',
       onSelect: (id) => {
-        if (id === 'ticket' || id === 'rails' || id === 'assistants') this.select(id);
+        if (id === 'ticket' || id === 'rails' || id === 'assistants' || id === 'git') this.select(id);
       },
     });
   }
@@ -178,6 +195,12 @@ export class HarnessDock {
   private tabFor(tab: HarnessDockTab): TabStripTab {
     if (tab === 'ticket') return { id: 'ticket', label: 'TICKET' };
     if (tab === 'assistants') return { id: 'assistants', label: 'ASSISTANTS' };
+    if (tab === 'git') {
+      if (this.gitBadge.conflicts) return { id: 'git', label: 'GIT ✗' };
+      return this.gitBadge.rows === null
+        ? { id: 'git', label: 'GIT' }
+        : { id: 'git', label: 'GIT', count: this.gitBadge.rows };
+    }
     if (this.badge.failedCheck !== null) return { id: 'rails', label: 'RAILS ✗' };
     return this.badge.open === null
       ? { id: 'rails', label: 'RAILS' }

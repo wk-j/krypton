@@ -25,7 +25,7 @@ each do one thing:
 - **`left`** shows or hides the left panel: the Zen lane-navigation rail. The
   rail exists only in Zen Mode, so outside Zen `left` reads as hidden, and
   showing it turns Zen Mode on (rev 3).
-- **`right`** shows or hides the right panel: the dock column (Ticket / Rails / Assistants tabs; spec 357).
+- **`right`** shows or hides the right panel: the dock column (Ticket / Rails / Assistants / Git tabs; spec 357, spec 396).
 
 Neither button changes any other panel, flag or button, except that showing
 `left` outside Zen also turns Zen Mode on. The five per-panel
@@ -147,21 +147,22 @@ follows Zen in both directions.
 | `#panels <panel>`, `#panels <action> <panel>` | Unchanged (spec 320) |
 | `#panels`, `#panels hide\|show\|toggle` | Usage — the master switch is gone |
 
-`usage: #panels [hide | show | toggle] <left | right | plan | peek | thought | grammar | queue | ticket | rails | assistants>`
+`usage: #panels [hide | show | toggle] <left | right | plan | peek | thought | grammar | queue | ticket | rails | assistants | git>`
 
 Chips: `left panel hidden · #panels show left` / `left panel shown`, and the
-same for `right`. The `ticket`, `rails` and `assistants` chips append ` · right panel hidden`
+same for `right`. The `ticket`, `rails`, `assistants`, and `git` chips append ` · right panel hidden`
 while the right panel is hidden (was ` · all panels hidden`); the other five
 panels no longer get a suffix. Bare `#rails` while the right panel is hidden
 flashes `right panel hidden · #panels show right`.
 
 Spec 357's **Open Assistant Instances** palette command is an explicit composed
 Open action: show the right side, unhide Assistants, select it and focus it.
-Ordinary `#panels assistants show` still changes only its own panel flag.
+Spec 396's **Open Git Panel** does the same for Git. Ordinary `#panels assistants show`
+and `#panels git show` still change only their own panel flag.
 
 ### Titlebar
 
-Order: `plan peek thought grammar queue ticket rails` · divider · `left right`,
+Order: `plan peek thought grammar queue ticket rails git` · divider · `left right`,
 then the spec 322 `backend-update` action when present.
 
 | Button | Icon | Label | Pressed | Disabled |

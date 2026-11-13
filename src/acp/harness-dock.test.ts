@@ -192,6 +192,34 @@ describe('HarnessDock (spec 337)', () => {
     expect(dock.shown()).toBe('ticket');
   });
 
+  it('badges the Git tab with the row count, or ✗ when any path conflicts', () => {
+    const { dock } = column();
+    dock.setAvailable('ticket', true);
+    dock.setAvailable('git', true);
+    expect(tabs(dock).labels[1]).toBe('GIT');
+
+    dock.setGitBadge({ conflicts: false, rows: 6 });
+    expect(tabs(dock).labels[1]).toBe('GIT 6');
+
+    dock.setGitBadge({ conflicts: true, rows: 6 });
+    expect(tabs(dock).labels[1]).toBe('GIT ✗');
+    expect(tabs(dock).strip.querySelectorAll('.acp-dock__tab-count')).toHaveLength(0);
+  });
+
+  it('traverses Ticket, Rails, Assistants, and Git when Git is available', () => {
+    const { dock } = column();
+    for (const tab of ['ticket', 'rails', 'assistants', 'git'] as const) dock.setAvailable(tab, true);
+    expect(tabs(dock).labels).toEqual(['TICKET', 'RAILS', 'ASSISTANTS', 'GIT']);
+    expect(dock.handleKey(key(']'))).toBe(true);
+    expect(dock.shown()).toBe('rails');
+    expect(dock.handleKey(key('['))).toBe(true);
+    expect(dock.shown()).toBe('ticket');
+    dock.select('git');
+    expect(dock.shown()).toBe('git');
+    expect(dock.handleKey(key(']'))).toBe(true);
+    expect(dock.shown()).toBe('ticket');
+  });
+
   it('traverses all three tabs directionally and wraps in display order', () => {
     const { dock } = column();
     for (const tab of ['ticket', 'rails', 'assistants'] as const) dock.setAvailable(tab, true);

@@ -27,6 +27,7 @@ import { HarnessE2eController } from './harness-e2e-controller';
 import { HarnessTicketController } from './harness-ticket-controller';
 import { HarnessRailsController } from './harness-rails-controller';
 import { HarnessAssistantsController } from './harness-assistants-controller';
+import { HarnessGitController, type WorkingDiffRequest } from './harness-git-controller';
 import { HarnessDock } from './harness-dock';
 import { HarnessReviewLoopController } from './harness-review-loop-controller';
 import { HarnessSteerController } from './harness-steer-controller';
@@ -1394,11 +1395,15 @@ export class AcpHarnessView implements ContentView {
    *  (acp_save/load_issue_bindings) and rehydrated on register. */
   private readonly issueBindings = new Map<string, IssueBinding>();
   private readonly ticketCtl = new HarnessTicketController(this.ticketHost());
-  /** The shared `dock.right` column — Ticket, Rails, and Assistants. */
+  /** The shared `dock.right` column — Ticket, Rails, Assistants, and Git. */
   private readonly dock: HarnessDock;
   /** spec 337: the Rails verifier. Null on a remote harness, where it never exists. */
   private readonly railsCtl: HarnessRailsController | null;
   private readonly assistantsCtl: HarnessAssistantsController;
+  /** spec 396: Git status and index mutations. Present on a remote harness; the body says Git is local only. */
+  private readonly gitCtl: HarnessGitController;
+  /** spec 396: compositor hook. Null in tests that construct the view alone. */
+  private openWorkingDiffCb: ((request: WorkingDiffRequest) => Promise<boolean>) | null = null;
   /** Project-local autonomous Timeline settings and legacy migration state. */
   private readonly timelineCtl = new HarnessTimelineController(this.timelineHost());
   /** spec 328: `#e2e` — run and track the project's e2e cases from the transcript. */
@@ -1800,6 +1805,21 @@ export class AcpHarnessView implements ContentView {
       invalidate: () => this.invalidate('rightRail'),
       focusComposer: () => this.focusComposer(),
     });
+    const readOpenDiff = (): ((request: WorkingDiffRequest) => Promise<boolean>) | null => this.openWorkingDiffCb;
+    this.gitCtl = new HarnessGitController({
+      projectDir: () => this.projectDir,
+      remote: () => this.remoteRuntimeId !== null,
+      isPanelHidden: () => this.isPanelHidden('git'),
+      setDockTabAvailable: (available) => this.dock.setAvailable('git', available),
+      dockTabShown: () => this.dock.isShown('git'),
+      invalidate: () => this.invalidate('rightRail'),
+      focusComposer: () => this.focusComposer(),
+      flash: (message) => this.flashChip(message),
+      setBadge: (badge) => this.dock.setGitBadge(badge),
+      get openDiff() {
+        return readOpenDiff();
+      },
+    });
     if (SPEC114_DEV) installLaneBodyScrollTracer();
     this.coordinator = new InterLaneCoordinator(this.laneBus, this.buildLaneHost());
     // spec 240: transcript annotations drain on idle like other human→lane
@@ -1954,6 +1974,7 @@ export class AcpHarnessView implements ContentView {
       });
       this.scheduleReferenceGitRefresh();
       this.scheduleGitBranchRefresh();
+      this.gitCtl.noteLaneIdle(this.projectDir);
       if (this.ticketCtl.ticketWorker?.laneId === lane.id) void this.ticketCtl.reloadActiveTicket(false);
     }
     // Composer peer-strip age depends on lane status (busy / awaiting_peer)
@@ -4742,9 +4763,10 @@ export class AcpHarnessView implements ContentView {
       if (review) return this.handleFsReviewKey(e, lane, review);
     }
 
-    // spec 337: a focused dock column. Pending permission / write-review prompts
-    // above keep their keys (questions returned earlier); only then does the
-    // column own `[` / `]` and the focused Rails dock its list keys.
+    // spec 337 / 396: a focused dock column. Pending permission / write-review
+    // prompts above keep their keys (questions returned earlier); only then does
+    // the column own `[` / `]` and the focused Git, Assistants, or Rails dock
+    // its list keys. A commit-field key returns false so the textarea inserts it.
     const dockFocused = document.activeElement instanceof Node && this.dock.el.contains(document.activeElement);
     const laneBlocked = lane !== null && (
       lane.pendingComputerCommands.length > 0
@@ -4753,7 +4775,10 @@ export class AcpHarnessView implements ContentView {
     );
     if (dockFocused && !laneBlocked) {
       if (this.dock.handleKey(e)) return true;
-      if (this.assistantsCtl.dockEl.contains(document.activeElement)) {
+      if (this.gitCtl.dockEl.contains(document.activeElement)) {
+        if (this.gitCtl.passesToField(e)) return false;
+        if (this.gitCtl.handleDockKey(e)) return true;
+      } else if (this.assistantsCtl.dockEl.contains(document.activeElement)) {
         if (this.assistantsCtl.handleDockKey(e)) return true;
       } else if (this.railsCtl?.dockEl.contains(document.activeElement)) {
         if (this.railsCtl.handleDockKey(e)) return true;
@@ -5214,6 +5239,7 @@ export class AcpHarnessView implements ContentView {
     this.assistCtl.dispose(); // spec 306
     this.railsCtl?.dispose(); // spec 337: cancels a run, writes no record
     this.assistantsCtl.dispose();
+    this.gitCtl.dispose();
     this.composerBloomLayer?.replaceChildren();
     this.composerBloomLayer = null;
     this.composerBloomLaneId = null;
@@ -6555,6 +6581,7 @@ export class AcpHarnessView implements ContentView {
     this.dock.setPane('ticket', this.ticketCtl.ticketDockEl);
     if (this.railsCtl) this.dock.setPane('rails', this.railsCtl.dockEl);
     this.dock.setPane('assistants', this.assistantsCtl.dockEl);
+    this.dock.setPane('git', this.gitCtl.dockEl);
     body.appendChild(this.dock.el);
 
     // Anchors in this view — agent-rendered markdown and ticket links — always
@@ -6754,6 +6781,7 @@ export class AcpHarnessView implements ContentView {
     this.railLayout.mount('ticket', this.ticketCtl.ticketDock);
     if (this.railsCtl) this.railLayout.mount('rails', this.railsCtl.dock);
     this.railLayout.mount('assistants', this.assistantsCtl.dock);
+    this.railLayout.mount('git', this.gitCtl.dock);
 
     this.lanePicker = new LanePicker();
     body.appendChild(this.lanePicker.el);
@@ -12769,6 +12797,7 @@ export class AcpHarnessView implements ContentView {
         this.ticketCtl.renderTicketDock();
         this.railsCtl?.renderDock();
         this.assistantsCtl.renderDock();
+        this.gitCtl.renderDock();
         return;
       case 'composer':
         this.renderComposer();
@@ -15960,6 +15989,13 @@ export class AcpHarnessView implements ContentView {
       icon: 'square-stack',
       execute: () => this.showAssistantsDock(),
     });
+    out.push({
+      id: 'acp.harness.git',
+      label: 'Open Git Panel',
+      category: 'ACP Harness',
+      icon: 'git-branch',
+      execute: () => this.showGitDock(),
+    });
     if (!lane) return out;
     if (!this.remoteRuntimeId && this.projectDir && lane.status === 'idle' && lane.sessionId) {
       out.push({
@@ -16158,6 +16194,7 @@ export class AcpHarnessView implements ContentView {
   /** spec 337: the column changed its shown tab — only a shown dock paints. */
   private onDockShown(tab: HarnessDockTab | null): void {
     this.assistantsCtl.renderDock();
+    this.gitCtl.renderDock();
     if (tab === 'ticket') this.ticketCtl.renderTicketDock();
     else if (tab === 'rails') this.railsCtl?.renderDock();
   }
@@ -16184,6 +16221,20 @@ export class AcpHarnessView implements ContentView {
     this.assistantsCtl.renderDock();
     this.dock.select('assistants');
     this.assistantsCtl.focus();
+  }
+
+  /** spec 396: show the right side, unhide Git, select the tab, and focus it. */
+  private showGitDock(): void {
+    this.setSideHidden('right', false);
+    this.setPanelHidden('git', false);
+    this.gitCtl.renderDock();
+    this.dock.select('git');
+    this.gitCtl.focus();
+  }
+
+  /** spec 396: the compositor supplies the local working-diff opener. */
+  setOpenWorkingDiff(open: (request: WorkingDiffRequest) => Promise<boolean>): void {
+    this.openWorkingDiffCb = open;
   }
 
   private focusComposer(): void {

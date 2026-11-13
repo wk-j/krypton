@@ -5,6 +5,7 @@
 > Milestone: ACP Harness — observability
 > Builds on: 0091 (resources), 0301/0302 (components), 0306 (Assist), 0333 (Inline AI), 0337 (Rails), 0347 (side panels)
 > Styling superseded by [spec 0366](./0366-console-faceplate-ui.md) and DESIGN.md 2.0.0 (Krypton Console): `DESIGN.console.md` merged into DESIGN.md; dock tokens are `--mat-*`.
+> The Git tab (spec 396) follows Assistants on this same dock.
 
 ## Problem
 

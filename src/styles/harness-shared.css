@@ -72,9 +72,9 @@
 }
 
 /* Dock column · `harness-dock.ts` builds `.acp-harness__dock` (spec 337): the
-   `acp-dock` tab strip, then the `dock.right` layout slot holding the Ticket
-   and Rails docks at full height, one shown, the other `hidden`. It toggles
-   the `.acp-harness--dock-active` root class while any tab is shown. */
+   `acp-dock` tab strip, then the `dock.right` layout slot holding Ticket,
+   Rails, Assistants, and Git at full height, one shown, the others `hidden`.
+   It toggles the `.acp-harness--dock-active` root class while any tab is shown. */
 /* spec 238: the dock is a flush split pane of the harness window, not a
    nested 8px card. Dashboard yields exactly the column width; Lane Peek
    keeps its own 12px rail inset. spec 331: no collapsed state — a column
@@ -151,10 +151,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 3px;
   min-width: 0;
   min-height: 26px;
-  padding: 3px 8px;
+  padding: 3px 2px;
   border: 1px solid var(--mat-key-edge);
   /* DESIGN.md's 6px tab pill: concentric with the 8px channel around it. */
   border-radius: 6px;
@@ -162,8 +162,9 @@
   box-shadow: var(--mat-key-raise);
   color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font: inherit;
-  font-size: var(--krypton-chrome-font-size, 11px);
-  letter-spacing: 0.09em;
+  /* Four labels (spec 396) share 352px. 10px / 0.02em keeps ASSISTANTS whole. */
+  font-size: 10px;
+  letter-spacing: 0.02em;
   line-height: 1;
   text-shadow: var(--mat-print);
   white-space: nowrap;
@@ -220,7 +221,8 @@
 /* The shown dock fills the column under the strip and scrolls on its own. */
 .acp-harness__ticket-dock,
 .acp-harness__rails-dock,
-.acp-harness__assistants-dock {
+.acp-harness__assistants-dock,
+.acp-harness__git-dock {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -234,7 +236,8 @@
 
 .acp-harness__ticket-dock[hidden],
 .acp-harness__rails-dock[hidden],
-.acp-harness__assistants-dock[hidden] {
+.acp-harness__assistants-dock[hidden],
+.acp-harness__git-dock[hidden] {
   display: none;
 }
 
@@ -244,7 +247,8 @@
    `assistant-instances.css`). */
 .acp-harness__rails-dock:focus,
 .acp-harness__ticket-dock:focus,
-.acp-harness__assistants-dock:focus {
+.acp-harness__assistants-dock:focus,
+.acp-harness__git-dock:focus {
   outline: none;
 }
 

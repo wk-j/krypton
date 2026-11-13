@@ -16,7 +16,7 @@ use krypton_remote_protocol::diff_stat::{
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
-use std::io::Read;
+use std::io::{ErrorKind, Read};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -1109,6 +1109,459 @@ fn untracked_addition_diff(path: &str, bytes: &[u8]) -> String {
     out
 }
 
+/// spec 396: porcelain v2 plus numstat for the harness Git dock.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitPanelStatus {
+    pub repo_root: String,
+    /// `git status --porcelain=v2 --branch -z --untracked-files=normal --renames`
+    pub status: String,
+    pub staged_numstat: String,
+    pub unstaged_numstat: String,
+}
+
+/// spec 396: short sha after a panel commit.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitPanelCommit {
+    pub sha: String,
+}
+
+const PANEL_STAGE_TIMEOUT: Duration = Duration::from_secs(15);
+const PANEL_COMMIT_TIMEOUT: Duration = Duration::from_secs(120);
+const PANEL_MUTATION_STDOUT_MAX: usize = 64 * 1024;
+const PANEL_MUTATION_STDERR_MAX: usize = 8 * 1024;
+const PANEL_COMMIT_MESSAGE_MAX: usize = 100_000;
+
+/// spec 396: working-tree status of the repo that contains `cwd`.
+pub fn git_panel_status(cwd: &str) -> Result<GitPanelStatus, String> {
+    let root = panel_root(cwd)?;
+    let args = owned_args(&[
+        "status",
+        "--porcelain=v2",
+        "--branch",
+        "-z",
+        "--untracked-files=normal",
+        "--renames",
+    ]);
+    let status = match run_git_capped(&root, &args).map_err(panel_spawn_err)? {
+        (Some(0), stdout) => stdout,
+        (Some(code), _) => return Err(format!("git status exited with status {code}")),
+        (None, _) => return Err("git status was terminated by a signal".to_string()),
+    };
+    Ok(GitPanelStatus {
+        repo_root: root.clone(),
+        status,
+        staged_numstat: panel_numstat(&root, true),
+        unstaged_numstat: panel_numstat(&root, false),
+    })
+}
+
+/// spec 396: `git add -- <paths>` in chunks. A conflict path is still a plain add;
+/// the dock refuses those before calling.
+pub fn git_panel_stage(cwd: &str, paths: Vec<String>) -> Result<(), String> {
+    if paths.is_empty() {
+        return Err("no paths".to_string());
+    }
+    let root = panel_root(cwd)?;
+    let checked = gate_paths(&root, &paths)?;
+    for chunk in checked.chunks(200) {
+        let mut args = owned_args(&["add", "--"]);
+        args.extend(chunk.iter().cloned());
+        mutation_ok(&root, &args, PANEL_STAGE_TIMEOUT)?;
+    }
+    Ok(())
+}
+
+/// spec 396: `git restore --staged`. Exactly `["."]` unstages the whole index.
+pub fn git_panel_unstage(cwd: &str, paths: Vec<String>) -> Result<(), String> {
+    if paths.is_empty() {
+        return Err("no paths".to_string());
+    }
+    let root = panel_root(cwd)?;
+    if paths.len() == 1 && paths[0] == "." {
+        return mutation_ok(
+            &root,
+            &owned_args(&["restore", "--staged", "--", "."]),
+            PANEL_STAGE_TIMEOUT,
+        );
+    }
+    if paths.iter().any(|path| path == ".") {
+        return Err("\".\" is only valid alone".to_string());
+    }
+    let checked = gate_paths(&root, &paths)?;
+    let mut args = owned_args(&["restore", "--staged", "--"]);
+    args.extend(checked);
+    mutation_ok(&root, &args, PANEL_STAGE_TIMEOUT)
+}
+
+/// spec 396: restore a worktree file, or `git clean` an untracked path that
+/// `ls-files` still reports.
+pub fn git_panel_discard(cwd: &str, path: String, kind: String) -> Result<(), String> {
+    let root = panel_root(cwd)?;
+    gate_rel_path(&path)?;
+    under_root(Path::new(&root), &path)?;
+    match kind.as_str() {
+        "unstaged" => {
+            let mut args = owned_args(&["restore", "--worktree", "--"]);
+            args.push(path);
+            mutation_ok(&root, &args, PANEL_STAGE_TIMEOUT)
+        }
+        "untracked-file" | "untracked-dir" => {
+            require_untracked(&root, &path)?;
+            let mut args = owned_args(if kind == "untracked-dir" {
+                &["clean", "-fd", "--"]
+            } else {
+                &["clean", "-f", "--"]
+            });
+            args.push(path);
+            mutation_ok(&root, &args, PANEL_STAGE_TIMEOUT)
+        }
+        _ => Err("unknown discard kind".to_string()),
+    }
+}
+
+/// spec 396: commit the index only. Hooks and `commit.gpgsign` stay on.
+pub fn git_panel_commit(cwd: &str, message: String) -> Result<GitPanelCommit, String> {
+    let trimmed = message.trim();
+    if trimmed.is_empty() {
+        return Err("commit message is empty".to_string());
+    }
+    if trimmed.len() > PANEL_COMMIT_MESSAGE_MAX {
+        return Err("commit message is too long".to_string());
+    }
+    let root = panel_root(cwd)?;
+    match run_git_mutation(
+        &root,
+        &owned_args(&["diff", "--cached", "--quiet"]),
+        PANEL_STAGE_TIMEOUT,
+    )? {
+        (Some(0), _, _) => return Err("nothing staged".to_string()),
+        (Some(1), _, _) => {}
+        (Some(code), _, stderr) => return Err(mutation_failure("diff", code, &stderr)),
+        (None, _, _) => return Err("git diff was terminated by a signal".to_string()),
+    }
+    let commit_args = [
+        "commit".to_string(),
+        "-m".to_string(),
+        trimmed.to_string(),
+        "--".to_string(),
+    ];
+    mutation_ok(&root, &commit_args, PANEL_COMMIT_TIMEOUT)?;
+    let sha = match run_git_capped(&root, &owned_args(&["rev-parse", "--short", "HEAD"]))
+        .map_err(panel_spawn_err)?
+    {
+        (Some(0), stdout) => stdout.trim().to_string(),
+        (Some(code), _) => return Err(format!("git rev-parse exited with status {code}")),
+        (None, _) => return Err("git rev-parse was terminated by a signal".to_string()),
+    };
+    if sha.is_empty() {
+        return Err("git rev-parse exited with status 0".to_string());
+    }
+    log::info!("git panel commit {sha}");
+    Ok(GitPanelCommit { sha })
+}
+
+fn panel_numstat(root: &str, cached: bool) -> String {
+    let mut args = owned_args(&["diff"]);
+    if cached {
+        args.push("--cached".to_string());
+    }
+    args.extend(owned_args(&[
+        "--numstat",
+        "-z",
+        "--no-color",
+        "--no-ext-diff",
+        "--no-textconv",
+    ]));
+    match run_git_capped(root, &args) {
+        Ok((Some(0), stdout)) => stdout,
+        Ok((code, _)) => {
+            log::debug!("git_panel_status: numstat (cached={cached}) exited {code:?}");
+            String::new()
+        }
+        Err(e) => {
+            log::debug!("git_panel_status: numstat (cached={cached}) failed: {e}");
+            String::new()
+        }
+    }
+}
+
+/// Work tree root, or a stable panel error. `repo_root` first; a miss is then
+/// classified as missing git, a bare repo, or not a repository.
+fn panel_root(cwd: &str) -> Result<String, String> {
+    if cwd.is_empty() {
+        return Err("not a git repository".to_string());
+    }
+    let path = Path::new(cwd);
+    if let Some(root) = repo_root(path) {
+        if is_bare_repo(Path::new(&root))? {
+            return Err("bare repository".to_string());
+        }
+        return Ok(root);
+    }
+    match Command::new("git")
+        .args(["rev-parse", "--is-bare-repository"])
+        .current_dir(path)
+        .output()
+    {
+        Err(e) if e.kind() == ErrorKind::NotFound => Err("git not found".to_string()),
+        Err(_) => Err("not a git repository".to_string()),
+        Ok(out) if String::from_utf8_lossy(&out.stdout).trim() == "true" => {
+            Err("bare repository".to_string())
+        }
+        Ok(_) => Err("not a git repository".to_string()),
+    }
+}
+
+fn is_bare_repo(root: &Path) -> Result<bool, String> {
+    match Command::new("git")
+        .args(["rev-parse", "--is-bare-repository"])
+        .current_dir(root)
+        .output()
+    {
+        Err(e) if e.kind() == ErrorKind::NotFound => Err("git not found".to_string()),
+        Err(e) => Err(format!("failed to run git: {e}")),
+        Ok(out) => Ok(String::from_utf8_lossy(&out.stdout).trim() == "true"),
+    }
+}
+
+fn panel_spawn_err(err: String) -> String {
+    if err.starts_with("failed to run git:") && err.contains("os error 2") {
+        "git not found".to_string()
+    } else {
+        err
+    }
+}
+
+fn gate_paths(root: &str, paths: &[String]) -> Result<Vec<String>, String> {
+    let mut out = Vec::with_capacity(paths.len());
+    for path in paths {
+        gate_rel_path(path)?;
+        under_root(Path::new(root), path)?;
+        out.push(path.clone());
+    }
+    Ok(out)
+}
+
+fn gate_rel_path(path: &str) -> Result<(), String> {
+    if path.is_empty() {
+        return Err("path is empty".to_string());
+    }
+    if path.starts_with('/') || path.starts_with('\\') || Path::new(path).is_absolute() {
+        return Err("path is absolute".to_string());
+    }
+    let mut parts = path.split('/').peekable();
+    let mut saw_component = false;
+    while let Some(part) = parts.next() {
+        let last = parts.peek().is_none();
+        if part.is_empty() {
+            if last && saw_component {
+                continue;
+            }
+            return Err(if saw_component {
+                "path escapes the repository".to_string()
+            } else {
+                "path is empty".to_string()
+            });
+        }
+        saw_component = true;
+        if part == "." || part == ".." || part.contains('\0') {
+            return Err("path escapes the repository".to_string());
+        }
+    }
+    if !saw_component {
+        return Err("path is empty".to_string());
+    }
+    Ok(())
+}
+
+fn under_root(root: &Path, path: &str) -> Result<(), String> {
+    let mut acc = root.to_path_buf();
+    for part in path.split('/').filter(|part| !part.is_empty()) {
+        acc.push(part);
+    }
+    if acc.starts_with(root) {
+        Ok(())
+    } else {
+        Err("path escapes the repository".to_string())
+    }
+}
+
+fn require_untracked(root: &str, path: &str) -> Result<(), String> {
+    let args = owned_args(&[
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "--directory",
+        "-z",
+        "--",
+        path,
+    ]);
+    let stdout = match run_git_capped(root, &args).map_err(panel_spawn_err)? {
+        (Some(0), stdout) => stdout,
+        (Some(code), _) => return Err(format!("git ls-files exited with status {code}")),
+        (None, _) => return Err("git ls-files was terminated by a signal".to_string()),
+    };
+    let want = path.trim_end_matches('/');
+    let listed = stdout
+        .split('\0')
+        .any(|entry| !entry.is_empty() && entry.trim_end_matches('/') == want);
+    if listed {
+        Ok(())
+    } else {
+        Err("path is not an untracked file".to_string())
+    }
+}
+
+/// `git --no-pager <args>` that must take `index.lock`. Stdout over 64 KiB
+/// fails. Stderr is kept up to 8 KiB and never fails the run by itself.
+fn run_git_mutation(
+    cwd: &str,
+    args: &[String],
+    timeout: Duration,
+) -> Result<(Option<i32>, String, String), String> {
+    let sub = args.first().map(String::as_str).unwrap_or("");
+    let mut child = Command::new("git")
+        .arg("--no-pager")
+        .args(args)
+        .current_dir(cwd)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            if e.kind() == ErrorKind::NotFound {
+                "git not found".to_string()
+            } else {
+                format!("failed to run git: {e}")
+            }
+        })?;
+    let stdout = child.stdout.take().ok_or_else(|| {
+        kill_child(&mut child);
+        "git stdout unavailable".to_string()
+    })?;
+    let stderr = child.stderr.take().ok_or_else(|| {
+        kill_child(&mut child);
+        "git stderr unavailable".to_string()
+    })?;
+    let (tx_out, rx_out) = mpsc::channel();
+    let (tx_err, rx_err) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let read = stdout
+            .take(PANEL_MUTATION_STDOUT_MAX as u64 + 1)
+            .read_to_end(&mut buf)
+            .map(|_| buf);
+        let _ = tx_out.send(read);
+    });
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let read = stderr
+            .take(PANEL_MUTATION_STDERR_MAX as u64 + 1)
+            .read_to_end(&mut buf)
+            .map(|_| buf);
+        let _ = tx_err.send(read);
+    });
+    let deadline = Instant::now() + timeout;
+    let out_bytes = recv_pipe(&rx_out, &mut child, deadline, sub)?;
+    let err_bytes = recv_pipe(&rx_err, &mut child, deadline, sub)?;
+    if out_bytes.len() > PANEL_MUTATION_STDOUT_MAX {
+        kill_child(&mut child);
+        return Err(format!("git {sub} output exceeded 64 KiB"));
+    }
+    let err_bytes = if err_bytes.len() > PANEL_MUTATION_STDERR_MAX {
+        err_bytes[..PANEL_MUTATION_STDERR_MAX].to_vec()
+    } else {
+        err_bytes
+    };
+    let status = wait_child(&mut child, deadline, sub)?;
+    Ok((
+        status.code(),
+        String::from_utf8_lossy(&out_bytes).into_owned(),
+        String::from_utf8_lossy(&err_bytes).into_owned(),
+    ))
+}
+
+fn recv_pipe(
+    rx: &mpsc::Receiver<std::io::Result<Vec<u8>>>,
+    child: &mut std::process::Child,
+    deadline: Instant,
+    sub: &str,
+) -> Result<Vec<u8>, String> {
+    match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        Ok(Ok(bytes)) => Ok(bytes),
+        Ok(Err(e)) => {
+            kill_child(child);
+            Err(format!("failed to read git output: {e}"))
+        }
+        Err(_) => {
+            kill_child(child);
+            log::warn!("git {sub} timed out");
+            Err(format!("git {sub} timed out"))
+        }
+    }
+}
+
+fn wait_child(
+    child: &mut std::process::Child,
+    deadline: Instant,
+    sub: &str,
+) -> Result<std::process::ExitStatus, String> {
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) if Instant::now() >= deadline => {
+                kill_child(child);
+                log::warn!("git {sub} timed out");
+                return Err(format!("git {sub} timed out"));
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+            Err(e) => {
+                kill_child(child);
+                return Err(format!("failed to wait for git: {e}"));
+            }
+        }
+    }
+}
+
+fn mutation_ok(cwd: &str, args: &[String], timeout: Duration) -> Result<(), String> {
+    let sub = args.first().map(String::as_str).unwrap_or("");
+    match run_git_mutation(cwd, args, timeout)? {
+        (Some(0), _, _) => Ok(()),
+        (Some(code), _, stderr) => Err(mutation_failure(sub, code, &stderr)),
+        (None, _, stderr) => {
+            let line = first_stderr_line(&stderr);
+            log::warn!("git {sub} terminated: {line}");
+            Err(if line.is_empty() {
+                format!("git {sub} was terminated by a signal")
+            } else {
+                line
+            })
+        }
+    }
+}
+
+fn mutation_failure(sub: &str, code: i32, stderr: &str) -> String {
+    let line = first_stderr_line(stderr);
+    log::warn!("git {sub} exited with status {code}: {line}");
+    if line.is_empty() {
+        format!("git {sub} exited with status {code}")
+    } else {
+        line
+    }
+}
+
+fn first_stderr_line(stderr: &str) -> String {
+    let line = stderr
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("")
+        .trim();
+    line.chars().take(200).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1141,6 +1594,104 @@ mod tests {
             "git {args:?} failed: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+
+    fn temp_dir(label: &str) -> PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock after epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "krypton-git-panel-{label}-{}-{suffix}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    #[test]
+    fn git_panel_status_rejects_a_directory_that_is_not_a_repo() {
+        let dir = temp_dir("not-a-repo");
+        let err = git_panel_status(dir.to_str().expect("utf8")).expect_err("not a repo");
+        assert_eq!(err, "not a git repository");
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[test]
+    fn git_panel_status_rejects_a_bare_repo() {
+        let dir = temp_dir("bare");
+        git_ok(&dir, &["init", "--bare", "-q"]);
+        let err = git_panel_status(dir.to_str().expect("utf8")).expect_err("bare");
+        assert_eq!(err, "bare repository");
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[test]
+    fn git_panel_rejects_escaping_and_absolute_paths_and_a_tracked_clean() {
+        let dir = test_repo("panel-paths");
+        let cwd = dir.to_str().expect("utf8").to_string();
+        std::fs::write(dir.join("tracked.txt"), "tracked\n").expect("seed");
+        git_ok(&dir, &["add", "tracked.txt"]);
+        git_ok(&dir, &["commit", "-qm", "base"]);
+
+        assert_eq!(
+            git_panel_stage(&cwd, vec!["../outside".into()]).expect_err("parent"),
+            "path escapes the repository"
+        );
+        assert_eq!(
+            git_panel_stage(&cwd, vec!["/etc/passwd".into()]).expect_err("absolute"),
+            "path is absolute"
+        );
+        assert_eq!(
+            git_panel_discard(&cwd, "tracked.txt".into(), "untracked-file".into())
+                .expect_err("tracked"),
+            "path is not an untracked file"
+        );
+        assert_eq!(
+            git_panel_unstage(&cwd, vec![]).expect_err("empty"),
+            "no paths"
+        );
+        assert_eq!(
+            git_panel_unstage(&cwd, vec![".".into(), "tracked.txt".into()]).expect_err("dot"),
+            "\".\" is only valid alone"
+        );
+        assert_eq!(
+            git_panel_commit(&cwd, "   ".into()).expect_err("blank"),
+            "commit message is empty"
+        );
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[test]
+    fn git_panel_stages_a_dashed_path_and_commits_the_index() {
+        let dir = test_repo("panel-commit");
+        let cwd = dir.to_str().expect("utf8").to_string();
+        std::fs::write(dir.join("-rf"), "dashed\n").expect("dashed");
+        std::fs::write(dir.join("note.txt"), "note\n").expect("note");
+        git_panel_stage(&cwd, vec!["-rf".into(), "note.txt".into()]).expect("stage");
+        let status = git_panel_status(&cwd).expect("status");
+        assert!(status.status.contains("note.txt"));
+        assert!(status.status.contains("-rf"));
+        let commit = git_panel_commit(&cwd, "panel commit".into()).expect("commit");
+        assert!(!commit.sha.is_empty());
+        assert_eq!(
+            git_panel_commit(&cwd, "again".into()).expect_err("empty index"),
+            "nothing staged"
+        );
+        std::fs::write(dir.join("note.txt"), "edited\n").expect("edit");
+        git_panel_stage(&cwd, vec!["note.txt".into()]).expect("restage");
+        git_panel_unstage(&cwd, vec![".".into()]).expect("unstage all");
+        let after = git_panel_status(&cwd).expect("status after unstage");
+        assert!(
+            after
+                .status
+                .split('\0')
+                .any(|field| field.starts_with("1 .M ") && field.ends_with(" note.txt")),
+            "unstaged after unstage-all: {}",
+            after.status.replace('\0', "\n")
+        );
+        assert!(!after.staged_numstat.contains("note.txt"));
+        std::fs::remove_dir_all(dir).expect("cleanup");
     }
 
     #[test]

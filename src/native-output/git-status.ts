@@ -21,6 +21,8 @@ export interface StatusEntry {
   /** Line counts from numstat; null when binary or unknown (untracked, conflict). */
   readonly added: number | null;
   readonly deleted: number | null;
+  /** True when a porcelain mode field is a gitlink (`160000`). */
+  readonly submodule: boolean;
 }
 
 export interface StatusGroup {
@@ -99,19 +101,35 @@ export function parseGitStatus(raw: NativeGitStatusRaw): NativeGitStatus | null 
       // Type 2 (rename/copy) has one more field, and its source path is the next NUL field.
       const path = parts.slice(type === '1' ? 8 : 9).join(' ');
       const source = type === '2' ? fields[++i] ?? null : null;
+      const submodule = parts.slice(3, 7).some((part) => part === '160000');
       const side = (code: string, counts: Map<string, Counts>): StatusEntry => ({
         code,
         path,
         oldPath: code === 'R' || code === 'C' ? source : null,
         added: counts.get(path)?.added ?? null,
         deleted: counts.get(path)?.deleted ?? null,
+        submodule,
       });
       if (xy[0] !== '.') groups.staged.push(side(xy[0], staged));
       if (xy[1] !== '.') groups.unstaged.push(side(xy[1], unstaged));
     } else if (type === 'u') {
-      groups.conflicts.push({ code: parts[1] ?? 'UU', path: parts.slice(10).join(' '), oldPath: null, added: null, deleted: null });
+      groups.conflicts.push({
+        code: parts[1] ?? 'UU',
+        path: parts.slice(10).join(' '),
+        oldPath: null,
+        added: null,
+        deleted: null,
+        submodule: parts.slice(3, 7).some((part) => part === '160000'),
+      });
     } else if (type === '?' || type === '!') {
-      groups[type === '?' ? 'untracked' : 'ignored'].push({ code: type, path: field.slice(2), oldPath: null, added: null, deleted: null });
+      groups[type === '?' ? 'untracked' : 'ignored'].push({
+        code: type,
+        path: field.slice(2),
+        oldPath: null,
+        added: null,
+        deleted: null,
+        submodule: false,
+      });
     }
   }
 

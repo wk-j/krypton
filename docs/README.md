@@ -39,6 +39,7 @@ Listed by spec number. Older specs remain in this directory.
 | 393 | [Remove MiMo Integration](./0393-remove-mimo.md) |
 | 394 | [Junie Backend Removal](./0394-remove-junie-backend.md) |
 | 395 | [Workspace Backgrounds](./0395-workspace-backgrounds.md) |
+| 396 | [Harness Git Panel](./0396-harness-git-panel.md) |
 
 ## ADRs (31)
 

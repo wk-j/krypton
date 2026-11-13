@@ -49,6 +49,21 @@ describe('parseGitStatus', () => {
     expect(status).toEqual({ branch: { head: null, oid: null, upstream: null, ahead: 0, behind: 0 }, groups: [] });
   });
 
+  it('marks a gitlink when a porcelain mode is 160000', () => {
+    const status = parseGitStatus({
+      status: [
+        `# branch.oid ${HASH}`,
+        '# branch.head main',
+        `1 M. N... 160000 160000 160000 ${HASH} ${HASH} vendor/lib`,
+        '',
+      ].join('\0'),
+      staged_numstat: '',
+      unstaged_numstat: '',
+    });
+    expect(status?.groups[0]?.entries[0]?.submodule).toBe(true);
+    expect(status?.groups[0]?.entries[0]?.path).toBe('vendor/lib');
+  });
+
   it('rejects output without the porcelain v2 branch header', () => {
     expect(parseGitStatus({ status: 'On branch master\nnothing to commit', staged_numstat: '', unstaged_numstat: '' })).toBeNull();
   });

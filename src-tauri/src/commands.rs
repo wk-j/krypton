@@ -522,6 +522,50 @@ pub async fn git_commit_diff(cwd: String, sha: String) -> Result<String, String>
         .map_err(|e| format!("Task join error: {e}"))?
 }
 
+/// spec 396: porcelain status for the harness Git dock. The git process can
+/// take up to 5 s, so it runs on the blocking pool.
+#[tauri::command]
+pub async fn git_panel_status(cwd: String) -> Result<crate::git::GitPanelStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::git::git_panel_status(&cwd))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
+}
+
+/// spec 396: `git add -- <paths>` for the Git dock.
+#[tauri::command]
+pub async fn git_panel_stage(cwd: String, paths: Vec<String>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::git::git_panel_stage(&cwd, paths))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
+}
+
+/// spec 396: `git restore --staged` for the Git dock.
+#[tauri::command]
+pub async fn git_panel_unstage(cwd: String, paths: Vec<String>) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::git::git_panel_unstage(&cwd, paths))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
+}
+
+/// spec 396: restore a worktree path or clean an untracked one.
+#[tauri::command]
+pub async fn git_panel_discard(cwd: String, path: String, kind: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || crate::git::git_panel_discard(&cwd, path, kind))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
+}
+
+/// spec 396: commit the index from the Git dock.
+#[tauri::command]
+pub async fn git_panel_commit(
+    cwd: String,
+    message: String,
+) -> Result<crate::git::GitPanelCommit, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::git::git_panel_commit(&cwd, message))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
+}
+
 /// spec 375: where a lane writes the explainer of commit `sha`. The knowledge
 /// dir is read from config on every call so Reload Config applies.
 #[tauri::command]
