@@ -444,6 +444,7 @@ pub struct AgentInitInfo {
     /// spec 278: the agent advertised the `_session/steering` extension in the
     /// top-level initialize `_meta` (a sibling of `agentCapabilities`).
     pub steering_supported: bool,
+    pub omp_background_jobs_supported: bool,
 }
 
 /// One agent-advertised model entry, mapped from the ACP `session/new`
@@ -837,6 +838,7 @@ struct AcpClient {
     next_id: AtomicU64,
     /// Set after `initialize` completes. Notification before this point is rare.
     agent_capabilities: RwLock<Option<Value>>,
+    omp_background_jobs_supported: std::sync::atomic::AtomicBool,
     /// `initialize` `authMethods`; gates the spec 287 `authenticate` retry.
     auth_methods: RwLock<Vec<Value>>,
     /// Filled by `session/new` response.
@@ -927,6 +929,7 @@ impl AcpClient {
             fs_write_pending: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(1),
             agent_capabilities: RwLock::new(None),
+            omp_background_jobs_supported: std::sync::atomic::AtomicBool::new(false),
             auth_methods: RwLock::new(Vec::new()),
             acp_session_id: RwLock::new(None),
             stderr_buf: Mutex::new(String::new()),
@@ -2769,6 +2772,10 @@ pub async fn acp_initialize(
         .unwrap_or(Value::Null);
 
     let steering_supported = steering_supported(&init);
+    let omp_background_jobs_supported = omp_background_jobs_supported(&init);
+    client
+        .omp_background_jobs_supported
+        .store(omp_background_jobs_supported, Ordering::Relaxed);
 
     if let Ok(mut g) = client.agent_capabilities.write() {
         *g = Some(capabilities.clone());
@@ -2782,6 +2789,7 @@ pub async fn acp_initialize(
         auth_methods,
         agent_capabilities: capabilities,
         steering_supported,
+        omp_background_jobs_supported,
     })
 }
 
@@ -2813,6 +2821,106 @@ fn steering_supported(init: &Value) -> bool {
         .and_then(|s| s.get("supported"))
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
+}
+
+fn omp_background_jobs_supported(init: &Value) -> bool {
+    let capability = &init["_meta"]["omp"]["backgroundJobs"];
+    capability["version"].as_f64() == Some(1.0)
+        && capability["snapshot"].as_bool() == Some(true)
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OmpBackgroundJobIdentity {
+    id: String,
+    tool_call_id: String,
+}
+
+fn omp_background_job_params(
+    backend_id: &str,
+    supported: bool,
+    session_id: Option<&str>,
+    jobs: &[OmpBackgroundJobIdentity],
+) -> Result<Value, String> {
+    if backend_id != "omp" || !supported {
+        return Err("OMP background job snapshots are not supported by this session".to_string());
+    }
+    if jobs.len() > 20
+        || jobs.iter().any(|job| {
+            [&job.id, &job.tool_call_id]
+                .iter()
+                .any(|id| id.trim().is_empty() || id.len() > 512)
+        })
+    {
+        return Err("OMP snapshot requires at most 20 nonempty identities of at most 512 bytes".to_string());
+    }
+    let session_id = session_id
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| "session not initialized".to_string())?;
+    Ok(json!({ "sessionId": session_id, "jobs": jobs }))
+}
+
+#[cfg(test)]
+mod omp_background_job_tests {
+    use super::*;
+
+    #[test]
+    fn capability_requires_exact_top_level_contract() {
+        let capability = json!({ "version": 1, "snapshot": true });
+        assert!(omp_background_jobs_supported(&json!({
+            "_meta": { "omp": { "backgroundJobs": capability } }
+        })));
+        assert!(omp_background_jobs_supported(&json!({
+            "_meta": { "omp": { "backgroundJobs": { "version": 1.0, "snapshot": true } } }
+        })));
+        for init in [
+            json!({}),
+            json!({ "agentCapabilities": { "_meta": { "omp": { "backgroundJobs": capability } } } }),
+            json!({ "_meta": { "backgroundJobs": capability } }),
+            json!({ "_meta": { "omp": { "backgroundJobs": { "version": 2, "snapshot": true } } } }),
+            json!({ "_meta": { "omp": { "backgroundJobs": { "version": "1", "snapshot": true } } } }),
+            json!({ "_meta": { "omp": { "backgroundJobs": { "version": 1, "snapshot": "true" } } } }),
+            json!({ "_meta": { "omp": { "backgroundJobs": { "version": 1, "snapshot": false } } } }),
+        ] {
+            assert!(!omp_background_jobs_supported(&init), "{init}");
+        }
+    }
+
+    fn identity(id: &str, tool_call_id: &str) -> OmpBackgroundJobIdentity {
+        OmpBackgroundJobIdentity { id: id.into(), tool_call_id: tool_call_id.into() }
+    }
+
+    #[test]
+    fn snapshot_is_capability_gated_and_uses_owned_protocol_session() {
+        let jobs = [identity("bg_1", "call-1")];
+        assert!(omp_background_job_params("claude", true, Some("own"), &jobs).is_err());
+        assert!(omp_background_job_params("OMP", true, Some("own"), &jobs).is_err());
+        assert!(omp_background_job_params("omp", false, Some("own"), &jobs).is_err());
+        assert!(omp_background_job_params("omp", true, None, &jobs).is_err());
+        assert!(omp_background_job_params("omp", true, Some(""), &jobs).is_err());
+        assert_eq!(
+            omp_background_job_params("omp", true, Some("own"), &jobs).unwrap(),
+            json!({ "sessionId": "own", "jobs": [{ "id": "bg_1", "toolCallId": "call-1" }] })
+        );
+    }
+
+    #[test]
+    fn snapshot_validates_entire_bounded_identity_batch() {
+        for job in [identity("", "call"), identity("bg", " "), identity(&"x".repeat(513), "call"), identity("bg", &"x".repeat(513))] {
+            assert!(omp_background_job_params("omp", true, Some("own"), &[identity("valid", "call"), job]).is_err());
+        }
+        let mut jobs: Vec<_> = (0..20).map(|_| identity("bg", "call")).collect();
+        assert!(omp_background_job_params("omp", true, Some("own"), &jobs).is_ok());
+        jobs.push(identity("bg", "call"));
+        assert!(omp_background_job_params("omp", true, Some("own"), &jobs).is_err());
+        for malformed in [
+            json!({ "id": 1, "toolCallId": "call" }),
+            json!({ "id": "bg" }),
+            json!({ "id": "bg", "toolCallId": "call", "sessionId": "foreign" }),
+        ] {
+            assert!(serde_json::from_value::<OmpBackgroundJobIdentity>(malformed).is_err());
+        }
+    }
 }
 
 /// Replace the `mcpServers` list that `acp_session_new` will forward to the
@@ -3344,6 +3452,43 @@ pub async fn acp_steer(
         )
         .await?;
     Ok(with_request_id(result, id))
+}
+
+/// Read-only snapshot through the owning local or remote ACP transport.
+#[tauri::command]
+pub async fn acp_omp_background_job_status(
+    session: u64,
+    jobs: Vec<OmpBackgroundJobIdentity>,
+    registry: State<'_, Arc<AcpRegistry>>,
+) -> Result<Value, String> {
+    let client = registry
+        .get(session)
+        .ok_or_else(|| format!("Unknown ACP session: {session}"))?;
+    let params = {
+        let session_id = client
+            .acp_session_id
+            .read()
+            .map_err(|_| "ACP session lock poisoned".to_string())?;
+        omp_background_job_params(
+            &client.backend_id,
+            client.omp_background_jobs_supported.load(Ordering::Relaxed),
+            session_id.as_deref(),
+            &jobs,
+        )?
+    };
+    let id = client.next_request_id();
+    match tokio::time::timeout(
+        Duration::from_secs(2),
+        client.request_with_id(id, "_omp/jobs/snapshot", params),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => {
+            client.pending.lock().unwrap_or_else(|p| p.into_inner()).remove(&id);
+            Err("OMP background job snapshot timed out after 2s".to_string())
+        }
+    }
 }
 
 #[tauri::command]

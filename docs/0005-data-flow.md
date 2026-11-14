@@ -1492,6 +1492,13 @@ PUBLISH
        OMP stops forwarding job updates at turn end, so finishTurn (and a failed
        prompt, a restart reconnect, or a picker load) marks still-running
        cards `last reported` and schedules one body pass, never render().
+    k. OMP async Bash (spec 398): validated `details.async` captures job ID, launching call and
+       command independently of transcript retention. With the exact advertised snapshot capability,
+       the existing shared metrics cycle calls `acp_omp_background_job_status` → `_omp/jobs/snapshot`
+       on that lane's transport, using its own protocol session ID and batches of at most 20.
+       Terminal status removes the composer strip row while retaining history. Unavailable status
+       hides the row and is retried on later cycles. No prompt, result consumption or sealed-row
+       repaint occurs. Session/transport epochs reject late replies; unsupported OMP gets one notice.
 ```
 ## Resize Mode Flow (e.g., Leader then r)
 

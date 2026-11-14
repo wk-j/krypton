@@ -53,6 +53,8 @@ model. This touches the spawn card, the `wait` row, and the turn boundary:
    sealed, following spec 315. OMP sends nothing after the turn, so the card says so instead of
    pretending to be live.
 
+OMP Bash monitoring is separate under [spec 398](./0398-omp-async-bash-monitor.md). Capable lanes use idle read-only snapshots to settle the composer task strip without changing this subagent-card or `wait`-row contract. Matching Bash entries in `wait` snapshots also update already-known task state when a job ID is unambiguous; absence never means completion.
+
 ## Research
 
 **Wire capture.** I drove `omp acp` 18.17.0 directly with a throwaway ACP client: one async

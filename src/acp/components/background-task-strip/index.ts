@@ -14,6 +14,7 @@ export interface BackgroundTaskStripProps {
 
 interface RowProps {
   readonly id: string;
+  readonly key: string;
   readonly state: string;
   readonly label: string;
   readonly command: string;
@@ -28,6 +29,7 @@ const block = 'acp-harness__background-strip';
 function rowProps(task: BackgroundTask): RowProps {
   return {
     id: task.id,
+    key: JSON.stringify([task.toolCallId, task.id]),
     state: 'running',
     label: task.pid === null ? 'RUNNING' : `RUNNING · PID ${task.pid}`,
     command: task.command,
@@ -109,7 +111,7 @@ export class BackgroundTaskStrip extends Component<BackgroundTaskStripProps> {
     // Snapshot displayed scalars, never mutable task/array identities or raw poll time.
     return [overflow, ...shown.flatMap((task) => {
       const row = rowProps(task);
-      return [row.id, row.state, row.label, row.command, row.elapsed, row.lastLine];
+      return [row.key, row.id, row.state, row.label, row.command, row.elapsed, row.lastLine];
     })];
   }
 
@@ -125,7 +127,7 @@ export class BackgroundTaskStrip extends Component<BackgroundTaskStripProps> {
     if (this.moreCount.textContent !== moreText) this.moreCount.textContent = moreText;
     if (this.more.hidden !== !moreText) this.more.hidden = !moreText;
     reconcile<RowProps, TaskRow>(this.rows, shown.map((task) => rowProps(task)), {
-      key: (task) => task.id,
+      key: (task) => task.key,
       create: (task) => {
         const row = new TaskRow();
         row.update(task);

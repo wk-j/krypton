@@ -428,6 +428,7 @@ pub fn run() {
             acp::acp_set_session_mode,
             acp::acp_prompt,
             acp::acp_steer,
+            acp::acp_omp_background_job_status,
             acp::acp_cancel,
             acp::acp_permission_response,
             acp::acp_ask_user_response,

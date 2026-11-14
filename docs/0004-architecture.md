@@ -286,13 +286,13 @@ The compositor is a TypeScript module running in the webview that manages worksp
     `SystemRow`, while usage and notices retain their existing
     dispatch priority. No new command execution or permission path is involved.
 
-    **Visible background work (specs 384/397).** `Composer` owns a `BackgroundTaskStrip` before its
-    draft or decision controls. It reads the active lane's independent task registry; launch
-    capture and the shared metrics feed patch only this child, even while the lane is idle. It
-    shows only `running` jobs, includes a PID when the process tree finds one, and takes no height when
-    none remain. The existing log reader supplies progress/exit state. Completed transcript
-    rows, draft focus and scroll containers remain untouched; Lane Metrics stays the detailed
-    observer.
+    **Visible background work (specs 384/397/398).** `Composer` owns a `BackgroundTaskStrip` before its
+    draft or decision controls. Each lane owns its source-aware registry. Claude progress/exit state
+    comes from the existing log reader; OMP Bash state comes from a capability-gated read-only ACP
+    snapshot on the shared 2 s metrics cadence, including idle lanes. Only `running` jobs show;
+    missing status hides a row without inventing completion. Known OS PIDs are optional.
+    Completed transcript rows, draft focus and scroll containers remain untouched. Lane Metrics
+    and `#bg` retain honest history, including unavailable state, failures and cancellation.
 
     **Execution Inspector (specs 315/319).** The OMP lane adapter (`adapters/omp-execution.ts`) validates and
     bounds current OMP code-cell snapshots before wire retention compacts them; `harness-execution.ts`

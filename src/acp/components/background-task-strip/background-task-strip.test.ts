@@ -1,6 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
-import { listComponent } from '../../../ui/list';
 import type { BackgroundTask } from '../../harness-view-types';
 import { BackgroundTaskStrip } from './index';
 
@@ -8,7 +7,7 @@ const block = 'acp-harness__background-strip';
 const task = (over: Partial<BackgroundTask> & { id: string }): BackgroundTask => ({
   toolCallId: 'call-1',
   command: 'MAVEN_OPTS=-Xmx2g mvn clean install',
-  outputPath: '/tmp/build.output',
+  observation: { kind: 'claude-output', outputPath: '/tmp/build.output' },
   startedAt: 1_000,
   state: 'running',
   exitCode: null,
@@ -190,30 +189,24 @@ describe('BackgroundTaskStrip', () => {
     strip.dispose();
   });
 
-  it('only patches the changed row and disposes dropped and owned keyed children', () => {
+  it('keeps an unchanged job node while another changes or leaves the strip', () => {
     const strip = new BackgroundTaskStrip();
     const tasks = [task({ id: 'a' }), task({ id: 'b', startedAt: 1_500 })];
     strip.update({ tasks, now: 2_000 });
-    const rows = cell(strip, 'rows');
-    const a = listComponent(rows, 'a')!;
-    const b = listComponent(rows, 'b')!;
-    const disposeA = vi.spyOn(a, 'dispose');
-    const disposeB = vi.spyOn(b, 'dispose');
-    const observer = observe(b.el);
+    const a = strip.el.querySelector<HTMLElement>('[data-task-id="a"]')!;
+    const b = strip.el.querySelector<HTMLElement>('[data-task-id="b"]')!;
+    const observer = observe(b);
     tasks[0].lastLine = 'Changed output';
     strip.update({ tasks, now: 2_000 });
     expect(observer.takeRecords()).toEqual([]);
-    expect(listComponent(rows, 'a')).toBe(a);
+    expect(strip.el.querySelector('[data-task-id="a"]')).toBe(a);
     observer.disconnect();
-
     tasks.shift();
     strip.update({ tasks, now: 2_000 });
-    expect(disposeA).toHaveBeenCalledTimes(1);
     expect(rowIds(strip)).toEqual(['b']);
+    expect(strip.el.querySelector('[data-task-id="b"]')).toBe(b);
+    expect(strip.el.contains(a)).toBe(false);
     strip.dispose();
-    strip.dispose();
-    expect(disposeB).toHaveBeenCalledTimes(1);
-    expect(rows.childElementCount).toBe(0);
   });
 
   it('renders untrusted long command and output literally with complete titles', () => {

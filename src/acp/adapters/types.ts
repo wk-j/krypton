@@ -109,6 +109,26 @@ export interface ToolBackgroundLaunch {
   readonly command: string;
 }
 
+/** Spec 398: one exact OMP Bash launch, scoped by its owning client. */
+export interface OmpBackgroundIdentity {
+  readonly id: string;
+  readonly toolCallId: string;
+}
+
+export interface OmpBackgroundStatus extends OmpBackgroundIdentity {
+  readonly state: 'running' | 'completed' | 'failed' | 'cancelled' | 'unavailable';
+  readonly startedAt: number | null;
+  readonly endedAt: number | null;
+  readonly exitCode: number | null;
+  readonly pid: number | null;
+  readonly lastLine: string;
+}
+
+export interface OmpBackgroundActivity {
+  readonly command: string;
+  readonly status: OmpBackgroundStatus;
+}
+
 /**
  * Everything any surface may show about one tool call: a full snapshot on
  * every update. Arrays keep their reference across updates that did not change
@@ -203,6 +223,7 @@ export type LaneEvent =
     images: ToolImageUpdate;
     jobsReport?: readonly OmpJob[];
   }
+  | { type: 'background_task'; activity: OmpBackgroundActivity }
   | { type: 'plan'; entries: PlanEntry[] }
   | ({ type: 'permission_request' } & PermissionRequest)
   /** Questions are already parsed; an empty list means the request carried none. */
@@ -230,6 +251,8 @@ export interface LaneInit {
   readonly mcp: AcpMcpCapabilities;
   /** spec 278: the agent advertised the `_session/steering` extension. */
   readonly steering: boolean;
+  /** Spec 398: capability-gated idle Bash job snapshots. */
+  readonly ompBackgroundJobs: boolean;
   readonly authMethods: readonly unknown[];
   /** A model name an agent put somewhere in its capabilities, if any. */
   readonly reportedModel: string | null;
@@ -346,6 +369,7 @@ export interface LaneDecoder {
   session(raw: unknown): LaneSession;
   sessionList(raw: unknown): AcpSessionListResult;
   promptResult(raw: unknown): PromptResult;
+  backgroundSnapshot(raw: unknown, requested: readonly OmpBackgroundIdentity[]): readonly OmpBackgroundStatus[];
   /** Fresh session: forgets per-tool-call state and learned subagent names. */
   reset(): void;
 }

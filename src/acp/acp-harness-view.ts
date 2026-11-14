@@ -154,7 +154,7 @@ import {
   type AskUserQuestion,
   type AskUserReply,
 } from './ask-user-question';
-import type { LaneEvent, LaneInit, LaneSession, PermissionRequest, ToolImageUpdate, ToolView } from './adapters/types';
+import type { LaneEvent, LaneInit, LaneSession, OmpBackgroundActivity, PermissionRequest, ToolImageUpdate, ToolView } from './adapters/types';
 import { permissionSubject } from './adapters/permission';
 import {
   permissionItemText,
@@ -479,8 +479,13 @@ import {
 import { COMMAND_RUN_REVEAL_MS, CommandRunTracker } from './harness-command-runs';
 import {
   applyTaskStatus,
+  applyOmpBackgroundStatus,
+  backgroundTaskState,
+  markOmpBackgroundUnavailable,
   formatBackgroundTaskLines,
+  pruneBackgroundTasks,
   registerBackgroundTask,
+  registerOmpBackgroundTask,
 } from './harness-background-tasks';
 import {
   formatToolElapsed,
@@ -1013,6 +1018,8 @@ const LANE_DEFAULTS = {
   pendingShellId: null,
   supportsImages: false,
   supportsSteering: false,
+  supportsOmpBackgroundJobs: false,
+  backgroundSupportNotified: false,
   activeTurnStartedAt: null,
   activeSystemLabel: null,
   activity: null,
@@ -1617,6 +1624,7 @@ export class AcpHarnessView implements ContentView {
   private metricsBySession = new Map<number, AcpLaneMetrics>();
   private metricsUnsubscribe: (() => void) | null = null;
   private metricsEpoch = 0;
+  private readonly backgroundRefreshes = new WeakMap<HarnessLane, Promise<void>>();
   private spinnerTimer: number | null = null;
   private metricsPanelOpen = false;
   private pickerOpen = false;
@@ -8276,6 +8284,7 @@ export class AcpHarnessView implements ContentView {
     lane.supportsEmbeddedContext = init.promptEmbeddedContext;
     lane.supportsImages = init.promptImage;
     lane.supportsSteering = init.steering;
+    lane.supportsOmpBackgroundJobs = lane.backendId === 'omp' && init.ompBackgroundJobs;
     this.applyLaneModes(lane, init, session);
   }
 
@@ -8341,7 +8350,7 @@ export class AcpHarnessView implements ContentView {
     // Mirror agent events to control SSE (doc 175), except staged #ui assistant
     // text and intermediate stops. The final stop follows transcript commit.
     const uiGeneration = this.uiGenerationFor(lane);
-    if (!(uiGeneration && (event.type === 'message_chunk' || event.type === 'stop'))) {
+    if (event.type !== 'background_task' && !(uiGeneration && (event.type === 'message_chunk' || event.type === 'stop'))) {
       // Tool events keep ACP's two control kinds; the payload is the canonical event.
       const kind = event.type === 'tool'
         ? (event.phase === 'call' ? 'tool_call' : 'tool_call_update')
@@ -8350,6 +8359,10 @@ export class AcpHarnessView implements ContentView {
     }
     let needsRender = true;
     switch (event.type) {
+      case 'background_task':
+        this.captureOmpBackgroundActivity(lane, event.activity);
+        needsRender = false;
+        break;
       case 'user_message_chunk':
         if (event.content.type === 'text') {
           this.appendUserStreaming(lane, event.text);
@@ -8419,6 +8432,29 @@ export class AcpHarnessView implements ContentView {
       case 'tool': {
         const { view } = event;
         const update = event.phase === 'update';
+        // Spec 398: once the launch row has settled, its late output belongs to
+        // the task strip, never to that sealed transcript row.
+        if (update && lane.backgroundTasks.some((task) => task.observation.kind === 'omp-job' &&
+            task.toolCallId === view.id) && isTerminalToolStatus(lane.toolViews.get(view.id)?.status ?? '')) {
+          needsRender = false;
+          break;
+        }
+        if (event.jobsReport) {
+          for (const job of event.jobsReport) {
+            if (job.type !== 'bash') continue;
+            const matches = lane.backgroundTasks.filter((task) => task.observation.kind === 'omp-job' && task.id === job.id);
+            // wait snapshots have no call ID: do not guess across reused IDs.
+            if (matches.length !== 1) continue;
+            const task = matches[0];
+            applyOmpBackgroundStatus(task, {
+              id: job.id, toolCallId: task.toolCallId, state: job.status,
+              startedAt: null, endedAt: null, exitCode: job.exitCode,
+              pid: null, lastLine: job.output,
+            }, Date.now());
+          }
+          pruneBackgroundTasks(lane.backgroundTasks);
+          this.refreshMetricsRender();
+        }
         // spec 282: a Claude subagent's own tool call folds into its Task card.
         if (this.absorbSubagentChild(lane, view)) {
           if (update) this.observeFileTouch(lane, view);
@@ -11493,6 +11529,7 @@ export class AcpHarnessView implements ContentView {
     this.cancelPendingReviewsForLane(lane);
     await this.ticketCtl.releaseLane(lane.id);
     lane.backgroundTasks = [];
+    lane.backgroundSupportNotified = false;
     const client = lane.client;
     lane.client = null;
     await client.dispose();
@@ -11527,6 +11564,7 @@ export class AcpHarnessView implements ContentView {
     lane.planCollapsed = false;
     lane.queuedPrompts = []; // spec 136: fresh session — queued prompts were for the old context
     lane.backgroundTasks = [];
+    lane.backgroundSupportNotified = false;
     this.steerCtl.resetLane(lane.id); // spec 278
     this.liveVoiceCtl.onLaneGone(lane); // spec 280: the voice session spoke to the old session
     this.clearToolError(lane.id); // spec 365: the failure belonged to the old session
@@ -11596,6 +11634,7 @@ export class AcpHarnessView implements ContentView {
     lane.stagedImages = [];
     lane.queuedPrompts = []; // spec 136: fresh session — drop queued prompts
     lane.backgroundTasks = [];
+    lane.backgroundSupportNotified = false;
     this.steerCtl.resetLane(lane.id); // spec 278
     this.liveVoiceCtl.onLaneGone(lane); // spec 280: the voice session spoke to the old session
     this.clearToolError(lane.id); // spec 365: the failure belonged to the old session
@@ -12672,12 +12711,12 @@ export class AcpHarnessView implements ContentView {
     const lines = formatBackgroundTaskLines(lane.backgroundTasks, now);
     const tasks = lane.backgroundTasks.map((task) => ({
       id: task.id,
-      state: task.state === 'exited' ? `exit ${task.exitCode ?? '?'}` : task.state,
+      state: backgroundTaskState(task),
       startedAt: task.startedAt,
       endedAt: task.endedAt,
       bytes: task.bytes,
       command: task.command,
-      outputPath: task.outputPath,
+      outputPath: task.observation.kind === 'claude-output' ? task.observation.outputPath : null,
     }));
     const item = this.appendTranscript(lane, 'system', lines.join('\n'));
     item.systemCommand = { command: 'bg', capturedAt: now, tasks };
@@ -14099,35 +14138,97 @@ export class AcpHarnessView implements ContentView {
     this.refreshMetricsRender();
   }
 
+  private captureOmpBackgroundActivity(lane: HarnessLane, activity: OmpBackgroundActivity): void {
+    if (lane.backendId !== 'omp') return;
+    if (!lane.supportsOmpBackgroundJobs) {
+      if (!lane.backgroundSupportNotified) {
+        lane.backgroundSupportNotified = true;
+        this.appendTranscript(lane, 'system', 'OMP background status unavailable: this OMP build does not advertise idle job snapshots. Update OMP to monitor async Bash jobs.');
+        this.scheduleStreamingBodyOnly(lane);
+      }
+      return;
+    }
+    registerOmpBackgroundTask(lane.backgroundTasks, activity, Date.now());
+    this.updateSpinnerTicker();
+    this.refreshMetricsRender();
+  }
+
+  /** Shared by metrics and #bg; one request chain per lane, never a new timer. */
+  private refreshOmpBackgroundTasks(lane: HarnessLane): Promise<void> {
+    const pending = this.backgroundRefreshes.get(lane);
+    if (pending) return pending;
+    const refresh = this.pollOmpBackgroundTasks(lane).finally(() => this.backgroundRefreshes.delete(lane));
+    this.backgroundRefreshes.set(lane, refresh);
+    return refresh;
+  }
+
+  private async pollOmpBackgroundTasks(lane: HarnessLane): Promise<void> {
+    const client = lane.client;
+    if (!client || !lane.supportsOmpBackgroundJobs || lane.backendId !== 'omp') return;
+    const epoch = this.metricsEpoch;
+    const spawnEpoch = lane.spawnEpoch;
+    const tasks = lane.backgroundTasks;
+    const current = (): boolean => epoch === this.metricsEpoch && lane.client === client &&
+      lane.spawnEpoch === spawnEpoch && lane.backgroundTasks === tasks && this.lanes.includes(lane);
+    const unresolved = tasks.filter((task) => task.observation.kind === 'omp-job' &&
+      (task.state === 'running' || task.state === 'unknown'));
+    for (let offset = 0; offset < unresolved.length; offset += 20) {
+      if (!current()) return;
+      const batch = unresolved.slice(offset, offset + 20);
+      try {
+        const statuses = await client.backgroundJobStatus(batch.map((task) => ({ id: task.id, toolCallId: task.toolCallId })));
+        if (!current()) return;
+        const now = Date.now();
+        for (const status of statuses) {
+          const task = batch.find((entry) => entry.id === status.id && entry.toolCallId === status.toolCallId);
+          if (task) applyOmpBackgroundStatus(task, status, now);
+        }
+      } catch {
+        if (!current()) return;
+        for (const task of batch) markOmpBackgroundUnavailable(task);
+      }
+    }
+    pruneBackgroundTasks(tasks);
+  }
+
   /** spec 305: one IPC round trip for every still-live task across all lanes,
    *  folded back with the lane's process tree as the liveness cross-check. */
   private async refreshBackgroundTasks(): Promise<void> {
     const epoch = this.metricsEpoch;
-    const live: { lane: HarnessLane; task: BackgroundTask }[] = [];
+    const live: { lane: HarnessLane; task: BackgroundTask; path: string; tasks: BackgroundTask[] }[] = [];
+    const omp: Promise<void>[] = [];
     for (const lane of this.lanes) {
       for (const task of lane.backgroundTasks) {
-        if (task.state === 'running' || task.state === 'unknown') live.push({ lane, task });
+        if (task.observation.kind === 'claude-output' && (task.state === 'running' || task.state === 'unknown')) {
+          live.push({ lane, task, path: task.observation.outputPath, tasks: lane.backgroundTasks });
+        }
       }
+      if (lane.supportsOmpBackgroundJobs) omp.push(this.refreshOmpBackgroundTasks(lane));
     }
-    if (live.length === 0) return;
-    let statuses: AcpBackgroundTaskStatus[];
-    try {
-      statuses = await invoke<AcpBackgroundTaskStatus[]>('acp_background_task_status', {
-        queries: live.map(({ task }) => ({ id: task.id, path: task.outputPath })),
-      });
-    } catch {
-      return; // a failed stat is not news; the next tick retries.
-    }
-    if (epoch !== this.metricsEpoch) return;
-    const now = Date.now();
-    for (const status of statuses) {
-      const entry = live.find(({ task }) => task.id === status.id);
-      if (!entry) continue;
-      const sessionId = entry.lane.client?.sessionId ?? null;
-      const metrics = sessionId !== null ? this.metricsBySession.get(sessionId) ?? null : null;
-      applyTaskStatus(entry.task, status, metrics, now);
-    }
-    this.updateSpinnerTicker();
+    const files = async (): Promise<void> => {
+      if (live.length === 0) return;
+      let statuses: AcpBackgroundTaskStatus[];
+      try {
+        statuses = await invoke<AcpBackgroundTaskStatus[]>('acp_background_task_status', {
+          queries: live.map(({ task, path }) => ({ id: task.id, path })),
+        });
+      } catch {
+        return; // a failed stat is not news; the next tick retries.
+      }
+      if (epoch !== this.metricsEpoch) return;
+      const now = Date.now();
+      // Results retain query order; two lanes can legitimately reuse a task ID.
+      for (let i = 0; i < statuses.length; i++) {
+        const status = statuses[i];
+        const entry = live[i];
+        if (!entry || entry.task.id !== status.id || entry.lane.backgroundTasks !== entry.tasks) continue;
+        const sessionId = entry.lane.client?.sessionId ?? null;
+        const metrics = sessionId !== null ? this.metricsBySession.get(sessionId) ?? null : null;
+        applyTaskStatus(entry.task, status, metrics, now);
+      }
+    };
+    await Promise.all([files(), ...omp]);
+    if (epoch === this.metricsEpoch) this.updateSpinnerTicker();
   }
 
   /** spec 169: any lane doing work whose resource draw is worth streaming. */

@@ -44,13 +44,13 @@ Krypton keeps the current keyboard path (`⌘P` then `=` for Lane Metrics and `#
 
 ### Data and API
 
-Keep `BackgroundTask`, `BackgroundTaskStripProps`, existing IPC commands and the 2 s metrics cadence. No new state or configuration. Retain the `now` prop in the composer API for compatibility, but the strip no longer uses time to decide visibility.
+Keep `BackgroundTaskStripProps` and the 2 s cadence. The source-aware registry and capability-gated OMP status command are defined in [spec 398](./0398-omp-async-bash-monitor.md); this active-only presentation applies to both sources. No new strip timer or configuration. The `now` prop does not decide visibility.
 
 ### Data Flow
 
-1. A validated background launch registers a `running` task. The strip shows `RUNNING` immediately; PID remains absent until a process match arrives.
-2. The shared metrics poll folds file status and lane process metrics into that task. While state remains `running`, the strip shows `RUNNING · PID <pid>` if `pid` is known, and updates only the label when PID changes or clears.
-3. When a poll sets `exited`, `unknown` or `orphaned`, the keyed row is disposed. With no running rows, the strip is hidden. The task remains in the registry for `#bg` and Lane Metrics.
+1. A validated supported launch registers a `running` task; show `RUNNING` immediately. Unknown OS PID stays absent.
+2. The shared metrics poll folds Claude file/process status or OMP job snapshots into the task. Show `RUNNING · PID <pid>` only when known, updating only the affected cell.
+3. Any non-running state (`exited`, `failed`, `cancelled`, `unknown`, `orphaned`) removes its keyed row. Hide the strip when none remain. Retained detail history stays in `#bg` and Lane Metrics; unresolved OMP observations remain eligible for later snapshots.
 4. Show at most three running jobs, newest first. `+N more` counts only remaining running jobs and keeps the existing Lane Metrics key hint.
 
 ### UI and Keyboard
@@ -60,7 +60,7 @@ Keep the current row, LED, command, latest output and responsive layout. Running
 ## Edge Cases and Verification
 
 - A newly launched task and the first missed process sample can still be `running` with no PID; show `RUNNING` until the registry changes state. Never display a stale PID.
-- A missing output file becomes `unknown`; a second no-match sample becomes `orphaned`. Both disappear from this strip on that poll. A completed task disappears on the poll that reads its exit marker, regardless of exit code.
+- For Claude, missing output becomes `unknown`, a second process miss becomes `orphaned`, and an exit marker settles the job. For OMP, snapshots report completion/failure/cancellation or unavailable status without file/process heuristics. Every non-running state leaves the strip immediately.
 - A later running task remains visible when another task exits. The strip hides and reserves no height when its last running task leaves.
 - Test in-place task mutations, PID label updates, filtering, overflow and no DOM writes for an unchanged poll; run frontend type-check and focused tests. Verify native visual behavior only after the running app has loaded the new build.
 

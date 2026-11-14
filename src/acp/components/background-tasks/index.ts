@@ -12,7 +12,7 @@
 import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
 import { disposeList, reconcile } from '../../../ui/list';
-import { formatTaskBytes } from '../../harness-background-tasks';
+import { backgroundTaskState, formatTaskBytes } from '../../harness-background-tasks';
 import { formatCpu, formatElapsed, formatRss, truncateInline } from '../../harness-format';
 import type { BackgroundTask } from '../../harness-view-types';
 import { Spinner } from '../spinner';
@@ -32,20 +32,21 @@ interface TaskRowProps {
 
 /** `exit 0` / `18% · 420M` / `no process` — the one status cell. */
 function statusText(task: BackgroundTask): string {
-  if (task.state === 'exited') return `exit ${task.exitCode ?? '?'}`;
+  if (task.state === 'exited' || task.state === 'failed' || task.state === 'cancelled') return backgroundTaskState(task);
   if (task.state === 'orphaned') return 'no process';
-  if (task.state === 'unknown') return 'output gone';
-  if (task.cpuPercent === null || task.rssMb === null) return 'starting';
+  if (task.state === 'unknown') return task.observation.kind === 'omp-job' ? 'status unavailable' : 'output gone';
+  if (task.cpuPercent === null || task.rssMb === null) return task.observation.kind === 'omp-job' ? 'running' : 'starting';
   return `${formatCpu(task.cpuPercent)} · ${formatRss(task.rssMb)}`;
 }
 
 function stateModifier(task: BackgroundTask): string {
-  if (task.state === 'exited') return task.exitCode === 0 ? 'exited' : 'failed';
+  if (task.state === 'exited') return task.exitCode === null || task.exitCode === 0 ? 'exited' : 'failed';
   return task.state;
 }
 
 function stateGlyph(task: BackgroundTask): string {
-  if (task.state === 'exited') return task.exitCode === 0 ? '✓' : '✗';
+  if (task.state === 'exited') return task.exitCode === null || task.exitCode === 0 ? '✓' : '✗';
+  if (task.state === 'failed' || task.state === 'cancelled') return '✗';
   if (task.state === 'running') return '';
   return '·';
 }
@@ -106,7 +107,8 @@ class TaskRow extends Component<TaskRowProps> {
     this.bytes.textContent = formatTaskBytes(task.bytes);
     this.status.textContent = statusText(task);
     this.tail.textContent = truncateInline(task.lastLine, 72);
-    this.el.setAttribute('title', `${task.outputPath}${task.pid === null ? '' : ` · pid ${task.pid}`}`);
+    const source = task.observation.kind === 'claude-output' ? task.observation.outputPath : `OMP job ${task.id}`;
+    this.el.setAttribute('title', `${source}${task.pid === null ? '' : ` · pid ${task.pid}`}`);
   }
 
   protected onDispose(): void {
@@ -146,7 +148,7 @@ export class BackgroundTasks extends Component<BackgroundTasksProps> {
   protected paint(next: BackgroundTasksProps): void {
     this.syncClasses(next);
     reconcile<BackgroundTask, TaskRow>(this.rows, next.tasks, {
-      key: (task) => task.id,
+      key: (task) => JSON.stringify([task.toolCallId, task.id]),
       create: (task) => {
         const row = new TaskRow();
         row.update({ task, now: next.now });

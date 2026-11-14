@@ -120,9 +120,9 @@ export type SystemCommandPayload =
       readonly state: string;
       readonly startedAt: number;
       readonly endedAt: number | null;
-      readonly bytes: number;
+      readonly bytes: number | null;
       readonly command: string;
-      readonly outputPath: string;
+      readonly outputPath: string | null;
     }[];
   }
   | {
@@ -726,12 +726,7 @@ export interface PendingUserEcho {
   received: string;
 }
 
-/**
- * spec 305: one shell command the agent detached with `run_in_background`.
- * Captured from the launch tool call (the adapter reports the task id and the
- * absolute output path in its result) and refreshed on the metrics poll —
- * Krypton never owns the process, it only watches the file and the tree.
- */
+/** Specs 305/398: a detached shell observed through its backend's authority. */
 export interface BackgroundTask {
   /** Adapter-assigned task id, e.g. `bxs80otkx`. */
   id: string;
@@ -739,15 +734,15 @@ export interface BackgroundTask {
   toolCallId: string;
   /** Command line as launched. */
   command: string;
-  /** Absolute output file the CLI appends to. */
-  outputPath: string;
+  observation: { readonly kind: 'claude-output'; readonly outputPath: string }
+    | { readonly kind: 'omp-job'; readonly toolCallId: string };
   startedAt: number;
   /** `exited` once the file's last line is the exit marker; `orphaned` once the
    *  marker is still absent but no matching process remains in the lane tree. */
-  state: 'running' | 'exited' | 'orphaned' | 'unknown';
+  state: 'running' | 'exited' | 'failed' | 'cancelled' | 'orphaned' | 'unknown';
   exitCode: number | null;
   endedAt: number | null;
-  bytes: number;
+  bytes: number | null;
   lastLine: string;
   pid: number | null;
   cpuPercent: number | null;
@@ -851,6 +846,8 @@ export interface HarnessLane {
   /** spec 278: the adapter advertised `_session/steering`; Enter on a busy lane
    *  steers instead of queueing. Cleared if a steer gets "method not found". */
   supportsSteering: boolean;
+  supportsOmpBackgroundJobs: boolean;
+  backgroundSupportNotified: boolean;
   activeTurnStartedAt: number | null;
   /** Human label for a custom-command-driven turn (e.g. 'reviewing', 'ingesting
    *  wiki') so the busy chip reads as that operation, not a generic 'running'.

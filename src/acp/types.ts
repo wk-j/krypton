@@ -139,6 +139,8 @@ export interface WireInitInfo {
   };
   /** spec 278: the agent advertised the `_session/steering` extension. */
   steering_supported?: boolean;
+  /** Spec 398: exact OMP background snapshot capability from initialize. */
+  omp_background_jobs_supported?: boolean;
 }
 
 /** spec 278: `_session/steering` result. Unknown outcomes map to 'failed'. */

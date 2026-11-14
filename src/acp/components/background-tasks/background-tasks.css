@@ -110,6 +110,8 @@
 
   .acp-harness__bg-task--orphaned .acp-harness__bg-task-glyph,
   .acp-harness__bg-task--orphaned .acp-harness__bg-task-status,
+  .acp-harness__bg-task--cancelled .acp-harness__bg-task-glyph,
+  .acp-harness__bg-task--cancelled .acp-harness__bg-task-status,
   .acp-harness__bg-task--unknown .acp-harness__bg-task-glyph,
   .acp-harness__bg-task--unknown .acp-harness__bg-task-status {
     color: rgb(var(--krypton-warning-rgb, 232, 197, 71));

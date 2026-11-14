@@ -4,14 +4,19 @@ import { launchCommand, parseBackgroundLaunch } from './adapters/claude';
 import {
   BACKGROUND_TASK_MAX,
   applyTaskStatus,
+  applyOmpBackgroundStatus,
+  backgroundTaskState,
+  markOmpBackgroundUnavailable,
   formatBackgroundTaskLines,
   pruneBackgroundTasks,
   registerBackgroundTask,
+  registerOmpBackgroundTask,
   subtreeUsage,
 } from './harness-background-tasks';
 import type { BackgroundTask } from './harness-view-types';
 import type { ToolCall } from './types';
 import type { AcpBackgroundTaskStatus, AcpLaneMetrics, AcpLaneProcMetric } from '../types';
+import type { OmpBackgroundActivity } from './adapters/types';
 
 const OUTPUT = '/private/tmp/claude-501/-Users-wk-Project-tli/38bb8953/tasks/bxs80otkx.output';
 
@@ -76,7 +81,7 @@ const task = (over: Partial<BackgroundTask> = {}): BackgroundTask => ({
   id: 'bxs80otkx',
   toolCallId: 'call-1',
   command: 'mvn clean install > /tmp/release.log 2>&1',
-  outputPath: OUTPUT,
+  observation: { kind: 'claude-output', outputPath: OUTPUT },
   startedAt: 1_000,
   state: 'running',
   exitCode: null,
@@ -145,7 +150,7 @@ describe('registerBackgroundTask', () => {
     expect(tasks[0]).toMatchObject({
       id: 'bxs80otkx',
       command: 'mvn clean install > /tmp/release.log 2>&1',
-      outputPath: OUTPUT,
+      observation: { kind: 'claude-output', outputPath: OUTPUT },
       state: 'running',
       startedAt: 1_000,
     });
@@ -270,5 +275,68 @@ describe('formatBackgroundTaskLines', () => {
 
   it('says so when the lane has none', () => {
     expect(formatBackgroundTaskLines([], 1_000)).toEqual(['bg: no background tasks on this lane.']);
+  });
+});
+
+describe('OMP background registry (spec 398)', () => {
+  function activity(state: OmpBackgroundActivity['status']['state'] = 'running', call = 'omp-call'): OmpBackgroundActivity {
+    return {
+      command: 'sleep 20',
+      status: { id: 'bg_1', toolCallId: call, state, startedAt: 1_000, endedAt: null,
+        exitCode: null, pid: null, lastLine: '' },
+    };
+  }
+
+  it('deduplicates exact launches but distinguishes a reused job ID', () => {
+    const tasks: BackgroundTask[] = [];
+    const first = registerOmpBackgroundTask(tasks, activity(), 1_000);
+    expect(registerOmpBackgroundTask(tasks, activity(), 2_000)).toBe(first);
+    registerOmpBackgroundTask(tasks, activity('completed'), 3_000);
+    const next = registerOmpBackgroundTask(tasks, activity('running', 'later-call'), 4_000);
+    expect(tasks.map((entry) => [entry.id, entry.toolCallId, entry.state]))
+      .toEqual([['bg_1', 'omp-call', 'exited'], ['bg_1', 'later-call', 'running']]);
+    expect(next).not.toBe(first);
+    expect(first.bytes).toBeNull();
+  });
+
+  it('never reopens a terminal launch from delayed running or unavailable observations', () => {
+    const t = registerOmpBackgroundTask([], activity(), 1_000);
+    applyOmpBackgroundStatus(t, { ...activity('failed').status, exitCode: 7, endedAt: 4_000 }, 5_000);
+    applyOmpBackgroundStatus(t, { ...activity().status, pid: 123 }, 6_000);
+    markOmpBackgroundUnavailable(t);
+    expect(t).toMatchObject({ state: 'failed', exitCode: 7, endedAt: 4_000, pid: null });
+    expect(backgroundTaskState(t)).toBe('failed · exit 7');
+  });
+
+  it('recovers unavailable status without inventing an exit code or output file', () => {
+    const tasks: BackgroundTask[] = [];
+    const t = registerOmpBackgroundTask(tasks, activity(), 1_000);
+    markOmpBackgroundUnavailable(t);
+    expect(backgroundTaskState(t)).toBe('status unavailable');
+    applyOmpBackgroundStatus(t, { ...activity().status, pid: 4321, lastLine: 'building' }, 2_000);
+    expect(t).toMatchObject({ state: 'running', pid: 4321, lastLine: 'building' });
+    applyOmpBackgroundStatus(t, { ...activity('completed').status, endedAt: 3_000 }, 4_000);
+    expect(backgroundTaskState(t)).toBe('completed');
+    expect(t.exitCode).toBeNull();
+    expect(formatBackgroundTaskLines(tasks, 5_000).join('\n')).not.toContain('output files:');
+  });
+
+  it('does not apply Claude file/process absence to an OMP job', () => {
+    const t = registerOmpBackgroundTask([], activity(), 1_000);
+    applyTaskStatus(t, status({ exists: false }), null, 3_000);
+    expect(t.state).toBe('running');
+  });
+
+  it('retains unavailable jobs beyond the history cap so they can be queried again', () => {
+    const tasks: BackgroundTask[] = [];
+    for (let i = 0; i < BACKGROUND_TASK_MAX + 2; i++) {
+      registerOmpBackgroundTask(tasks, activity('unavailable', `call-${i}`), 1_000);
+    }
+    expect(tasks.every((entry) => entry.state === 'unknown')).toBe(true);
+    expect(tasks).toHaveLength(BACKGROUND_TASK_MAX + 2);
+    applyOmpBackgroundStatus(tasks[0], activity('completed', 'call-0').status, 2_000);
+    pruneBackgroundTasks(tasks);
+    expect(tasks.some((entry) => entry.toolCallId === 'call-0')).toBe(false);
+    expect(tasks.some((entry) => entry.toolCallId === 'call-1')).toBe(true);
   });
 });

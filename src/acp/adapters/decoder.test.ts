@@ -154,6 +154,7 @@ describe('LaneDecoder — command results', () => {
       sessions: { canList: true, canResume: true, canLoad: true },
       mcp: { http: true, sse: false },
       steering: true,
+      ompBackgroundJobs: false,
       authMethods: [{ id: 'oauth' }],
       reportedModel: 'sonnet',
       modes: [
@@ -170,6 +171,7 @@ describe('LaneDecoder — command results', () => {
       sessions: { canList: false, canResume: false, canLoad: false },
       mcp: { http: false, sse: false },
       steering: false,
+      ompBackgroundJobs: false,
       authMethods: [],
       reportedModel: null,
       modes: [],

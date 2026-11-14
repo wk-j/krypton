@@ -12,7 +12,7 @@ The user cannot tell that Claude is still running a detached command from the ma
 
 Add a compact, automatically visible background-task strip at the top of the active lane's composer. It shows running jobs with their command, matched PID when known, and latest reported output without opening another surface. Keep it visible after the agent turn ends, during later turns, in Zen/concise layouts and while a permission/question owns the composer. A job leaves the strip when its registry state changes from `running`; the registry and detail surfaces retain its history. Each job costs one line; there is no separate head line. This is the current presentation contract after spec 397.
 
-Reuse the existing task registry and log reader. Do not create a second process monitor or mutate the completed launch's transcript row. Extend the existing Claude launch capture to accept the already-supported generic `rawOutput` text sections as well as content and terminal output, so that transport placement alone cannot suppress the strip.
+Reuse the task registry and source-specific observer: Claude's existing log reader, or OMP's capability-gated read-only snapshots from [spec 398](./0398-omp-async-bash-monitor.md). Do not create a second process monitor or mutate a completed launch row. Claude launch capture accepts generic `rawOutput` text sections as well as content and terminal output; OMP capture requires structured Bash job metadata, never prose.
 
 ## Research
 
@@ -31,7 +31,7 @@ Reuse the existing task registry and log reader. Do not create a second process 
 | Krypton Commit Explainer (377) | A bounded job strip stays outside the scrolled message and updates independently. | Apply the same always-visible placement beside the prompt. |
 | Krypton Lane Metrics (305) | Detailed tasks, resource usage and log tails in an optional overlay. | Retain as detail, not the primary activity signal. |
 
-No new external task protocol or UI dependency is needed.
+The original Claude strip needs no new task protocol or UI dependency. OMP support requires the versioned snapshot extension defined in spec 398; OMP 18.20.0 does not advertise it.
 
 ## Design
 
@@ -53,9 +53,9 @@ interface BackgroundTaskStripProps {
 - First child of the composer in both draft and decision branches, outside transcript scrolling. Never mount it inside a sealed transcript row, optional side panel or metrics overlay.
 - Hide when the active lane has no task that qualifies for a row (below). Reserve no height while hidden; explicitly author the block's `[hidden]` rule.
 - No head line. An engraved `BACKGROUND` label sits at the start of the first row; there is no count readout and no always-visible detail hint. No new focusable control or shortcut is introduced; `#bg` remains available.
-- One flat line per running job: existing state LED, `RUNNING` label with `· PID N` when a process-tree match exists, command in its original case and latest output. The latest output is plain text, not HTML or Markdown.
+- One flat line per running job: state LED, `RUNNING` label with `· PID N` only when the source knows an OS PID, command in its original case and latest output as plain text. The OMP 16.3.11 source implementation supplies no PID.
 - No live clock or final duration. A poll that changes no displayed field writes no DOM; a PID or output change rewrites only its cell.
-- Only registry state `running` qualifies for a row. `unknown`, `orphaned` and `exited` leave on the poll that sets those states, regardless of exit code. The registry keeps every row-less job, so Lane Metrics and `#bg` still report it. The lane-head chip continues to count running jobs.
+- Only registry state `running` qualifies. `unknown`, `orphaned`, `exited`, `failed` and `cancelled` leave when observed, regardless of exit code. Retained history remains in Lane Metrics and `#bg`; the lane-head chip counts running jobs.
 - Show up to three running jobs, newest-started first. Only when more qualify does an extra `+N more` line appear, carrying the semantic keycaps for `⌘P` then `=` Lane Metrics.
 - At narrow widths (strip container ≤ 480px), keep the state visible and drop the `BACKGROUND` label so the command keeps its room; ellipsize command and tail with full strings in `title`. Move the tail to a second line only if needed; no horizontal page overflow or fixed-width table.
 - Use existing material/ink tokens and flat rows separated by a groove. No nested cards, colored outlines, infinite spinner/animation or new theme token. Only LEDs may glow. Changing numbers use tabular-nums.
@@ -68,6 +68,7 @@ interface BackgroundTaskStripProps {
 4. Switching lanes updates the strip from the selected lane only. Other lanes retain the existing `bg N` header signal; cross-harness/project aggregation is not part of this change.
 5. Completion changes only the strip's owning keyed row and existing task chrome. Never unseal/repaint the original tool or assistant message.
 6. Lane reset/close and view disposal clear/dispose the strip with their existing owners. Permission/question pre-emption never suppresses it. No change to prompt routing, input focus or actual lane status.
+7. OMP Bash launches and direct updates are decoded independently of bounded transcript/tool retention. Capable lanes query scoped job snapshots on the same shared metrics cadence, including idle. Terminal observations are sticky; timeout/disconnect/unavailable observations hide the row without claiming success and remain retryable. Existing subagent cards are unchanged.
 
 `readDeps()` snapshots displayed task scalars/formatted strings, not only the mutable tasks array reference. A poll that changes nothing visible writes no DOM. The component owns attached listeners and disposes keyed children.
 
@@ -119,7 +120,7 @@ None. Placement is the persistent composer strip, not a live transcript card.
 
 ## Out of Scope
 
-Stopping/restarting jobs, a full log viewer, native notifications, recovering tasks after app restart, a new ACP terminal capability, non-Claude job protocol support, cross-harness aggregation, guessed jobs from prose, changing task-liveness heuristics, and unrelated header restyling. OMP's existing job cards remain unchanged.
+Stopping/restarting jobs, a full log viewer, native notifications, app-restart recovery, a new ACP terminal capability, backends other than Claude and spec-398 OMP Bash, cross-harness aggregation, guessed jobs from prose, changing Claude liveness heuristics, and unrelated header restyling. OMP subagent/eval cards remain unchanged.
 
 ## Resources
 

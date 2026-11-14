@@ -616,6 +616,7 @@ export function decodeInit(raw: unknown): LaneInit {
     sessions: sessionCapabilitiesFromAgent(caps),
     mcp: { http: Boolean(mcp?.http), sse: Boolean(mcp?.sse) },
     steering: init?.steering_supported === true,
+    ompBackgroundJobs: init?.omp_background_jobs_supported === true,
     authMethods: Array.isArray(init?.auth_methods) ? init.auth_methods : [],
     reportedModel: findModelName(caps),
     modes: parseModes(caps?.availableModes),

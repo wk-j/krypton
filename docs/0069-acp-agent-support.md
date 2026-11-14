@@ -235,6 +235,7 @@ Each lane adapter declares `supplies` (`src/acp/adapters/types.ts` `SupplyMatrix
 - Grok has no subagent card, and its lanes have no `turnState` hook.
 - Krypton reads thread state only from codex-acp's `_meta.codex.threadStatus`, so Claude, Grok and OMP lanes have no `turnState` hook either.
 - A backend without its own adapter (OpenCode, Cursor, pi-acp, Droid, and any new id) stays all `unverified`, even where the generic adapter has no reader.
+- OMP Bash background monitoring (spec 398) requires exact top-level `initialize._meta.omp.backgroundJobs = {version: 1, snapshot: true}`. Krypton exposes this as `LaneInit.ompBackgroundJobs`, then queries `_omp/jobs/snapshot` through the owning ACP transport while idle. Installed OMP 18.20.0 lacks the extension; an unsupported launch shows one notice, not a permanent running indicator. This capability is independent of `turnState` and of subagent cards.
 
 ### Data Flow (one prompt turn)
 

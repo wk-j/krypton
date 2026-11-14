@@ -13,7 +13,7 @@ Numbers are assigned in order; gaps were never used. `0008-open-questions.md` an
 | [0006-configuration.md](./0006-configuration.md) | TOML config reference |
 | [0007-milestones.md](./0007-milestones.md) | Original M0–M9 phase plan |
 
-## Latest 20 specs
+## Latest specs
 
 Listed by spec number. Older specs remain in this directory.
 
@@ -40,6 +40,7 @@ Listed by spec number. Older specs remain in this directory.
 | 395 | [Workspace Backgrounds](./0395-workspace-backgrounds.md) |
 | 396 | [Harness Git Panel](./0396-harness-git-panel.md) |
 | 397 | [Active Background Task Strip](./0397-active-background-task-strip.md) |
+| 398 | [OMP Async Bash Monitor](./0398-omp-async-bash-monitor.md) |
 
 ## ADRs (31)
 

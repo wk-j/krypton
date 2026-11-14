@@ -5611,7 +5611,8 @@ describe('system command snapshots (spec 387)', () => {
     const rows: HarnessTranscriptItem[] = [];
     const task = {
       id: 'bg-1', state: 'running', exitCode: null, startedAt: Date.now() - 5_000,
-      endedAt: null, bytes: 1_024, command: 'npm run build', outputPath: '/tmp/bg-1.log',
+      endedAt: null, bytes: 1_024, command: 'npm run build',
+      observation: { kind: 'claude-output', outputPath: '/tmp/bg-1.log' },
     };
     const lane = { backgroundTasks: [task] } as unknown as HarnessLane;
     const host = {

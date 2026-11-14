@@ -18,6 +18,7 @@ import {
 } from './generic';
 import { decodePermission } from './permission';
 import { adapterFor } from './registry';
+import { OmpBackgroundDecoder } from './omp-background';
 import { ToolCallDecoder } from './tool';
 import type { LaneAdapter, LaneDecoder, LaneEvent, RawAcpEvent } from './types';
 
@@ -134,17 +135,29 @@ function rawEvent(adapter: LaneAdapter, tools: ToolCallDecoder, raw: RawAcpEvent
 export function createLaneDecoder(backendId: string): LaneDecoder {
   const adapter = adapterFor(backendId);
   const tools = new ToolCallDecoder(adapter);
+  const background = backendId === 'omp' ? new OmpBackgroundDecoder() : null;
   return {
     event(raw: RawAcpEvent): LaneEvent[] {
       const event = rawEvent(adapter, tools, raw);
-      return event ? [event] : [];
+      const events = event ? [event] : [];
+      if (background && raw.type === 'session_update' &&
+          (raw.kind === 'tool_call' || raw.kind === 'tool_call_update')) {
+        const activity = background.event((raw.update ?? {}) as unknown as ToolCall, event);
+        if (activity) events.push({ type: 'background_task', activity });
+      }
+      return events;
     },
     init: decodeInit,
     session: decodeSession,
     sessionList: decodeSessionList,
     promptResult: decodePromptResult,
+    backgroundSnapshot(raw, requested) {
+      if (!background) throw new Error('This backend does not support OMP background snapshots');
+      return background.snapshot(raw, requested);
+    },
     reset(): void {
       tools.reset();
+      background?.reset();
     },
   };
 }

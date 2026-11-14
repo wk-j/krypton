@@ -1,19 +1,11 @@
-// Krypton — background task registry (spec 305).
-//
-// A Claude lane detaches shell work with `run_in_background`: the launch tool
-// call completes in well under a second, the turn ends, and the lane goes idle
-// while the job keeps running. Krypton runs no client terminals
-// (`terminal: false`), so it never owns that process — what it does have is the
-// adapter's own launch result, which names the task id and the absolute output
-// file, plus the lane process tree it already polls.
-//
-// This module is the pure half: fold a file status in, find the job in the
-// tree, bound the list. The Claude lane adapter reads the launch from the wire
-// (`adapters/claude.ts`, spec 380); the view owns the lane state and the IPC.
+// Krypton — source-aware shell observations (specs 305/398).
+// Claude jobs use their output file and process tree; OMP jobs use scoped ACP
+// snapshots. Neither source owns execution or consumes the agent's result.
 
 import { formatElapsed, truncateInline } from './harness-format';
 import type { AcpBackgroundTaskStatus, AcpLaneMetrics, AcpLaneProcMetric } from '../types';
 import type { BackgroundTask } from './harness-view-types';
+import type { OmpBackgroundActivity, OmpBackgroundStatus } from './adapters/types';
 
 /** Per-lane cap. Exited rows are dropped oldest-first; a running one never is. */
 export const BACKGROUND_TASK_MAX = 20;
@@ -39,7 +31,7 @@ export function registerBackgroundTask(
     id: launch.id,
     toolCallId,
     command: launch.command,
-    outputPath: launch.outputPath,
+    observation: { kind: 'claude-output', outputPath: launch.outputPath },
     startedAt: now,
     state: 'running',
     exitCode: null,
@@ -56,11 +48,64 @@ export function registerBackgroundTask(
   return task;
 }
 
+/** Capture an OMP launch exactly once; job IDs may be reused by a later call. */
+export function registerOmpBackgroundTask(
+  tasks: BackgroundTask[],
+  activity: OmpBackgroundActivity,
+  now: number,
+): BackgroundTask {
+  const { status } = activity;
+  let task = tasks.find((entry) => entry.observation.kind === 'omp-job' &&
+    entry.id === status.id && entry.toolCallId === status.toolCallId);
+  if (!task) {
+    task = {
+      id: status.id, toolCallId: status.toolCallId, command: activity.command,
+      observation: { kind: 'omp-job', toolCallId: status.toolCallId },
+      startedAt: now, state: 'running', exitCode: null, endedAt: null,
+      bytes: null, lastLine: '', pid: null, cpuPercent: null, rssMb: null, missStreak: 0,
+    };
+    tasks.push(task);
+  }
+  applyOmpBackgroundStatus(task, status, now);
+  pruneBackgroundTasks(tasks);
+  return task;
+}
+
+/** A launch's terminal state cannot be reopened by delayed wire/poll frames. */
+export function applyOmpBackgroundStatus(task: BackgroundTask, status: OmpBackgroundStatus, now: number): void {
+  if (task.observation.kind !== 'omp-job' || task.id !== status.id || task.toolCallId !== status.toolCallId ||
+      (task.state !== 'running' && task.state !== 'unknown')) return;
+  task.state = status.state === 'completed' ? 'exited' : status.state === 'unavailable' ? 'unknown' : status.state;
+  if (status.startedAt !== null) task.startedAt = status.startedAt;
+  task.endedAt = task.state === 'running' || task.state === 'unknown' ? null : status.endedAt ?? now;
+  task.exitCode = status.exitCode;
+  task.pid = task.state === 'running' ? status.pid : null;
+  task.cpuPercent = null;
+  task.rssMb = null;
+  if (status.lastLine) task.lastLine = status.lastLine;
+}
+
+export function markOmpBackgroundUnavailable(task: BackgroundTask): void {
+  applyOmpBackgroundStatus(task, {
+    id: task.id, toolCallId: task.toolCallId, state: 'unavailable',
+    startedAt: null, endedAt: null, exitCode: null, pid: null, lastLine: '',
+  }, Date.now());
+}
+
+/** A detail label must not invent an exit code or confuse absent status with a missing log. */
+export function backgroundTaskState(task: BackgroundTask): string {
+  if (task.state === 'exited') return task.exitCode === null ? 'completed' : `exit ${task.exitCode}`;
+  if (task.state === 'failed') return task.exitCode === null ? 'failed' : `failed · exit ${task.exitCode}`;
+  if (task.state === 'unknown' && task.observation.kind === 'omp-job') return 'status unavailable';
+  return task.state;
+}
+
 /** Drop finished rows oldest-first once over the cap. A `running` task is kept
  *  even past the cap: dropping it would silently stop watching live work. */
 export function pruneBackgroundTasks(tasks: BackgroundTask[]): void {
   while (tasks.length > BACKGROUND_TASK_MAX) {
-    const index = tasks.findIndex((task) => task.state !== 'running');
+    const index = tasks.findIndex((task) => task.state !== 'running' &&
+      !(task.observation.kind === 'omp-job' && task.state === 'unknown'));
     if (index === -1) return;
     tasks.splice(index, 1);
   }
@@ -115,6 +160,7 @@ export function applyTaskStatus(
   metrics: AcpLaneMetrics | null,
   now: number,
 ): void {
+  if (task.observation.kind !== 'claude-output') return;
   if (!status.exists) {
     task.state = 'unknown';
     task.pid = null;
@@ -152,7 +198,8 @@ export function applyTaskStatus(
 }
 
 /** `182 KB`, `1.4 MB` — output written so far. */
-export function formatTaskBytes(bytes: number): string {
+export function formatTaskBytes(bytes: number | null): string {
+  if (bytes === null) return '—';
   if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
@@ -167,14 +214,15 @@ export function formatBackgroundTaskLines(
   if (tasks.length === 0) return ['bg: no background tasks on this lane.'];
   const lines = ['task        state     elapsed   output   command'];
   for (const task of tasks) {
-    const state = task.state === 'exited' ? `exit ${task.exitCode ?? '?'}` : task.state;
+    const state = backgroundTaskState(task);
     lines.push(
-      `${task.id.padEnd(11).slice(0, 11)} ${state.padEnd(9).slice(0, 9)} ` +
+      `${task.id.padEnd(11)} ${state.padEnd(9)} ` +
         `${formatElapsed((task.endedAt ?? now) - task.startedAt).padStart(7)}  ` +
         `${formatTaskBytes(task.bytes).padStart(7)}  ${truncateInline(task.command, 72)}`,
     );
   }
   lines.push('');
-  lines.push(`output files: ${tasks.map((task) => task.outputPath).join(', ')}`);
+  const paths = tasks.flatMap((task) => task.observation.kind === 'claude-output' ? [task.observation.outputPath] : []);
+  if (paths.length > 0) lines.push(`output files: ${paths.join(', ')}`);
   return lines;
 }

@@ -92,7 +92,8 @@ describe('Composer', () => {
   it('keeps background activity visible across decision pre-emption and clears it for another lane', () => {
     const composer = new Composer();
     const task: BackgroundTask = {
-      id: 'job-1', toolCallId: 'call-1', command: 'mvn test', outputPath: '/tmp/job-1.output',
+      id: 'job-1', toolCallId: 'call-1', command: 'mvn test',
+      observation: { kind: 'claude-output', outputPath: '/tmp/job-1.output' },
       startedAt: 1_000, state: 'running', exitCode: null, endedAt: null, bytes: 0,
       lastLine: 'Building', pid: null, cpuPercent: null, rssMb: null, missStreak: 0,
     };

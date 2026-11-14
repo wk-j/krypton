@@ -37,9 +37,9 @@ So the one signal the user has (the lane spinner, which is gated on `status === 
 
 ## Solution
 
-A per-lane registry of background tasks, captured from the launch tool call itself — the adapter hands Krypton the task ID and the absolute output path in the tool result. Status is refreshed on the existing shared 2 s metrics feed by stat-ing/tailing that file and matching the lane's process tree. Spec 384 adds an automatically visible `BACKGROUND` strip above the active lane's composer, including decision mode, after the launch turn ends. The `BACKGROUND TASKS` section inside `=` Lane Metrics, the lane-head `bg N` chip and the `#bg` snapshot remain available as detail.
+A per-lane registry of background tasks, captured from the launch result. Claude supplies a task ID and absolute output path; its status comes from tailing that file and the lane process tree. [Spec 398](./0398-omp-async-bash-monitor.md) adds OMP Bash jobs through validated `details.async` and a capability-gated read-only ACP snapshot, including idle lanes. Both use the shared 2 s metrics feed. The composer `BACKGROUND` strip shows current work; Lane Metrics, the lane-head `bg N` chip and `#bg` remain the detail surfaces.
 
-Read-only observer: no protocol change, no new timer, no process control.
+Read-only observer: no new timer or process control. Claude needs no protocol change; OMP requires the spec-398 extension and otherwise shows an explicit unsupported-status notice.
 
 ## Research
 
@@ -93,19 +93,20 @@ Alternatives ruled out:
 ### Data Structures
 
 ```ts
-// src/acp/types.ts
+// src/acp/harness-view-types.ts (shared model, amended by spec 398)
 export interface BackgroundTask {
   readonly id: string;              // 'bxs80otkx', from the launch result
   readonly toolCallId: string;      // the launch tool call, for transcript cross-reference
   readonly command: string;         // rawInput.command of the launch call
-  readonly outputPath: string;      // absolute, parsed from the launch result
-  readonly startedAt: number;       // Date.now() at capture
-  state: 'running' | 'exited' | 'orphaned' | 'unknown';
-  exitCode: number | null;          // from `[exited with code N]`
-  endedAt: number | null;           // file mtime at the poll that first saw the marker
-  bytes: number;                    // output file length
+  observation: { readonly kind: 'claude-output'; readonly outputPath: string }
+    | { readonly kind: 'omp-job'; readonly toolCallId: string };
+  startedAt: number;                // capture time, replaced by OMP's authoritative start time
+  state: 'running' | 'exited' | 'failed' | 'cancelled' | 'orphaned' | 'unknown';
+  exitCode: number | null;          // reported code only; never invented for OMP
+  endedAt: number | null;
+  bytes: number | null;             // null when OMP supplies no byte count
   lastLine: string;                 // last non-empty line of the tail, clamped to 200 chars
-  pid: number | null;               // matched from the lane process tree
+  pid: number | null;               // advisory OS PID; absent in the OMP 16.3.11 checkout
   cpuPercent: number | null;        // from that process row
   rssMb: number | null;
   missStreak: number;               // consecutive polls with no marker and no live pid
@@ -218,9 +219,9 @@ None.
 | Multi-megabyte log | 4 KiB tail only; `bytes` comes from file metadata |
 | App restarted while a job runs | Registry is in-memory and starts empty — running jobs are invisible until re-mentioned (see Out of Scope) |
 | Lane closed / `#new` / restart | Tasks are cleared with the lane state they live on |
-| More than 20 tasks on one lane | Drop oldest `exited`/`orphaned` first; a `running` task is never dropped |
-| Two lanes in the same repo | Output paths contain the ACP session id, so IDs never collide across lanes |
-| Non-Claude backend | This capture path is Claude-only. Other backends do not register spec-305 jobs; OMP keeps its independent spec-370 job cards. |
+| More than 20 tasks on one lane | Drop oldest settled rows first; keep running jobs and unresolved OMP observations so polling can recover them |
+| Two lanes / reused job IDs | Each lane owns its registry; OMP matches both job ID and tool-call ID, and UI row keys retain both |
+| Non-Claude backend | OMP Bash uses spec-398 snapshots when advertised; unsupported OMP builds show a notice rather than a false live row. Other backends do not register these tasks. OMP subagent cards remain independent under spec 370. |
 | argv match ambiguity (two identical commands) | First unmatched process row wins; pid/CPU are advisory, never the liveness source of truth when a marker exists |
 
 ## Out of Scope
@@ -231,7 +232,7 @@ None.
 - Fixing the lane status lying `idle` during a CLI self-resumed turn. Real, measured, and worth its own spec; this one only makes the work visible.
 - Recovering tasks after an app restart (would require scanning the CLI's private tmp layout).
 - Enabling the ACP `terminal` capability.
-- Background work from non-Claude backends.
+- Background work other than Claude detached shells and capability-gated OMP Bash jobs (spec 398).
 
 ## Resources
 

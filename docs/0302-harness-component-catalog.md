@@ -969,7 +969,7 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 | 6.6 | `DictationControl` | `[● REC th  ⌘D]` (phases `MIC · MIC en · REC th · FINALIZING…`) | `harness-dictation-controller.ts:37-82` |
 | 6.7 | `LiveVoiceStrip` | `LIVE  muted  alloy  ░░░░░░░░ ██░░░░░░  you: refactor the composer   ⌘⇧L stop · hold left ⌥ to talk` | `harness-live-voice-controller.ts:461-499` |
 | 6.8 | `DecisionComposer` | `perm      a accept · A all · r reject · R all` | `acp-harness-view.ts:13299-13313` |
-| 6.9 | `BackgroundTaskStrip` | `BACKGROUND ● RUNNING · PID 4321 mvn test   Running tests` — one line per running job, no head line; `+2 more · ⌘P then = Lane Metrics` only on overflow | Specs 384/397; first child of both draft and decision composers, updated directly from launch/metrics |
+| 6.9 | `BackgroundTaskStrip` | `BACKGROUND ● RUNNING · PID 4321 mvn test   Running tests` — running jobs only, no head line; overflow hints open Lane Metrics | Specs 384/397/398; persistent child of draft/decision composers. Claude file observations and capability-gated OMP Bash snapshots patch it directly, including idle; source/call identity survives job-ID reuse. |
 
 `LiveVoiceStrip` keeps `LiveVoiceSessionProps.muted: boolean`. The microphone starts muted;
 the muted hint is `⌘⇧L stop · hold left ⌥ to talk`, changing to
@@ -978,11 +978,11 @@ loss closes the microphone without stopping playback/session; see
 [spec 314](./0314-harness-live-push-to-talk.md) for cancellation and safety behavior.
 
 `BackgroundTaskStrip` reads the active lane's registered tasks, snapshots displayed scalar
-values, and reconciles rows by task ID. Only `running` jobs qualify; a known process-tree PID
-appears in the state label, while a task without a match says `RUNNING` alone. `exited`, `unknown`
-and `orphaned` jobs leave the strip on the poll that sets those states but stay in the registry
-for `#bg` and Lane Metrics. Up to three rows show, newest-started first; `+N more` counts only
-other running jobs. With none it reserves no height. There is no live clock or duration readout,
+values, and reconciles rows by launching call plus task ID. Only `running` jobs qualify; a known
+OS PID appears in the state label, otherwise it says `RUNNING` alone. Every non-running state
+leaves the strip when observed. Retained history stays available through `#bg` and Lane Metrics;
+unresolved OMP observations are retried. Up to three rows show, newest-started first; `+N more`
+counts other running jobs. With none it reserves no height. There is no live clock or duration readout,
 so a poll that learns nothing writes no DOM. It owns no timer and never touches sealed transcript DOM;
 `Composer.patchBackgroundTasks()` updates it without rebuilding the draft or decision controls.
 
@@ -1053,9 +1053,12 @@ Use that registry for current totals rather than the historical numbered catalog
 Later additions include the persistent composer `BackgroundTaskStrip` (spec 384);
 the transcript registry also includes `GenuiCard`, `FollowUpRail` (spec 323)
 and `RemoteCommandCard` (spec 386);
-overlays include `BackgroundTasks`, `ExecutionDialog`, `RemoteCommandDialog`, `GenuiPanel`, and `GenuiCatalog`. The composer's
-`AssistStrip` (spec 306) was removed on 2026-10-23 with the `next-prompt` task.
+overlays include `BackgroundTasks`, `ExecutionDialog`, `RemoteCommandDialog`, `GenuiPanel`, and `GenuiCatalog`.
+The composer's `AssistStrip` (spec 306) was removed on 2026-10-23 with the `next-prompt` task.
 `TimelineCapture` is absent. Historical cutover-site counts below are not a new removal tally.
+
+`BackgroundTasks` and `#bg` retain spec-398 OMP state without fake file paths, byte counts or exit codes;
+missing observations read `status unavailable`, with failure and cancellation distinct.
 
 | Layer | Components | Call sites deleted |
 |---|---|---|

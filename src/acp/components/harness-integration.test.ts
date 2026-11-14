@@ -37,6 +37,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { assistantInstanceStore } from '../../assistant-instance-store';
 import { AcpHarnessView } from '../acp-harness-view';
 import { toolEventSource } from '../adapters/test-utils';
+import { AcpClient } from '../client';
+import { rawToolUpdate } from '../adapters/test-utils';
+import type { OmpBackgroundStatus, RawAcpEvent } from '../adapters/types';
 import { sourceConnectorKey } from './transcript-row/shared';
 import type { HarnessLane, HarnessTranscriptItem } from '../harness-view-types';
 import type { TranscriptAnnotation } from '../types';
@@ -857,5 +860,172 @@ describe('visible background activity (specs 384/397)', () => {
       observer.disconnect();
       vi.mocked(invoke).mockImplementation(async () => []);
     }
+  });
+});
+
+describe('OMP async Bash lifecycle (spec 398)', () => {
+  function status(over: Partial<OmpBackgroundStatus> = {}): OmpBackgroundStatus {
+    return { id: 'bg_1', toolCallId: 'omp-call', state: 'running', startedAt: 1_000,
+      endedAt: null, exitCode: null, pid: null, lastLine: '', ...over };
+  }
+
+  async function setup(supported = true): Promise<{ lane: HarnessLane; send(raw: RawAcpEvent): void }> {
+    const lane = call<HarnessLane>(view, 'createLane', 0, 'omp', 'OMP-1');
+    lane.status = 'idle';
+    lanes(view).push(lane);
+    activate(view, lane.id);
+    const client = await AcpClient.spawn('omp', '/tmp/proj', {
+      role: 'harness_lane', label: 'OMP-1', harness_id: null, lane_id: lane.id,
+    });
+    lane.client = client;
+    const init = await client.initializeOnly();
+    lane.supportsOmpBackgroundJobs = supported && init.ompBackgroundJobs;
+    client.onEvent((event) => call(view, 'onLaneEvent', lane, event));
+    // Private transport ingress is the existing integration seam; production
+    // receives the same payload from the Tauri event listener.
+    const ingress = client as unknown as { handleRaw(raw: RawAcpEvent): void };
+    return { lane, send: (raw) => ingress.handleRaw(raw) };
+  }
+
+  function start(send: (raw: RawAcpEvent) => void, callId = 'omp-call', jobId = 'bg_1'): void {
+    send(rawToolUpdate('tool_call', {
+      toolCallId: callId, kind: 'execute', status: 'pending', rawInput: { command: 'sleep 20', async: true },
+    }));
+    send(rawToolUpdate('tool_call_update', {
+      toolCallId: callId, status: 'completed', rawOutput: {
+        details: { async: { state: 'running', jobId, type: 'bash' } },
+        content: [{ type: 'text', text: `Backgrounded as job ${jobId}` }],
+      },
+    }));
+  }
+
+  function mockTransport(snapshot: (args: unknown) => unknown | Promise<unknown>): void {
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === 'acp_spawn') return 398;
+      if (command === 'acp_initialize') return { omp_background_jobs_supported: true };
+      if (command === 'acp_omp_background_job_status') return snapshot(args);
+      return [];
+    });
+  }
+
+  it('settles while idle without changing a sealed launch, draft, focus or scroll', async () => {
+    let observed = status();
+    mockTransport(() => ({ jobs: [observed] }));
+    const { lane, send } = await setup();
+    lane.draft = 'keep my draft';
+    lane.cursor = lane.draft.length;
+    lane.stickToBottom = false;
+    call(view, 'renderDashboard');
+    call(view, 'renderComposer');
+    start(send);
+    call(view, 'renderDashboard');
+    const itemId = lane.toolTranscriptIds.get('omp-call')!;
+    const launch = view.element.querySelector<HTMLElement>(`[data-msg-id="${itemId}"]`)!;
+    const input = view.element.querySelector('.acp-harness__input');
+    const body = view.element.querySelector<HTMLElement>('.acp-harness__lane-body')!;
+    const strip = view.element.querySelector<HTMLElement>('.acp-harness__background-strip')!;
+    body.scrollTop = 73;
+    view.element.focus();
+    const observer = new MutationObserver(() => undefined);
+    observer.observe(launch, { subtree: true, childList: true, attributes: true, characterData: true });
+    try {
+      send(rawToolUpdate('tool_call_update', {
+        toolCallId: 'omp-call', status: 'in_progress', rawOutput: {
+          details: { async: { state: 'running', jobId: 'bg_1', type: 'bash' } },
+          content: [{ type: 'text', text: 'latest progress' }],
+        },
+      }));
+      expect(strip.textContent).toContain('latest progress');
+      await call<Promise<void>>(view, 'applyMetrics', []);
+      expect(strip.hidden).toBe(false);
+      observed = status({ state: 'completed', endedAt: 21_000, lastLine: 'finished while idle' });
+      await call<Promise<void>>(view, 'applyMetrics', []);
+      expect(strip.hidden).toBe(true);
+      expect(lane.backgroundTasks[0]).toMatchObject({ state: 'exited', exitCode: null, lastLine: 'finished while idle' });
+      expect(lane.status).toBe('idle');
+      expect(lane.draft).toBe('keep my draft');
+      expect(view.element.querySelector('.acp-harness__input')).toBe(input);
+      expect(document.activeElement).toBe(view.element);
+      expect(body.scrollTop).toBe(73);
+      expect(view.element.querySelector(`[data-msg-id="${itemId}"]`)).toBe(launch);
+      expect(observer.takeRecords()).toEqual([]);
+      call(view, 'printBackgroundTasks', lane);
+      expect(lane.transcript[lane.transcript.length - 1]?.systemCommand).toMatchObject({
+        command: 'bg', tasks: [{ state: 'completed', bytes: null, outputPath: null }],
+      });
+    } finally {
+      observer.disconnect();
+      vi.mocked(invoke).mockImplementation(async () => []);
+    }
+  });
+
+  it('hides unavailable status and recovers on the next shared sample', async () => {
+    let fail = true;
+    mockTransport(() => {
+      if (fail) throw new Error('disconnected');
+      return { jobs: [status({ pid: 2345, lastLine: 'still running' })] };
+    });
+    const { lane, send } = await setup();
+    call(view, 'renderComposer');
+    start(send);
+    await call<Promise<void>>(view, 'applyMetrics', []);
+    const strip = view.element.querySelector<HTMLElement>('.acp-harness__background-strip')!;
+    expect(strip.hidden).toBe(true);
+    expect(lane.backgroundTasks[0]).toMatchObject({ state: 'unknown', pid: null });
+    fail = false;
+    await call<Promise<void>>(view, 'applyMetrics', []);
+    expect(strip.hidden).toBe(false);
+    expect(strip.textContent).toContain('PID 2345');
+    expect(strip.textContent).toContain('still running');
+    vi.mocked(invoke).mockImplementation(async () => []);
+  });
+
+  it('coalesces overlapping refreshes and discards a reply after session reset', async () => {
+    // This project's ES2021 lib does not expose Promise.withResolvers.
+    let resolve!: (value: unknown) => void;
+    const promise = new Promise<unknown>((done) => { resolve = done; });
+    let requests = 0;
+    mockTransport(() => {
+      requests++;
+      return promise;
+    });
+    const { lane, send } = await setup();
+    start(send);
+    const first = call<Promise<void>>(view, 'applyMetrics', []);
+    const second = call<Promise<void>>(view, 'applyMetrics', []);
+    expect(requests).toBe(1);
+    lane.backgroundTasks = [];
+    start(send, 'new-call', 'bg_2');
+    resolve({ jobs: [status({ state: 'completed', endedAt: 5_000 })] });
+    await Promise.all([first, second]);
+    expect(lane.backgroundTasks.map((task) => [task.id, task.state])).toEqual([['bg_2', 'running']]);
+    vi.mocked(invoke).mockImplementation(async () => []);
+  });
+
+  it('samples every live job beyond one protocol batch', async () => {
+    const batches: number[] = [];
+    mockTransport((args) => {
+      const { jobs } = args as { jobs: { id: string; toolCallId: string }[] };
+      batches.push(jobs.length);
+      return { jobs: jobs.map((job) => status({ ...job, state: 'completed', endedAt: 5_000 })) };
+    });
+    const { lane, send } = await setup();
+    for (let i = 0; i < 25; i++) start(send, `call-${i}`, `bg_${i}`);
+    await call<Promise<void>>(view, 'applyMetrics', []);
+    expect(batches).toEqual([20, 5]);
+    expect(lane.backgroundTasks.every((task) => task.state === 'exited')).toBe(true);
+    expect(lane.backgroundTasks.find((task) => task.id === 'bg_24')?.state).toBe('exited');
+    vi.mocked(invoke).mockImplementation(async () => []);
+  });
+
+  it('warns once for an unsupported OMP instead of claiming a job is perpetually running', async () => {
+    mockTransport(() => { throw new Error('unsupported snapshot must not run'); });
+    const { lane, send } = await setup(false);
+    start(send);
+    start(send, 'second-call', 'bg_2');
+    expect(lane.backgroundTasks).toEqual([]);
+    expect(lane.transcript.filter((item) => item.kind === 'system' && item.text.includes('background status unavailable'))).toHaveLength(1);
+    await call<Promise<void>>(view, 'applyMetrics', []);
+    vi.mocked(invoke).mockImplementation(async () => []);
   });
 });

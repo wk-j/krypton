@@ -319,7 +319,7 @@ function genericDraft(
   const hasOutputUpdate = call.rawOutput !== undefined || hasContentUpdate || terminal.changed;
   const title = cleanToolTitle(merged.title, merged.kind ?? 'tool') || merged.title?.trim() || '';
   const toolName = extractRawToolName(merged.rawInput) || null;
-  const commandLine = extractCommandLineRaw(merged.rawInput) || null;
+  const commandLine = extractCommandLineRaw(merged.rawInput) || prior?.commandLine || null;
   const titleIdentity = call.title !== undefined ? mcpIdentityFromTitle(merged.title) : undefined;
   return {
     id: merged.toolCallId ?? '',

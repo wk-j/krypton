@@ -10,7 +10,7 @@ import { type UnlistenFn } from '@tauri-apps/api/event';
 import { setupListener } from '../util/listener';
 import { createLaneDecoder } from './adapters/decoder';
 import { decodeEffort, steerOutcome } from './adapters/generic';
-import type { LaneDecoder, LaneEvent, LaneInit, LaneSession, RawAcpEvent } from './adapters/types';
+import type { LaneDecoder, LaneEvent, LaneInit, LaneSession, OmpBackgroundIdentity, OmpBackgroundStatus, RawAcpEvent } from './adapters/types';
 import { skipInterviewDecision, type AskUserReply } from './ask-user-question';
 import { elicitationResponse, type QuestionTarget } from './elicitation';
 import type {
@@ -100,6 +100,12 @@ export class AcpClient {
 
   async initializeOnly(): Promise<LaneInit> {
     return this.decoder.init(await invoke<WireInitInfo>('acp_initialize', { session: this.session }));
+  }
+
+  /** Spec 398: inspect jobs without a prompt or consuming async result delivery. */
+  async backgroundJobStatus(jobs: readonly OmpBackgroundIdentity[]): Promise<readonly OmpBackgroundStatus[]> {
+    const raw = await invoke<unknown>('acp_omp_background_job_status', { session: this.session, jobs });
+    return this.decoder.backgroundSnapshot(raw, jobs);
   }
 
   async setMcpServers(mcpServers: AcpMcpServerDescriptor[]): Promise<void> {

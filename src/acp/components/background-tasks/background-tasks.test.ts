@@ -6,7 +6,7 @@ import { BackgroundTasks } from './index';
 const task = (over: Partial<BackgroundTask> & { id: string }): BackgroundTask => ({
   toolCallId: 'call-1',
   command: 'mvn clean install > /tmp/release-1286-build.log 2>&1',
-  outputPath: '/private/tmp/claude-501/proj/sess/tasks/bxs80otkx.output',
+  observation: { kind: 'claude-output', outputPath: '/private/tmp/claude-501/proj/sess/tasks/bxs80otkx.output' },
   startedAt: 1_000,
   state: 'running',
   exitCode: null,
@@ -121,6 +121,23 @@ describe('BackgroundTasks', () => {
     const records = observer.takeRecords();
     observer.disconnect();
     expect(records).toEqual([]);
+    section.dispose();
+  });
+
+  it('distinguishes completed, failed, cancelled and unavailable OMP jobs without fake file facts', () => {
+    const section = new BackgroundTasks();
+    const states = ['exited', 'failed', 'cancelled', 'unknown'] as const;
+    section.update({ tasks: states.map((state, i) => task({
+      id: 'bg_1', toolCallId: `call-${i}`, state, exitCode: null,
+      observation: { kind: 'omp-job', toolCallId: `call-${i}` }, bytes: null,
+    })), now: 2_000 });
+    const rows = [...section.el.querySelectorAll('.acp-harness__bg-task')];
+    expect(rows.map((row) => row.querySelector('.acp-harness__bg-task-status')?.textContent))
+      .toEqual(['completed', 'failed', 'cancelled', 'status unavailable']);
+    expect(rows.map((row) => row.querySelector('.acp-harness__bg-task-bytes')?.textContent))
+      .toEqual(['—', '—', '—', '—']);
+    expect(rows.map((row) => row.querySelector('.acp-harness__bg-task-glyph')?.textContent))
+      .toEqual(['✓', '✗', '✗', '·']);
     section.dispose();
   });
 });

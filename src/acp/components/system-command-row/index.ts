@@ -46,7 +46,7 @@ function content(payload: SystemCommandPayload, createdAt: number | undefined): 
       if (payload.tasks.length === 0) return [el('div', { class: `${block}-note`, text: 'bg: no background tasks on this lane.' })];
       return [table(['Task', 'State', 'Elapsed', 'Output', 'Command', 'Output file'], payload.tasks.map((task) => [
         task.id, task.state, formatElapsed((task.endedAt ?? payload.capturedAt) - task.startedAt),
-        formatTaskBytes(task.bytes), task.command, task.outputPath,
+        formatTaskBytes(task.bytes), task.command, task.outputPath ?? '—',
       ]))];
     case 'assist': {
       const { task } = payload;
