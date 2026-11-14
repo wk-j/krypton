@@ -740,6 +740,11 @@ const PLAIN_LANGUAGE_WITHOUT_META_NARRATION =
   'and "translated to human language:". Write the plain explanation directly.';
 
 /** The per-issue analysis bundle folder (spec 191), concrete when the ref is known. */
+/** spec 400: the `trail_check` issue argument, concrete when known. */
+function trailIssue(input?: GithubIssueVerbInput): string {
+  return input?.issueKey ? `"${input.issueKey}"` : '"<owner>/<repo>#<number>"';
+}
+
 function analysisBundlePath(input?: GithubIssueVerbInput): string {
   return input?.repo && input.number != null
     ? `.krypton/analyses/${input.repo}/${input.number}/`
@@ -755,11 +760,17 @@ export function analyzeGithubIssuePrompt(input?: GithubIssueVerbInput): string {
       '— and read any linked issues/PRs.',
     `2. Download the issue's attached resources (images, logs, files referenced in the body/comments) into the ` +
       `per-issue bundle folder \`${bundle}\` using \`gh\`/\`curl\`; create the folder if it does not exist.`,
-    '3. Investigate the codebase to locate the root cause.',
+    '3. Investigate the codebase to locate the root cause. Analysis is read-only on the code: do not edit, ' +
+      'create or delete any file outside the bundle folder.',
     `4. Write your analysis as one or more markdown files in that same bundle folder (e.g. \`root-cause.md\`, ` +
       '`fix-plan.md`): what the bug is, why it happens, which files are involved, and a concrete fix plan. ' +
       'This folder is local working knowledge (it is gitignored) — do not commit it.',
-    `5. When the analysis is complete, ALWAYS tag the issue on GitHub with the label \`status: Analyzed\` — ` +
+    `5. If the issue reports wrong behaviour, also write the bug trail \`${bundle}trail.toml\` for a technical ` +
+      'reader, following `.krypton/analyses/TRAIL.md`: ordered steps pinned to the nodes of a system map, each ' +
+      'with evidence Krypton can check. Use a map from `e2e/maps/` when one covers the area; otherwise write a ' +
+      `small \`map.toml\` in the bundle. Then call \`trail_check\` with issue ${trailIssue(input)} and fix every ` +
+      'error and every mismatch / missing / unknown status until it reports ok.',
+    `6. When the analysis is complete, ALWAYS tag the issue on GitHub with the label \`status: Analyzed\` — ` +
       `\`gh issue edit ${ghTarget(input)} --add-label "status: Analyzed"\`. If the label does not exist yet, ` +
       'create it first with `gh label create "status: Analyzed" -R <owner/repo>`, then add it. This writes to GitHub immediately.',
     '',

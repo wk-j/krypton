@@ -1,0 +1,41 @@
+@layer lb.kit {
+  /* Spec 0355 / 400: a system map, inline SVG (kit/sysmap). Flat, from the page
+     tokens; full 1px outlines only. The SVG is drawn at its own size and only
+     shrinks (to its minScale), so a small map is never blown up. */
+  .lb-sysmap { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+  .lb-sysmap text { font-family: var(--mono); }
+  .lb-sysmap__group rect { fill: color-mix(in srgb, var(--card) 55%, transparent); stroke: var(--border); }
+  .lb-sysmap__group text { fill: var(--accent); font-size: 12px; font-weight: 600; }
+  .lb-sysmap__edge { fill: none; stroke: var(--muted); stroke-width: 1.4; }
+  .lb-sysmap__edge--reply { stroke-dasharray: 6 4; }
+  .lb-sysmap__edge--idle, .lb-sysmap__label--idle { opacity: .45; }
+  .lb-sysmap__edge--path { stroke: var(--del); stroke-width: 2; stroke-dasharray: 3 4; opacity: 1; }
+  .lb-sysmap__edge--proven { stroke-width: 2.6; stroke-dasharray: none; }
+  .lb-sysmap__arrowhead { fill: var(--muted); }
+  .lb-sysmap__arrowhead--path { fill: var(--del); }
+  .lb-sysmap__crossmark { fill: none; stroke: var(--muted); stroke-width: 1.8; stroke-linecap: round; }
+  .lb-sysmap__label rect { fill: var(--code-bg); }
+  .lb-sysmap__label text { fill: var(--muted); font-size: 12px; }
+  .lb-sysmap__stem { fill: none; stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 2 3; }
+  .lb-sysmap__node path { fill: var(--card); stroke: var(--fg); stroke-width: 1.3; }
+  .lb-sysmap__node--actor path { stroke-width: 2.2; }
+  .lb-sysmap__node path.lb-sysmap__rim { fill: none; }
+  .lb-sysmap__node text { fill: var(--fg); font-size: 13px; }
+  .lb-sysmap__node--idle path, .lb-sysmap__node--muted path { fill: var(--bg); stroke: var(--muted); stroke-dasharray: 4 3; }
+  .lb-sysmap__node--idle text, .lb-sysmap__node--muted text { fill: var(--muted); }
+  /* Pins: a stadium with a tinted key cell, in the tone the surface picks. */
+  .lb-sysmap__pin { --tone: var(--fg); }
+  .lb-sysmap__pin--accent { --tone: var(--accent); }
+  .lb-sysmap__pin--del { --tone: var(--del); }
+  .lb-sysmap__pin--add { --tone: var(--add); }
+  .lb-sysmap__pin--muted { --tone: var(--muted); }
+  .lb-sysmap__pin rect { fill: color-mix(in srgb, var(--tone) 8%, var(--card)); stroke: color-mix(in srgb, var(--tone) 55%, transparent); stroke-width: 1; }
+  .lb-sysmap__pin-key-cell, .lb-sysmap__pin--key-only rect { fill: color-mix(in srgb, var(--tone) 22%, var(--card)); }
+  .lb-sysmap__pin--dashed rect { stroke-dasharray: 4 3; }
+  .lb-sysmap__pin--strong rect { stroke: var(--tone); stroke-width: 1.5; }
+  .lb-sysmap__pin--filled rect { fill: color-mix(in srgb, var(--tone) 30%, var(--card)); stroke: var(--tone); stroke-width: 1.5; }
+  .lb-sysmap__pin text { font-size: 12px; }
+  .lb-sysmap__pin-key, .lb-sysmap__pin-problems { fill: var(--tone); font-weight: 600; }
+  .lb-sysmap__pin-label { fill: color-mix(in srgb, var(--fg) 82%, var(--tone)); }
+  .lb-sysmap__pin--dim { opacity: .25; }
+}

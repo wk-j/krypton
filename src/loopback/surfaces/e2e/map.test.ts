@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import a from './fixtures/a-valence-push-and-browse.json';
 import b from './fixtures/b-loopback-api-authorization.json';
 import c from './fixtures/c-control-api-roundtrip.json';
-import { buildPins, countsText, DEFAULT_PIN_COLOURS, hexColour, litNodes, mapSource } from './map';
+import { layoutMap } from '../../kit';
+import { buildPins, countsText, countsWords, layoutPins, litNodes, pinLook, problemsText } from './map';
 import type { E2eMap, MapCheck, MapPin } from './map';
 
 // Spec 355 test cases A, B and C: real runs (C's FAIL is synthetic) with the
@@ -97,16 +98,25 @@ describe('C: control-api-roundtrip', () => {
     expect(idle(map, pins)).toEqual(['harness-directory']);
   });
 
-  it('draws the same source for the same input, with the failing pin and the grey node classed', () => {
+  it('hands the layout valence-style pins: group, failed count, earlier PASS in the title', () => {
     const { pins } = buildPins(c.fail.checks as MapCheck[], map, passRun);
-    const lit = litNodes(map, pins);
-    const source = mapSource(map, pins, lit, DEFAULT_PIN_COLOURS);
-    expect(mapSource(map, pins, lit, DEFAULT_PIN_COLOURS)).toBe(source);
-    expect(source).toContain('p2(["P3 · frontend round trip<br/>✗×3<br/>PASS 20261023T172243445Z: ✓×3"])');
-    expect(source).toContain('p2 -.-> n4');
-    expect(source).toContain('n5 -->|"acp_control_reply"| n1');
-    expect(source).toContain('  class p2 fail\n');
-    expect(source).toContain('  class n5 idle\n');
+    const laid = layoutPins(pins);
+    expect(laid[2]).toEqual({
+      key: 'P3',
+      at: 'bridge',
+      label: 'frontend round trip',
+      problems: '3 failed',
+      status: 'fail',
+      title: 'P3 frontend round trip: 3 failed\nEarlier PASS 20261023T172243445Z: 3 passed',
+    });
+    expect(pinLook(laid[2].status)).toEqual({ tone: 'del', strong: true });
+    const drawing = layoutMap(map, laid, litNodes(map, pins));
+    expect(layoutMap(map, laid, litNodes(map, pins))).toStrictEqual(drawing);
+    const p3 = drawing.pins.find((p) => p.key === 'P3');
+    expect(p3?.at).toBe('bridge');
+    expect(p3?.texts.map((t) => [t.part, t.text])).toEqual([['key', 'P3'], ['label', 'frontend round trip'], ['problems', '3 failed']]);
+    expect(drawing.nodes.filter((n) => !n.lit).map((n) => n.id)).toEqual(['harness-directory']);
+    expect(drawing.edges.some((e) => e.from === 'harness-directory' && e.to === 'axum' && e.kind === 'reply')).toBe(true);
   });
 });
 
@@ -131,25 +141,22 @@ describe('placement and source safety', () => {
     expect(unplaced).toEqual([{ index: 0, reason: '"gone" is not a node of the map' }]);
   });
 
-  it('encodes every project string and never emits a project id', () => {
+  it('keeps project strings as plain text for the drawing (React renders them as text nodes)', () => {
     const { pins } = buildPins([{ group: 'g#1', label: 'x', status: 'blocked', at: 'evil"]; click' }], map, null);
-    const source = mapSource(map, pins, litNodes(map, pins), DEFAULT_PIN_COLOURS);
-    expect(source.startsWith('flowchart TB\n')).toBe(true);
-    expect(source).toContain('subgraph g0["Group #quot;one#quot;"]');
-    expect(source).toContain('n1{{"a #quot;b#quot; #35;c #lt;d#gt; #96;e#96;<br/>f"}}');
-    expect(source).toContain('n2[("wall")]');
-    expect(source).toContain('n0 --x|"no #lt;entry#gt;"| n2');
-    expect(source).toContain('p0(["P1 · g#35;1<br/>⊘×1"])');
-    expect(source).not.toContain('evil');
-    expect(source).toContain('  class p0 blocked\n');
-    expect(source).toContain('  class n2 idle\n');
+    const drawing = layoutMap(map, layoutPins(pins), litNodes(map, pins));
+    expect(drawing.groups[0].label.text).toBe('Group "one"');
+    expect(drawing.nodes.find((n) => n.id === 'evil"]; click')?.lines.map((l) => l.text)).toEqual(['a "b" #c <d> `e`', 'f']);
+    expect(drawing.pins[0].texts.map((t) => t.text)).toEqual(['P1', 'g#1', '1 blocked']);
+    expect(drawing.edges.find((e) => e.kind === 'refused')?.label.map((l) => l.text)).toEqual(['no <entry>']);
+    expect(drawing.nodes.find((n) => n.id === 'wall')?.lit).toBe(false);
   });
 
-  it('turns canvas colours into #rrggbb for classDef', () => {
-    expect(hexColour('#0ECB81')).toBe('#0ecb81');
-    expect(hexColour('rgba(14, 203, 129, 0.5)')).toBe('#0ecb81');
-    expect(hexColour('rgb(252, 213, 53)')).toBe('#fcd535');
-    expect(hexColour('rgb(300, 0, 0)')).toBeNull();
-    expect(hexColour('red')).toBeNull();
+  it("names counts in valence's words", () => {
+    const counts = { pass: 2, fail: 1, blocked: 2, skip: 0, info: 1 };
+    expect(countsWords(counts)).toBe('2 passed, 1 failed, 2 blocked, 1 info');
+    expect(problemsText(counts)).toBe('1 failed, 2 blocked');
+    expect(problemsText({ pass: 3, fail: 0, blocked: 0, skip: 1, info: 0 })).toBe('');
+    expect(pinLook('skip')).toEqual({ tone: 'muted', dashed: true });
+    expect(pinLook('pass')).toEqual({ tone: 'add' });
   });
 });

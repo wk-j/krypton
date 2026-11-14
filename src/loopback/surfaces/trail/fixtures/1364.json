@@ -1,0 +1,915 @@
+{
+  "issue": "bcircle/tli-api-service#1364",
+  "title": "เอกสาร CL เข้า Storage ไปอยู่ใต้เลขกรมธรรม์แทนเลขเคลม",
+  "commit": "b420e805",
+  "bundle": ".krypton/analyses/bcircle/tli-api-service/1364",
+  "map": {
+    "path": "e2e/maps/tli-online.toml",
+    "map": {
+      "direction": "LR",
+      "groups": [
+        {
+          "id": "tli-api",
+          "label": "tli-api"
+        },
+        {
+          "id": "core",
+          "label": "Core (mock-core-api)"
+        },
+        {
+          "id": "dim",
+          "label": "DIM DB"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "channel",
+          "label": "external channel\nBasic auth · X-Request-ID",
+          "group": null,
+          "shape": "actor",
+          "source": "e2e/lib/tli-online.mjs"
+        },
+        {
+          "id": "abbyy",
+          "label": "ABBYY batch\n(puts a job in place)",
+          "group": null,
+          "shape": "actor",
+          "source": "e2e/lib/abbyy.mjs"
+        },
+        {
+          "id": "staff",
+          "label": "staff / Core caller\nDone / Reject / Rescan · getWIPDocuments",
+          "group": null,
+          "shape": "actor",
+          "source": "e2e/lib/tli-api.mjs"
+        },
+        {
+          "id": "online001",
+          "label": "ONLINE001 checkList\n/tli-online/checkList/{BU}",
+          "group": "tli-api",
+          "shape": "box",
+          "source": "tli-api/src/main/java/com/bc/dim/api/service/online/OnlineCheckListService.java"
+        },
+        {
+          "id": "online002",
+          "label": "ONLINE002 uploadNewDocument\n/tli-online/uploadNewDocument/{BU}",
+          "group": "tli-api",
+          "shape": "box",
+          "source": "tli-api/src/main/java/com/bc/dim/api/service/online/OnlineUploadNewDocumentService.java"
+        },
+        {
+          "id": "online003",
+          "label": "ONLINE003 appendDocument\n/tli-online/appendDocument/{BU}",
+          "group": "tli-api",
+          "shape": "box",
+          "source": "tli-api/src/main/java/com/bc/dim/api/service/online/OnlineAppendDocumentService.java"
+        },
+        {
+          "id": "online004",
+          "label": "ONLINE004 replaceDocument\n/tli-online/replaceDocument/{BU}",
+          "group": "tli-api",
+          "shape": "box",
+          "source": "tli-api/src/main/java/com/bc/dim/api/service/online/OnlineReplaceDocumentService.java"
+        },
+        {
+          "id": "online005",
+          "label": "ONLINE005 deleteCase\n/tli-online/deleteCase/{BU}",
+          "group": "tli-api",
+          "shape": "box",
+          "source": "tli-api/src/main/java/com/bc/dim/api/service/online/OnlineDeleteCaseService.java"
+        },
+        {
+          "id": "online006",
+          "label": "ONLINE006 appendStorage\n/tli-online/appendStorage/{BU}",
+          "group": "tli-api",
+          "shape": "box",
+          "source": "tli-api/src/main/java/com/bc/dim/api/service/online/OnlineAppendStorageService.java"
+        },
+        {
+          "id": "api003",
+          "label": "POST /tli/updateStatus/{BU}\nAPI003",
+          "group": "tli-api",
+          "shape": "box",
+          "source": "tli-api/src/main/java/com/bc/dim/api/controller/tli/TliDimApiController.java"
+        },
+        {
+          "id": "api001",
+          "label": "POST /tli/getWIPDocuments/{BU}\nAPI001",
+          "group": "tli-api",
+          "shape": "box",
+          "source": "tli-api/src/main/java/com/bc/dim/api/service/tli/TliPosService.java"
+        },
+        {
+          "id": "api005",
+          "label": "POST /tli/updateCLNo\nAPI005",
+          "group": "tli-api",
+          "shape": "box",
+          "source": "tli-api/src/main/java/com/bc/dim/api/service/tli/TliClService.java"
+        },
+        {
+          "id": "api004",
+          "label": "POST /tli/uploadDocument/{BU}\nAPI004",
+          "group": "tli-api",
+          "shape": "box",
+          "source": "tli-api/src/main/java/com/bc/dim/api/service/tli/TliUwService.java"
+        },
+        {
+          "id": "api006",
+          "label": "POST /tli/download/{BU}\nAPI006",
+          "group": "tli-api",
+          "shape": "box",
+          "source": "tli-api/src/main/java/com/bc/dim/api/controller/tli/TliDimApiController.java"
+        },
+        {
+          "id": "api-log",
+          "label": "application.log",
+          "group": "tli-api",
+          "shape": "store",
+          "source": null
+        },
+        {
+          "id": "api-slog",
+          "label": "structured.log",
+          "group": "tli-api",
+          "shape": "store",
+          "source": null
+        },
+        {
+          "id": "mapping-tool",
+          "label": "tli-mapping-tool\nIndex/*.txt consumed · import",
+          "group": null,
+          "shape": "box",
+          "source": "tli-mapping-tool/src/main/java/com/bc/dim/mapping/processor"
+        },
+        {
+          "id": "core-metadata",
+          "label": "/Core/getMetadata/{BU}",
+          "group": "core",
+          "shape": "box",
+          "source": "tli-client-libraries/mock-core-api-server"
+        },
+        {
+          "id": "core-notify",
+          "label": "/Core/notifyStatus (CORE005)\nmock_notify_status_log",
+          "group": "core",
+          "shape": "box",
+          "source": "tli-client-libraries/mock-core-api-server"
+        },
+        {
+          "id": "dim-reconcile",
+          "label": "tr_reconcile_index · tr_reconcile",
+          "group": "dim",
+          "shape": "store",
+          "source": null
+        },
+        {
+          "id": "dim-scan",
+          "label": "tr_scan_parent · tr_scan\ntr_scan_doc",
+          "group": "dim",
+          "shape": "store",
+          "source": null
+        },
+        {
+          "id": "dim-policy",
+          "label": "tr_policy",
+          "group": "dim",
+          "shape": "store",
+          "source": null
+        },
+        {
+          "id": "dim-log",
+          "label": "tr_log",
+          "group": "dim",
+          "shape": "store",
+          "source": null
+        },
+        {
+          "id": "alfresco",
+          "label": "Alfresco\nWPG / WPR / STR documents",
+          "group": null,
+          "shape": "store",
+          "source": null
+        },
+        {
+          "id": "laserlite",
+          "label": "LaserLite\nwork / output TIFF files",
+          "group": null,
+          "shape": "store",
+          "source": "tli-api/src/main/java/com/bc/dim/api/service/tli/TliUwService.java"
+        },
+        {
+          "id": "dim-ui-done",
+          "label": "POST /dim-ui/done\nUW Done from staff UI",
+          "group": "tli-api",
+          "shape": "box",
+          "source": "tli-api/src/main/java/com/bc/dim/api/controller/dimui/DocumentManagementController.java"
+        }
+      ],
+      "edges": [
+        {
+          "from": "channel",
+          "to": "online001",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "channel",
+          "to": "online002",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "channel",
+          "to": "online003",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "channel",
+          "to": "online004",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "channel",
+          "to": "online005",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "channel",
+          "to": "online006",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api003",
+          "to": "dim-policy",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online006",
+          "to": "dim-policy",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online001",
+          "to": "core-metadata",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online001",
+          "to": "dim-reconcile",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online002",
+          "to": "dim-reconcile",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online002",
+          "to": "dim-scan",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online002",
+          "to": "dim-log",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online002",
+          "to": "alfresco",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online003",
+          "to": "dim-scan",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online003",
+          "to": "alfresco",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online004",
+          "to": "dim-scan",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online004",
+          "to": "alfresco",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online005",
+          "to": "dim-reconcile",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online005",
+          "to": "dim-scan",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online005",
+          "to": "dim-log",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online005",
+          "to": "alfresco",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online005",
+          "to": "core-notify",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online006",
+          "to": "dim-scan",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online006",
+          "to": "dim-log",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online006",
+          "to": "alfresco",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online001",
+          "to": "api-log",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online002",
+          "to": "api-log",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online003",
+          "to": "api-log",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online004",
+          "to": "api-log",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online005",
+          "to": "api-log",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online006",
+          "to": "api-log",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online001",
+          "to": "api-slog",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online002",
+          "to": "api-slog",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online003",
+          "to": "api-slog",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online004",
+          "to": "api-slog",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online005",
+          "to": "api-slog",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online006",
+          "to": "api-slog",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "abbyy",
+          "to": "mapping-tool",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "mapping-tool",
+          "to": "dim-scan",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "mapping-tool",
+          "to": "alfresco",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "staff",
+          "to": "api003",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api003",
+          "to": "dim-scan",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api003",
+          "to": "alfresco",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "staff",
+          "to": "api001",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api001",
+          "to": "dim-scan",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api001",
+          "to": "dim-log",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api003",
+          "to": "core-notify",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api003",
+          "to": "laserlite",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api003",
+          "to": "dim-log",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "staff",
+          "to": "api005",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api005",
+          "to": "dim-scan",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api005",
+          "to": "core-notify",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "staff",
+          "to": "api004",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api004",
+          "to": "dim-scan",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api004",
+          "to": "dim-log",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api004",
+          "to": "alfresco",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api004",
+          "to": "api-slog",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "staff",
+          "to": "dim-ui-done",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "dim-ui-done",
+          "to": "dim-scan",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "dim-ui-done",
+          "to": "alfresco",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "dim-ui-done",
+          "to": "laserlite",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "dim-ui-done",
+          "to": "core-notify",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "dim-ui-done",
+          "to": "dim-log",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "staff",
+          "to": "api006",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api006",
+          "to": "dim-log",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api006",
+          "to": "alfresco",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api006",
+          "to": "api-slog",
+          "label": null,
+          "kind": "flow"
+        }
+      ]
+    },
+    "errors": [],
+    "warnings": []
+  },
+  "steps": [
+    {
+      "at": "alfresco",
+      "kind": "symptom",
+      "note": "Done ผ่าน API เก็บเอกสาร CL ใต้วันที่มีผลกรมธรรม์ + เลขกรมธรรม์ แต่เอกสารเดิมอยู่ใต้วันที่เคลม + เลขเคลม",
+      "question": null,
+      "options": [],
+      "answer": null,
+      "evidence": [
+        {
+          "type": "observed",
+          "fields": {
+            "file": "attachments/alfresco-d2e92ae9.json",
+            "what": "เอกสารเดิม: …/2021/10/01/9067J77294, dim:claimNo = 9067J77294"
+          },
+          "status": "ok",
+          "detail": null,
+          "outputTail": null
+        },
+        {
+          "type": "inferred",
+          "fields": {
+            "what": "ฝั่ง API จะได้ …/2021/01/01/00123797 คำนวณจากกติกาใน SPEC ยังไม่ได้รันจริง",
+            "source": "docs/api/tli/updateStatus/CL/SPEC.md"
+          },
+          "status": "unchecked",
+          "detail": null,
+          "outputTail": null
+        },
+        {
+          "type": "repro",
+          "fields": {
+            "id": "done-cl-path"
+          },
+          "status": "not-run",
+          "detail": "no run yet",
+          "outputTail": null
+        }
+      ]
+    },
+    {
+      "at": "watch-folder",
+      "kind": "ruled-out",
+      "note": "Watch Folder ใช้ ClaimDate/ClaimNo ตาม #363 อยู่แล้ว",
+      "question": null,
+      "options": [],
+      "answer": null,
+      "evidence": [
+        {
+          "type": "cite",
+          "fields": {
+            "file": "tli-client-libraries/alfresco-path/src/main/java/com/bc/alfresco/path/app/WatchFolderPath.java",
+            "lines": "16",
+            "quote": "CL: ClaimDate / ClaimNo"
+          },
+          "status": "ok",
+          "detail": null,
+          "outputTail": null
+        }
+      ]
+    },
+    {
+      "at": "dim-policy",
+      "kind": "ruled-out",
+      "note": "ข้อมูลในตารางถูกต้อง API แค่อ่านผิดตาราง",
+      "question": null,
+      "options": [],
+      "answer": null,
+      "evidence": [
+        {
+          "type": "observed",
+          "fields": {
+            "file": "attachments/dim-db-9067J77294.csv",
+            "what": "al_policy_no 00123797 · effective 2021-01-01 · cl_no 9067J77294 · cl_date 2021-10-01"
+          },
+          "status": "ok",
+          "detail": null,
+          "outputTail": null
+        }
+      ]
+    },
+    {
+      "at": "api003",
+      "kind": "suspect",
+      "note": "คอมเมนต์ในโค้ดกำหนด referenceNo = al_policy_no ทุก BU ตาม #552",
+      "question": null,
+      "options": [],
+      "answer": null,
+      "evidence": [
+        {
+          "type": "cite",
+          "fields": {
+            "file": "tli-api/src/main/java/com/bc/dim/api/service/tli/TliClService.java",
+            "lines": "2327-2328",
+            "quote": "al_policy_no across all BUs"
+          },
+          "status": "ok",
+          "detail": null,
+          "outputTail": null
+        },
+        {
+          "type": "commit",
+          "fields": {
+            "sha": "18362385"
+          },
+          "status": "ok",
+          "detail": null,
+          "outputTail": null
+        }
+      ]
+    },
+    {
+      "at": "api003",
+      "kind": "root-cause",
+      "note": "Done อ่าน al_policy_no + วันที่มีผลกรมธรรม์ แล้วส่งต่อให้ทั้ง folder และชื่อไฟล์",
+      "question": null,
+      "options": [],
+      "answer": null,
+      "evidence": [
+        {
+          "type": "cite",
+          "fields": {
+            "file": "tli-api/src/main/java/com/bc/dim/api/service/tli/TliClService.java",
+            "lines": "1688-1689",
+            "quote": "policyInfo.get(\"al_policy_no\")"
+          },
+          "status": "ok",
+          "detail": null,
+          "outputTail": null
+        },
+        {
+          "type": "cite",
+          "fields": {
+            "file": "tli-api/src/main/java/com/bc/dim/api/service/tli/TliClService.java",
+            "lines": "2324-2325",
+            "quote": "effectiveDate, policyNo, strFolderCache"
+          },
+          "status": "ok",
+          "detail": null,
+          "outputTail": null
+        },
+        {
+          "type": "cite",
+          "fields": {
+            "file": "tli-api/src/main/java/com/bc/dim/api/service/tli/TliClService.java",
+            "lines": "2334-2335",
+            "quote": ".referenceNo(policyNo)"
+          },
+          "status": "ok",
+          "detail": null,
+          "outputTail": null
+        }
+      ]
+    },
+    {
+      "at": "online006",
+      "kind": "root-cause",
+      "note": "appendStorageCL ใช้ค่าของกรมธรรม์ทั้ง path และชื่อไฟล์",
+      "question": null,
+      "options": [],
+      "answer": null,
+      "evidence": [
+        {
+          "type": "cite",
+          "fields": {
+            "file": "tli-api/src/main/java/com/bc/dim/api/service/online/OnlineAppendStorageService.java",
+            "lines": "422-423",
+            "quote": "\"al_policy_effective_date\""
+          },
+          "status": "ok",
+          "detail": null,
+          "outputTail": null
+        },
+        {
+          "type": "cite",
+          "fields": {
+            "file": "tli-api/src/main/java/com/bc/dim/api/service/online/OnlineAppendStorageService.java",
+            "lines": "440",
+            "quote": "effectiveDate, alPolicyNo, fileName"
+          },
+          "status": "ok",
+          "detail": null,
+          "outputTail": null
+        }
+      ]
+    },
+    {
+      "at": "api003",
+      "kind": "decision",
+      "note": "ระบบเดิมก็เก็บ CL ใต้กรมธรรม์ ส่วน #363 กำหนดให้ใช้เคลม",
+      "question": "แก้ตาม #363 (ใช้เลขเคลม) ซึ่งเบี่ยงจากระบบเดิม หรือคงเลขกรมธรรม์ตามระบบเดิม",
+      "options": [
+        "ใช้เลขเคลมตาม #363 และบันทึก deviation",
+        "คงเลขกรมธรรม์ แล้วแก้ requirement #363"
+      ],
+      "answer": null,
+      "evidence": [
+        {
+          "type": "ref",
+          "fields": {
+            "what": "decompiled-tli-project: CLUpdateStatus.updateDone:170-202 เก็บ CL ใต้กรมธรรม์"
+          },
+          "status": "unchecked",
+          "detail": null,
+          "outputTail": null
+        }
+      ]
+    },
+    {
+      "at": "api003",
+      "kind": "plan",
+      "note": "path และชื่อไฟล์ใช้ tr_scan_parent.cl_date + cl_no ถ้าไม่มี cl_date ค่อยใช้วันที่มีผลกรมธรรม์",
+      "question": null,
+      "options": [],
+      "answer": null,
+      "evidence": [
+        {
+          "type": "cite",
+          "fields": {
+            "file": "tli-api/src/main/java/com/bc/dim/api/service/tli/TliClService.java",
+            "lines": "1688-1689",
+            "quote": "getPolicyEffectiveDate(clNo)"
+          },
+          "status": "ok",
+          "detail": null,
+          "outputTail": null
+        }
+      ]
+    },
+    {
+      "at": "online006",
+      "kind": "plan",
+      "note": "getStrDataCL ดึง sp.cl_date เพิ่ม แล้วใช้ {cl_date}/{cl_no} แบบเดียวกับ Done",
+      "question": null,
+      "options": [],
+      "answer": null,
+      "evidence": [
+        {
+          "type": "cite",
+          "fields": {
+            "file": "tli-api/src/main/java/com/bc/dim/api/repository/online/OnlineDocumentRepository.java",
+            "lines": "1398-1401",
+            "quote": "getStrDataCL(String clNo)"
+          },
+          "status": "ok",
+          "detail": null,
+          "outputTail": null
+        }
+      ]
+    },
+    {
+      "at": "alfresco",
+      "kind": "decision",
+      "note": "เอกสารที่ API นำเข้าไปก่อนแก้จะค้างอยู่ใต้โฟลเดอร์กรมธรรม์",
+      "question": "เอกสาร CL ที่ API นำเข้าไปแล้วจะค้างใต้โฟลเดอร์กรมธรรม์ ย้ายด้วยไหม",
+      "options": [
+        "ย้ายไปโฟลเดอร์เคลม",
+        "ปล่อยไว้"
+      ],
+      "answer": null,
+      "evidence": []
+    }
+  ],
+  "repro": [
+    {
+      "id": "done-cl-path",
+      "argv": [
+        "hurl",
+        "--test",
+        ".krypton/analyses/bcircle/tli-api-service/1364/repro/done-cl-path.hurl"
+      ],
+      "expect": "fail",
+      "what": "Done เคลมทดสอบบน dev-tli แล้วอ่าน folder ใน Alfresco",
+      "timeoutS": 300,
+      "trust": "untrusted",
+      "lastRun": null
+    }
+  ],
+  "state": {
+    "start": {
+      "head": "b420e80573ae12c717e9136cc1024d1c18f01df0",
+      "dirty": [],
+      "at": 1793594884645
+    },
+    "check": {
+      "head": "b420e80573ae12c717e9136cc1024d1c18f01df0",
+      "dirty": [],
+      "at": 1793596594127,
+      "changed": []
+    }
+  },
+  "errors": [],
+  "warnings": []
+}

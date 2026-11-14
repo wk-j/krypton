@@ -1,8 +1,10 @@
 // Spec 355 — the e2e system map. Pure: a run's checks become pins on the
-// case's map, the reach rule decides which nodes are grey, and the map turns
-// into mermaid source. Every mermaid id is generated here (`n0…`, `g0…`,
-// `p0…`) and every project string goes through `mermaidText()`, so nothing a
-// project writes can change the diagram's syntax. Same input, same string.
+// case's map, the reach rule decides which nodes are grey, and the pins are
+// handed to the kit's system map (valence's layout, drawn as inline SVG from
+// React elements) the way valence draws a run: key, check group, failed and
+// blocked counts, and the earlier PASS in the pin's title.
+
+import type { LayoutPin, PinLook } from '../../kit';
 
 export interface E2eMapGroup {
   readonly id: string;
@@ -79,23 +81,8 @@ export interface PassRun {
   readonly checks: readonly MapCheck[];
 }
 
-export interface PinColours {
-  readonly pass: string;
-  readonly fail: string;
-  readonly blocked: string;
-  readonly muted: string;
-}
-
 /** More pins than this is a banner and the check list, not a picture. */
 export const MAX_PINS = 120;
-
-/** Used when a page token does not resolve to a colour. */
-export const DEFAULT_PIN_COLOURS: PinColours = {
-  pass: '#0ecb81',
-  fail: '#f6465d',
-  blocked: '#fcd535',
-  muted: '#848e9c',
-};
 
 const SYMBOL: Record<PinTone, string> = { pass: '✓', fail: '✗', blocked: '⊘', skip: '–', info: 'i' };
 const COUNT_ORDER: readonly PinTone[] = ['pass', 'fail', 'blocked', 'skip', 'info'];
@@ -204,96 +191,54 @@ export function litNodes(map: E2eMap, pins: readonly MapPin[]): ReadonlySet<stri
   return lit;
 }
 
-/** A project string as mermaid label text: `#` first, so the codes it adds stay intact. */
-export function mermaidText(text: string): string {
-  return text
-    .replace(/\r/g, '')
-    .replace(/#/g, '#35;')
-    .replace(/"/g, '#quot;')
-    .replace(/</g, '#lt;')
-    .replace(/>/g, '#gt;')
-    .replace(/`/g, '#96;')
-    .replace(/\n/g, '<br/>');
+/** valence's words for a count line, in this order; zero counts dropped. */
+const COUNT_WORDS: readonly (readonly [PinTone, string])[] = [
+  ['pass', 'passed'],
+  ['fail', 'failed'],
+  ['blocked', 'blocked'],
+  ['skip', 'skipped'],
+  ['info', 'info'],
+];
+
+function countsIn(counts: StatusCounts, tones: readonly PinTone[]): string {
+  return COUNT_WORDS.filter(([tone]) => tones.includes(tone) && counts[tone] > 0)
+    .map(([tone, word]) => `${counts[tone]} ${word}`)
+    .join(', ');
 }
 
-/** A canvas-serialized colour (`#rrggbb` or `rgba(r, g, b, a)`) as `#rrggbb`; `classDef` splits on commas. */
-export function hexColour(serialized: string): string | null {
-  const value = serialized.trim().toLowerCase();
-  if (/^#[0-9a-f]{6}$/.test(value)) return value;
-  const rgb = /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*(?:,\s*[\d.]+\s*)?\)$/.exec(value);
-  if (!rgb) return null;
-  const parts = rgb.slice(1, 4).map(Number);
-  if (parts.some((n) => n > 255)) return null;
-  return `#${parts.map((n) => n.toString(16).padStart(2, '0')).join('')}`;
+/** `2 passed, 1 failed` (valence's CountsWords). */
+export function countsWords(counts: StatusCounts): string {
+  return countsIn(counts, TONES);
 }
 
-function shaped(shape: string, text: string): string {
-  const label = `"${text}"`;
-  switch (shape) {
-    case 'gate':
-      return `{{${label}}}`;
-    case 'store':
-      return `[(${label})]`;
-    case 'actor':
-      return `(${label})`;
+/** `1 failed, 2 blocked`, or '' when none failed or blocked (valence's ProblemsText). */
+export function problemsText(counts: StatusCounts): string {
+  return countsIn(counts, ['fail', 'blocked']);
+}
+
+/**
+ * The pins as the kit lays them out, as valence draws a run: key, check group
+ * and the failed / blocked count on the pin; the full counts and the earlier
+ * PASS in its title.
+ */
+export function layoutPins(pins: readonly MapPin[]): LayoutPin[] {
+  return pins.map((pin) => {
+    let title = pin.key + (pin.group ? ` ${pin.group}` : '') + `: ${countsWords(pin.counts)}`;
+    if (pin.before) title += `\nEarlier PASS ${pin.before.runId}: ${countsWords(pin.before.counts)}`;
+    return { key: pin.key, at: pin.at, label: pin.group, problems: problemsText(pin.counts), status: pin.tone, title };
+  });
+}
+
+/** A pin's look by its worst status: fail red and heavy, blocked accent, pass green, skip / info muted and dashed. */
+export function pinLook(tone: string): PinLook {
+  switch (tone as PinTone) {
+    case 'fail':
+      return { tone: 'del', strong: true };
+    case 'blocked':
+      return { tone: 'accent' };
+    case 'pass':
+      return { tone: 'add' };
     default:
-      return `[${label}]`;
+      return { tone: 'muted', dashed: true };
   }
-}
-
-function pinLabel(pin: MapPin): string {
-  const head = pin.group ? `${pin.key} · ${mermaidText(pin.group)}` : pin.key;
-  const lines = [head, countsText(pin.counts)];
-  if (pin.before) lines.push(`PASS ${mermaidText(pin.before.runId)}: ${countsText(pin.before.counts)}`);
-  return lines.join('<br/>');
-}
-
-/** The mermaid flowchart for one run on its case's map. */
-export function mapSource(
-  map: E2eMap,
-  pins: readonly MapPin[],
-  lit: ReadonlySet<string>,
-  colours: PinColours,
-): string {
-  const nodeId = new Map(map.nodes.map((n, i) => [n.id, `n${i}`]));
-  const declaration = new Map(map.nodes.map((n, i) => [n.id, `n${i}${shaped(n.shape, mermaidText(n.label))}`]));
-  const lines = [`flowchart ${map.direction === 'TB' ? 'TB' : 'LR'}`];
-  map.groups.forEach((group, i) => {
-    const members = map.nodes.filter((n) => n.group === group.id);
-    if (!members.length) return;
-    lines.push(`  subgraph g${i}["${mermaidText(group.label)}"]`);
-    for (const node of members) lines.push(`    ${declaration.get(node.id)}`);
-    lines.push('  end');
-  });
-  const grouped = new Set(map.groups.map((g) => g.id));
-  for (const node of map.nodes) {
-    if (node.group === null || !grouped.has(node.group)) lines.push(`  ${declaration.get(node.id)}`);
-  }
-  for (const edge of map.edges) {
-    const from = nodeId.get(edge.from);
-    const to = nodeId.get(edge.to);
-    if (!from || !to) continue;
-    const arrow = edge.kind === 'refused' ? '--x' : '-->';
-    const label = edge.label ? `|"${mermaidText(edge.label)}"|` : '';
-    lines.push(`  ${from} ${arrow}${label} ${to}`);
-  }
-  pins.forEach((pin, i) => {
-    lines.push(`  p${i}(["${pinLabel(pin)}"])`);
-    lines.push(`  p${i} -.-> ${nodeId.get(pin.at)}`);
-  });
-  lines.push(
-    `  classDef pass stroke:${colours.pass},stroke-width:2px`,
-    `  classDef fail stroke:${colours.fail},stroke-width:3px`,
-    `  classDef blocked stroke:${colours.blocked},stroke-width:2px`,
-    `  classDef skip stroke:${colours.muted},stroke-dasharray:4 3`,
-    `  classDef info stroke:${colours.muted},stroke-dasharray:4 3`,
-    `  classDef idle stroke:${colours.muted},stroke-dasharray:4 3,color:${colours.muted}`,
-  );
-  for (const tone of TONES) {
-    const ids = pins.flatMap((pin, i) => (pin.tone === tone ? [`p${i}`] : []));
-    if (ids.length) lines.push(`  class ${ids.join(',')} ${tone}`);
-  }
-  const idle = map.nodes.filter((n) => !lit.has(n.id)).map((n) => nodeId.get(n.id));
-  if (idle.length) lines.push(`  class ${idle.join(',')} idle`);
-  return `${lines.join('\n')}\n`;
 }

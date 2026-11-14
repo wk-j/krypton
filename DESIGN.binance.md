@@ -6,7 +6,7 @@ appliesTo: >
   OS browser — the loopback app (src/loopback/: Home, lane monitor, artifact
   gallery, GenUI component gallery, docs/journal reader, issue analyses, review
   archive, command and MCP tool references, Terminal Control monitor, Hurl web
-  client, project timeline, ACP wire profiler, e2e explorer; spec 341) and the
+  client, project timeline, ACP wire profiler, e2e explorer, bug trail; spec 341) and the
   self-contained artifact scaffold (src-tauri/resources/artifact-scaffold.html).
 colors:
   primary: "#fcd535"     # the single yellow accent (== accent below)
@@ -92,7 +92,8 @@ it is a lane-owned file, so it stays self-contained.
 | Hurl web client | `src/loopback/surfaces/hurl/` | Token-gated `.hurl` runner (capability routes under `/hurl`) | Fixed dark |
 | ACP wire profiler | `src/loopback/surfaces/acp-wire/` | Read-only ACP traffic profiler: stat tiles, per-lane waterfall, message table + payload detail, per-method latency (capability routes under `/acp-wire`, polls while visible) | Fixed dark |
 | Project timeline | `src/loopback/surfaces/timeline/` | Read-only local requirement/decision chronology (`/timeline`, refetches `/timeline.json` when the tab becomes active); superseded rows are hidden by default, and a row in an open conflict pair marks only its time cell with an accent chip | Auto (follows OS `prefers-color-scheme`) |
-| E2E explorer | `src/loopback/surfaces/e2e/` | Read-only e2e cases, runs, checks, logs and evidence for one project (capability routes under `/e2e`; reloads on focus, polls only `/active` during a run); a case with a map shows the run's checks as pins on its system map (spec 355); rows show their kind, target, params and expected/actual, `m` adds a by-step layout, and a `checks` pane opens a row's evidence at its JSON Pointer (spec 328 rev 5) | Fixed dark |
+| E2E explorer | `src/loopback/surfaces/e2e/` | Read-only e2e cases, runs, checks, logs and evidence for one project (capability routes under `/e2e`; reloads on focus, polls only `/active` during a run); a case with a map shows the run's checks as pins on its system map, drawn inline by the kit's `SysMap` on valence's layout (spec 355); rows show their kind, target, params and expected/actual, `m` adds a by-step layout, and a `checks` pane opens a row's evidence at its JSON Pointer (spec 328 rev 5) | Fixed dark |
+| Bug trails | `src/loopback/surfaces/trail/` | Read-only pre-fix bug diagnoses (`/trail`, `/trail.json`). Without `issue` it is the project's trail index (the Home tile: one row per issue with its status pill, open decisions and failing checks); with `issue` it is one trail, opened from the index, the analysis bundle's `trail` tab or `#trail`: the system map drawn inline (valence's layout) with one pin per step under its node, the bug path between symptom and root cause, the involved nodes by default (`a` for the whole map), `j`/`k` step-through, open decisions and the not-reproduced gap (spec 400) | Fixed dark |
 
 Per-surface behaviour and endpoints are specified in `docs/134`, `docs/168`,
 `docs/170`, `docs/171`, `docs/185`, `docs/186`, `docs/192`, `docs/211`,

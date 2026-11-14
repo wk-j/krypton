@@ -21,23 +21,22 @@ import {
   HttpError,
   KbdHints,
   KeyValue,
+  layoutMap,
   pad2,
   Pill,
   poll,
   RosterList,
   SearchFilter,
   StatBar,
+  SysMap,
   useBanner,
   useKeymap,
   useLatest,
   useShell,
 } from '../../kit';
-import type { Poller, Stat, Tone } from '../../kit';
-import { buildMermaidTheme, renderMermaid } from '../../../acp/harness-mermaid-fence';
-import type { MermaidTheme } from '../../../acp/harness-mermaid-fence';
-import type { SvgPalette } from '../../../acp/harness-svg-fence';
-import { buildPins, countsText, DEFAULT_PIN_COLOURS, hexColour, litNodes, mapSource, MAX_PINS } from './map';
-import type { E2eMap, E2eMapEntry, MapPin, PassRun, PinColours, Unplaced } from './map';
+import type { MapDrawing, Poller, Stat, Tone } from '../../kit';
+import { buildPins, countsText, layoutPins, litNodes, MAX_PINS, pinLook } from './map';
+import type { E2eMap, E2eMapEntry, MapPin, PassRun, Unplaced } from './map';
 import { clip, kindTag, paramsText, resolvePointer, stepLayout, stepLinks } from './checks';
 import type { Check, CheckEvidence, PointerHit, StepLinks } from './checks';
 
@@ -50,8 +49,6 @@ const FLASH_MS = 4000;
 const EXPIRED = 'This link has expired: Krypton restarted. Run #e2e open again.';
 const TEXT_EXT = ['json', 'txt', 'log', 'md', 'csv', 'xml', 'yaml', 'yml', 'html', 'htm', 'svg'];
 const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
-/** The drawn map reaches the DOM only as an inert `<img>` (spec 294), as GenUI's Diagram does. */
-const SVG_DATA_URL_PREFIX = 'data:image/svg+xml;charset=utf-8,';
 const LETTER: Readonly<Record<string, string>> = {
   PASS: 'P',
   FAIL: 'F',
@@ -155,7 +152,8 @@ interface DrawnMap {
   readonly map: E2eMap;
   readonly pins: readonly MapPin[];
   readonly unplaced: readonly Unplaced[];
-  readonly svg: string;
+  /** Laid out by the kit (valence's layout); drawn inline from React elements. */
+  readonly drawing: MapDrawing;
 }
 
 /** The shown run on its case's map, or why the run pane fell back to the check list. */
@@ -361,35 +359,6 @@ function planOrder(plan: Plan): number[] {
   }
 }
 
-/** The page is fixed dark with its own tokens, not the app's `--krypton-*` ones `readSvgPalette` reads. */
-function readMapStyle(): { theme: MermaidTheme; colours: PinColours } {
-  const style = getComputedStyle(document.documentElement);
-  const token = (name: string): string => style.getPropertyValue(name).trim();
-  const sources: ReadonlyArray<readonly [keyof SvgPalette, string]> = [
-    ['fg', '--fg'],
-    ['muted', '--muted'],
-    ['border', '--border'],
-    ['accent', '--accent'],
-    ['success', '--add'],
-    ['error', '--del'],
-    ['surface', '--card'],
-  ];
-  const palette: SvgPalette = {};
-  for (const [key, name] of sources) {
-    const value = token(name);
-    if (value) palette[key] = value;
-  }
-  return {
-    theme: buildMermaidTheme(palette, token('--mono'), true),
-    colours: {
-      pass: hexColour(token('--add')) ?? DEFAULT_PIN_COLOURS.pass,
-      fail: hexColour(token('--del')) ?? DEFAULT_PIN_COLOURS.fail,
-      blocked: hexColour(token('--accent')) ?? DEFAULT_PIN_COLOURS.blocked,
-      muted: hexColour(token('--muted')) ?? DEFAULT_PIN_COLOURS.muted,
-    },
-  };
-}
-
 function caseRow(status: E2eStatus | null, c: E2eCase): JSX.Element {
   const runs = runsOf(status, c.id);
   const latest = runs[0];
@@ -520,7 +489,6 @@ export function E2ePage(): JSX.Element {
   const loadingTimer = useRef<number | undefined>(undefined);
   const detailRequest = useRef(0);
   const retriedMissingRun = useRef(false);
-  const mapStyle = useRef<{ readonly theme: MermaidTheme; readonly colours: PinColours } | null>(null);
   const viewerSeq = useRef(0);
   const filterInput = useRef<HTMLInputElement | null>(null);
   const runBox = useRef<HTMLDivElement>(null);
@@ -612,12 +580,13 @@ export function E2ePage(): JSX.Element {
     const before = await earlierPass(caseId, runId, next.info.verdict);
     const { pins, unplaced } = buildPins(next.result.checks ?? [], entry.map, before);
     if (pins.length > MAX_PINS) return { kind: 'error', message: `map ${path}: too many pins (${pins.length} > ${MAX_PINS})` };
-    mapStyle.current ??= readMapStyle();
-    const source = mapSource(entry.map, pins, litNodes(entry.map, pins), mapStyle.current.colours);
-    const result = await renderMermaid(source, mapStyle.current.theme, wanted);
-    if (!result) return null;
-    if (!result.ok) return { kind: 'error', message: `map could not be drawn: ${result.error}` };
-    return { kind: 'drawn', map: entry.map, pins, unplaced, svg: result.svg };
+    if (!wanted()) return null;
+    try {
+      const drawing = layoutMap(entry.map, layoutPins(pins), litNodes(entry.map, pins));
+      return { kind: 'drawn', map: entry.map, pins, unplaced, drawing };
+    } catch (error: unknown) {
+      return { kind: 'error', message: `map could not be drawn: ${error instanceof Error ? error.message : String(error)}` };
+    }
   };
 
   /**
@@ -1122,11 +1091,13 @@ export function E2ePage(): JSX.Element {
     return (
       <div className="lb-e2e__map-view">
         <figure className="lb-e2e__map">
-          <img
-            className="lb-e2e__map-img"
-            src={SVG_DATA_URL_PREFIX + encodeURIComponent(view.shot.svg)}
-            alt={`System map with ${view.shot.pins.length} pins`}
-          />
+          <div className="lb-e2e__map-scroll">
+            <SysMap
+              drawing={view.shot.drawing}
+              alt={`System map with ${view.shot.pins.length} pins`}
+              pinLook={(pin) => pinLook(pin.status)}
+            />
+          </div>
         </figure>
         {blocks.length ? <div className="lb-e2e__pins">{blocks}</div> : noChecks(run)}
       </div>

@@ -262,7 +262,7 @@ fn check_version(obj: &Obj, path: &str, errors: &mut Vec<String>) {
     }
 }
 
-fn is_relative_clean(path: &str) -> bool {
+pub(crate) fn is_relative_clean(path: &str) -> bool {
     !path.is_empty()
         && !path.starts_with('/')
         && !path.starts_with('\\')

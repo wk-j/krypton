@@ -1,6 +1,6 @@
 # E2E System Map — Check Pins on a Project-Authored Map — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented (revised 2026-11-14: inline map on valence's layout)
 > Date: 2026-11-02
 > Milestone: ACP Harness — e2e
 > Builds on: 0328 (Adapter Contract v1, `e2e.rs`) · 0329 (`#e2e open` explorer) · 0341 (loopback app) · 0294 (mermaid → inert `<img>`)
@@ -327,6 +327,30 @@ Where the shipped code adds to the design above:
   - C's FAIL on a live run; only the fixture covers it.
   - `#e2e open` inside a rebuilt Krypton.
   - valence's report drawing a live run. Only valence's unit tests and `check` ran for this note; valence's own e2e covers its run page.
+
+## Revision — inline map on valence's layout (2026-11-14)
+
+**Problem.** Mermaid's SVG says `width="100%"`, so as an `<img>` it has no natural size and is stretched or squeezed to the column. A small map was blown up, a large one shrunk, and long labels broke mid-word. valence's report, which keeps the same pin, reach and comparison rules, draws the run inline on its own layered layout and reads better. Spec 0400's bug trail made the same move first.
+
+**Change.**
+- **Layout.** The map is laid out by the kit's `layoutMap` (`src/loopback/kit/sysmap/layout.ts`), a line-for-line port of valence's `internal/report/maplayout.go`. Goldens produced by the unmodified Go code are its tests, including one with e2e pins (group label, problem counts, a key-only pin, a truncated label).
+- **Drawing.** `SysMap` (`kit/sysmap/index.tsx`) draws it as inline SVG from React elements, so every project string is a text node and nothing is parsed as markup. The 0294 reason for an `<img>` (mermaid output is markup built from project text) no longer applies.
+- **Pins.**
+  - `layoutPins` hands the layout one pin per `(at, group)`: key, check group (cut to 28 characters) and `problemsText` (`1 failed, 2 blocked`), as valence's pins do. The title carries `countsWords` and `Earlier PASS <runId>: …`.
+  - `pinLook` colours by worst status: fail red and heavy, blocked accent, pass green, skip/info muted and dashed.
+  - Idle nodes come from `litNodes` as before.
+- **Removed.** `mapSource`, `mermaidText`, `hexColour`, `PinColours` and the page's mermaid theme. The run pane still paints the case pane, the run pane and the map together. The layout is synchronous; only the earlier PASS fetch is awaited.
+- **Markup.** `figure.lb-e2e__map > div.lb-e2e__map-scroll > svg.lb-sysmap`. The SVG is drawn at its own size and shrinks to 75% at most, then scrolls.
+
+**Verified.**
+- `npx vitest run src/loopback/surfaces/e2e src/loopback/kit/sysmap src/loopback/surfaces/trail`: 66 tests pass.
+  - `map.test.ts` keeps fixtures A, B and C (pins, unplaced checks, idle nodes, `before`). It adds the layout pins for C's FAIL (`P3`, `frontend round trip`, `3 failed`, the earlier-PASS title), plain project text in the drawing, and valence's count words.
+  - `e2e.test.tsx` checks the inline SVG at its own width, two pins with one heavy red, the problems text and the earlier-PASS title.
+- `npx tsc --noEmit` passes, and `npm run build` emits `dist/app/e2e.js` with no mermaid in it.
+- In Chromium, the built bundle ran against a mock e2e API that served the real `tli-online` map and run `20261102T051516Z`'s checks. Two checks were set to fail and one to blocked, and the `at` tags were added by label, because that run's records carry none.
+  - The page showed 8 pins under their nodes, 9 idle nodes dashed, and `2 failed` / `1 blocked` on their pins.
+  - Thai group names were cut by cells, and the earlier PASS appeared in the pin titles.
+- **Not exercised:** the page in a rebuilt Krypton against the real `#e2e open` API.
 
 ## Resources
 

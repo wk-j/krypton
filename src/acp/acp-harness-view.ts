@@ -12157,6 +12157,12 @@ export class AcpHarnessView implements ContentView {
       await this.openLoopbackPage('/analyses', 'analyses');
       return;
     }
+    // spec 400: the bug trail of an analysed issue.
+    if (parts[0] === '#trail') {
+      this.setDraft(lane, '', 0);
+      await this.runTrailCommand(parts.slice(1));
+      return;
+    }
     // spec 227: capability-gated Hurl web client.
     if (parts[0] === '#hurl') {
       this.setDraft(lane, '', 0);
@@ -12582,8 +12588,64 @@ export class AcpHarnessView implements ContentView {
     // spec 342: a verb on the active ticket's issue shows as running in the
     // Ticket Panel until finishTurn records it (or the turn never starts).
     const ticketAction = matchesActiveTicket ? this.ticketCtl.beginAction(lane, verb) : null;
+    // spec 400: Analyze is read-only on the code — record HEAD and the dirty
+    // set now so the trail page can show edits made during analysis. A failure
+    // only loses that record; the prompt still goes out.
+    if (verb === 'analyze-github-issue' && this.projectDir && !this.remoteRuntimeId) {
+      try {
+        await invoke('trail_begin', { projectDir: this.projectDir, issueKey: input.issueKey });
+      } catch (e) {
+        this.flashChip(`trail: ${errorText(e)}`);
+      }
+    }
     const started = await this.enqueueSystemPrompt(lane, prompt, undefined, label);
     if (!started && ticketAction) this.ticketCtl.cancelAction(lane, ticketAction);
+  }
+
+  /** spec 400: `#trail [trust | run [<id>]] [<issue>]` — open, trust or run the
+   *  bug trail of an analysed issue (default: the active ticket's issue). */
+  private async runTrailCommand(args: string[]): Promise<void> {
+    if (!this.projectDir || this.remoteRuntimeId) {
+      this.flashChip('#trail: local projects only');
+      return;
+    }
+    const rest = [...args];
+    const sub = rest[0] === 'trust' || rest[0] === 'run' || rest[0] === 'open' ? rest.shift() : 'open';
+    let ref = rest.length > 0 ? this.parseIssueRef(rest[rest.length - 1]) : null;
+    if (ref) rest.pop();
+    if (!ref && this.ticketCtl.activeTicket?.github) {
+      const gh = this.ticketCtl.activeTicket.github;
+      ref = { repo: gh.repo, number: gh.number, url: gh.issueUrl };
+    }
+    if (!ref) {
+      this.flashChip('#trail needs an issue: owner/repo#123, an issue URL, or an active ticket');
+      return;
+    }
+    const issueKey = `${ref.repo}#${ref.number}`;
+    try {
+      if (sub === 'trust') {
+        const trust = await invoke<{ trusted: number; argv: string[][] }>('trail_trust', {
+          projectDir: this.projectDir,
+          issueKey,
+        });
+        const first = trust.argv[0]?.join(' ') ?? '';
+        this.flashChip(`trail: trusted ${trust.trusted} repro — ${first}${trust.argv.length > 1 ? ' …' : ''}`);
+      } else if (sub === 'run') {
+        this.flashChip(`trail: running repro for ${issueKey}…`);
+        const runs = await invoke<{ id: string; outcome: string }[]>('trail_run_repro', {
+          projectDir: this.projectDir,
+          issueKey,
+          id: rest[0] ?? null,
+        });
+        this.flashChip(`trail: ${runs.map((r) => `${r.id} ${r.outcome}`).join(' · ')} — #trail to see the result`);
+      } else {
+        const issue = `issue=${encodeURIComponent(`${ref.repo}/${ref.number}`)}`;
+        const harness = this.harnessMemoryId ? `harness=${encodeURIComponent(this.harnessMemoryId)}&` : '';
+        await this.openLoopbackPage(`/trail?${harness}${issue}`, 'trail');
+      }
+    } catch (e) {
+      this.flashChip(`#trail: ${errorText(e)}`);
+    }
   }
 
   /** Create a NEW GitHub issue from a plain-language request. Args are the free-text

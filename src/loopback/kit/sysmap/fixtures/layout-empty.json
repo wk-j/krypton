@@ -1,0 +1,22 @@
+{
+  "input": {
+    "map": {
+      "direction": "LR",
+      "groups": [],
+      "nodes": [],
+      "edges": []
+    },
+    "pins": [],
+    "lit": []
+  },
+  "expected": {
+    "width": 24,
+    "height": 24,
+    "groups": [],
+    "edges": [],
+    "stems": [],
+    "nodes": [],
+    "pins": []
+  },
+  "keyCells": []
+}

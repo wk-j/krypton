@@ -52,6 +52,7 @@ describe('availability', () => {
   it('builds project links from the selected project', () => {
     expect(availability(surfaceById('docs'), ctx({ project: beta }))).toEqual({ href: '/docs?harness=hm-2' });
     expect(availability(surfaceById('analyses'), ctx({}))).toEqual({ href: '/analyses?project=project-a' });
+    expect(availability(surfaceById('trail'), ctx({ project: beta }))).toEqual({ href: '/trail?project=project-b' });
     expect(availability(surfaceById('hurl'), ctx({ project: beta }))).toEqual({ href: '/hurl/hb' });
   });
 

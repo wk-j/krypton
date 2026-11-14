@@ -32,6 +32,8 @@ export { AppShell, ShellProvider, useShell } from './shell';
 export type { ShellApi } from './shell';
 export { StatBar } from './stat-bar';
 export type { Stat, StatBarProps } from './stat-bar';
+export { layoutMap, pinKeyCellPath, SysMap } from './sysmap';
+export type { DrawnEdge, DrawnNode, DrawnPin, EdgeLook, LayoutPin, MapDrawing, PinLook, SysMapProps, SysMapTone, SystemMap } from './sysmap';
 export { Tabs } from './tabs';
 export type { TabItem, TabsOptions } from './tabs';
 export { hydrateTreeNav } from './tree-nav';

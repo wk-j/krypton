@@ -45,6 +45,7 @@ pub mod theme;
 pub mod ticket_bundle;
 pub mod timeline;
 pub mod timeline_conflicts;
+mod trail;
 pub mod usage;
 pub mod usage_log;
 pub mod util;
@@ -201,6 +202,9 @@ pub fn run() {
             e2e::e2e_rerun,
             e2e::e2e_cancel,
             e2e::e2e_find_run,
+            trail::trail_begin,
+            trail::trail_trust,
+            trail::trail_run_repro,
             rails::rails_load,
             rails::rails_trust,
             rails::rails_run_check,

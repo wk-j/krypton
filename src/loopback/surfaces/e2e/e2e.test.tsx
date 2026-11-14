@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type * as MermaidFence from '../../../acp/harness-mermaid-fence';
 import { act, flush, press, render } from '../../kit/test-utils';
 import type { Rendered } from '../../kit/test-utils';
 
@@ -8,16 +7,7 @@ import { E2ePage } from '.';
 import tli1368 from './fixtures/d-tli-api-1368-rev5.json';
 
 // Spec 329: the explorer against a mocked loopback API. Spec 355: the system
-// map, with mermaid replaced by a recorder (map.test.ts covers the source).
-
-const mermaid = vi.hoisted(() => ({ sources: [] as string[] }));
-vi.mock('../../../acp/harness-mermaid-fence', async (importOriginal) => ({
-  ...(await importOriginal<typeof MermaidFence>()),
-  renderMermaid: async (source: string): Promise<{ ok: true; svg: string; diagramType: string }> => {
-    mermaid.sources.push(source);
-    return { ok: true, svg: '<svg viewBox="0 0 10 10"></svg>', diagramType: 'flowchart' };
-  },
-}));
+// map, drawn inline by the kit (kit/sysmap/layout.test.ts covers the geometry).
 
 interface Call {
   url: string;
@@ -303,17 +293,17 @@ describe('system map (spec 355)', () => {
         : base(url);
   }
 
-  const mapImg = (): Element | null => document.querySelector('.lb-e2e__run .lb-e2e__map-img');
-
-  beforeEach(() => {
-    mermaid.sources = [];
-  });
+  const mapImg = (): Element | null => document.querySelector('.lb-e2e__run .lb-sysmap');
+  const pinTitles = (): string[] => Array.from(document.querySelectorAll('.lb-e2e__run .lb-sysmap__pin title'), (t) => t.textContent ?? '');
 
   it('draws the run on its case map by default, lists checks per pin, and m toggles the check list', async () => {
     respond = mapResponder();
     boot();
     await until(() => expect(mapImg()).not.toBeNull());
-    expect(mapImg()?.getAttribute('src')).toMatch(/^data:image\/svg\+xml/);
+    // Inline SVG at its own size, one pin per (at, group), pins by worst status.
+    expect(mapImg()?.getAttribute('width')).toBe(mapImg()?.getAttribute('viewBox')?.split(' ')[2]);
+    expect(document.querySelectorAll('.lb-e2e__run .lb-sysmap__pin')).toHaveLength(2);
+    expect(document.querySelectorAll('.lb-e2e__run .lb-sysmap__pin--del.lb-sysmap__pin--strong')).toHaveLength(1);
     expect(texts('.lb-e2e__pin-head strong')).toEqual(['P1', 'P2', 'not on the map']);
     expect(texts('.lb-e2e__pin-head')[0]).toContain('API handler');
     expect(texts('.lb-e2e__pin-head .lb-e2e__pin-source')).toEqual(['src/api.ts', 'src/api.ts']);
@@ -331,7 +321,8 @@ describe('system map (spec 355)', () => {
     await until(() => expect(mapImg()).not.toBeNull());
     expect(requested('/run?case=a&run=r1')).toBe(true);
     expect(texts('.lb-e2e__pin-note:not(.lb-e2e__problem)')).toEqual(['PASS r1: ✓×1']);
-    expect(mermaid.sources[mermaid.sources.length - 1]).toContain('P2 · g2<br/>✗×1<br/>PASS r1: ✓×1');
+    expect(pinTitles()).toContain('P2 g2: 1 failed\nEarlier PASS r1: 1 passed');
+    expect(Array.from(document.querySelectorAll('.lb-e2e__run .lb-sysmap__pin-problems'), (t) => t.textContent)).toEqual(['1 failed']);
   });
 
   it('asks for no earlier run when the shown run passed', async () => {
@@ -358,7 +349,6 @@ describe('system map (spec 355)', () => {
     await until(() => expect(texts('.lb-e2e__run .lb-e2e__check-label')).toHaveLength(4));
     expect(texts('.lb-e2e__run .lb-banner--error')).toEqual(['map e2e/maps/a.toml: nodes[0].id: duplicate "x"']);
     expect(mapImg()).toBeNull();
-    expect(mermaid.sources).toEqual([]);
   });
 });
 

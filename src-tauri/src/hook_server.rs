@@ -3952,7 +3952,8 @@ fn tool_category(name: &str) -> &'static str {
         | "ticket_progress"
         | "ticket_note"
         | "ticket_add_resource"
-        | "ticket_link" => "issues",
+        | "ticket_link"
+        | "trail_check" => "issues",
         "e2e_adapter_check" => "e2e",
         _ => "other", // forward-compat: an unmapped tool still renders
     }
@@ -4149,6 +4150,131 @@ async fn handle_analysis(
     let tabs = render_analyses_tabs(&projects, &project.project_id);
     let nav = render_analyses_nav(project, &issue_ref);
     render_analyses_page(&bundle.issue_key, &tabs, &nav, &content)
+}
+
+/// Query of `/trail` and `/trail.json` (spec 400). Without `issue` the page is
+/// the project's trail index.
+#[derive(Debug, Deserialize)]
+struct TrailQuery {
+    project: Option<String>,
+    harness: Option<String>,
+    issue: Option<String>,
+}
+
+/// What a `/trail` request names: one issue's trail, or a project's index.
+enum TrailTarget {
+    Issue(PathBuf, crate::trail::IssueRef),
+    Index {
+        root: PathBuf,
+        project_id: String,
+        project_name: String,
+        issues: Vec<crate::trail::IssueRef>,
+    },
+}
+
+/// Spec 400: resolve a `/trail` request. With `issue`, the bundle is found as
+/// `/analysis` finds it (`project=`, the legacy `harness=`, else the first
+/// project holding that issue) and must hold `trail.toml`. Without it, the
+/// project is `project=` / `harness=`, else the first open project, and may
+/// have no analyses at all (an empty index).
+fn trail_target(state: &HookServerState, query: &TrailQuery) -> Option<TrailTarget> {
+    let wanted = query.project.clone().or_else(|| {
+        query
+            .harness
+            .as_deref()
+            .and_then(|id| state.hook_server.analysis_project_id_for_harness(id))
+    });
+    if let Some(issue_ref) = query.issue.as_deref() {
+        let projects = state.hook_server.discover_analyses_per_project();
+        let project = match wanted {
+            Some(id) => projects.iter().find(|p| p.project_id == id)?,
+            None => projects
+                .iter()
+                .find(|p| p.bundles.iter().any(|b| bundle_matches_issue(b, issue_ref)))?,
+        };
+        let bundle = project
+            .bundles
+            .iter()
+            .find(|b| b.has_trail && bundle_matches_issue(b, issue_ref))?;
+        let issue = crate::trail::parse_issue_key(&bundle.issue_key).ok()?;
+        return Some(TrailTarget::Issue(
+            PathBuf::from(&project.project_dir),
+            issue,
+        ));
+    }
+    let mut open: Vec<(String, String, String)> = state
+        .hook_server
+        .docs_project_dirs()
+        .into_iter()
+        .filter_map(|(_, dir)| gallery_project_identity(&dir).map(|(id, name)| (id, name, dir)))
+        .collect();
+    open.sort_by(|a, b| {
+        a.1.to_lowercase()
+            .cmp(&b.1.to_lowercase())
+            .then(a.0.cmp(&b.0))
+    });
+    let (project_id, project_name, dir) = match wanted {
+        Some(id) => open.into_iter().find(|p| p.0 == id)?,
+        None => open.into_iter().next()?,
+    };
+    let issues = discover_analysis_bundles(&dir)
+        .iter()
+        .filter(|b| b.has_trail)
+        .filter_map(|b| crate::trail::parse_issue_key(&b.issue_key).ok())
+        .collect();
+    Some(TrailTarget::Index {
+        root: PathBuf::from(dir),
+        project_id,
+        project_name,
+        issues,
+    })
+}
+
+/// GET /trail?project=<id>[&issue=<owner/repo/n>] — one bug trail, or the
+/// project's trail index without `issue` (spec 400).
+async fn handle_trail(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<TrailQuery>,
+) -> Response {
+    let title = match trail_target(&state, &query) {
+        Some(TrailTarget::Issue(_, issue)) => format!("Trail · {}", issue.key()),
+        Some(TrailTarget::Index { project_name, .. }) => format!("Bug trails · {project_name}"),
+        None => return StatusCode::NOT_FOUND.into_response(),
+    };
+    app_page_response(AppPage::new("trail", &title, Scheme::Dark))
+}
+
+/// GET /trail.json — the trail, or the project's index of trails, with every
+/// check recomputed (spec 400). Read-only; the git reads run off the async
+/// workers.
+async fn handle_trail_json(
+    AxumState(state): AxumState<Arc<HookServerState>>,
+    Query(query): Query<TrailQuery>,
+) -> Response {
+    let Some(target) = trail_target(&state, &query) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let work = tokio::task::spawn_blocking(move || match target {
+        TrailTarget::Issue(root, issue) => crate::trail::page_payload(&root, &issue)
+            .map(|payload| serde_json::to_value(payload).unwrap_or(Value::Null)),
+        TrailTarget::Index {
+            root,
+            project_id,
+            project_name,
+            issues,
+        } => serde_json::to_value(crate::trail::index_payload(
+            &root,
+            project_id,
+            project_name,
+            &issues,
+        ))
+        .ok(),
+    });
+    match work.await {
+        Ok(Some(value)) => secured_json_response(StatusCode::OK, value),
+        Ok(None) => StatusCode::NOT_FOUND.into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 /// GET /analysis-asset?harness=<id>&path=<rel> — serve a whitelisted image from
@@ -4745,6 +4871,7 @@ async fn handle_bus_tool_call(
         "ticket_add_resource" => ticket_add_resource(state, harness_id, lane_label, arguments),
         "ticket_link" => ticket_link(state, harness_id, lane_label, arguments),
         "e2e_adapter_check" => e2e_adapter_check(state, harness_id, arguments).await,
+        "trail_check" => trail_check_tool(state, harness_id, arguments).await,
         other => Err(format!("Unknown bus tool: {other}")),
     };
 
@@ -6782,6 +6909,23 @@ async fn e2e_adapter_check(
     serde_json::to_value(report).map_err(|e| e.to_string())
 }
 
+/// spec 400 — `trail_check`: validate the issue's `trail.toml`, report every
+/// evidence check, and record what changed in the code since Analyze started.
+async fn trail_check_tool(
+    state: &HookServerState,
+    harness_id: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    let root = state
+        .hook_server
+        .project_dir_for_harness(harness_id)
+        .ok_or_else(|| "trail_check requires a local project workspace".to_string())?;
+    let issue = required_string(&arguments, "issue")?;
+    tokio::task::spawn_blocking(move || crate::trail::trail_check(&root, &issue))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// spec 211 — `review_new`: allocate the durable bundle, emit a `pending` event
 /// so the frontend opens issued-path write auto-approval over the whole bundle.
 fn review_tool_new(
@@ -6989,6 +7133,17 @@ fn bus_tool_descriptors() -> Value {
                     "result_path": { "type": "string", "description": "Root-relative or absolute path of the smoke-run Result JSON; must be under <root>/.krypton/e2e/." }
                 }
             }
+        },
+        {
+            "name": "trail_check",
+            "description": "Validate the bug trail you wrote during Analyze: `.krypton/analyses/<owner>/<repo>/<n>/trail.toml` (format: `.krypton/analyses/TRAIL.md`). Krypton checks every piece of evidence itself — a cite's quote must be in those lines at the trail's commit, a commit must exist, an observed file must be in the bundle — and reports any file changed outside .krypton/ since Analyze started (analysis must not edit code). Returns `{ ok, errors, warnings, map, steps: [{ index, at, kind, onMap, evidence: [{ type, status, detail }] }], changedDuringAnalysis }`. Fix every error and every mismatch / missing / unknown status, then call again until ok is true. It never runs a repro: only the user can trust and run one.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "issue": { "type": "string", "description": "The analysed issue as owner/repo#n, e.g. bcircle/tli-api-service#1364." }
+                },
+                "required": ["issue"]
+            }
         }
     ]);
 
@@ -7049,6 +7204,7 @@ fn project_backed_bus_tool(name: &str) -> bool {
             | "timeline_conflict_record"
             | "timeline_conflict_checked"
             | "e2e_adapter_check"
+            | "trail_check"
     )
 }
 
@@ -8033,6 +8189,7 @@ struct AnalysisBundle {
     md_files: Vec<String>, // project-relative paths, ordered (root-cause, fix-plan, rest)
     assets: Vec<AnalysisAsset>, // non-.md files (downloaded resources)
     modified: Option<SystemTime>,
+    has_trail: bool, // spec 400: `trail.toml` present → the "trail" tab
 }
 
 /// One project owns each bundle set, however many harnesses currently open it.
@@ -8097,6 +8254,7 @@ fn discover_analysis_bundles(project_dir: &str) -> Vec<AnalysisBundle> {
                 let mut md_named: Vec<String> = Vec::new();
                 let mut assets: Vec<AnalysisAsset> = Vec::new();
                 let mut modified: Option<SystemTime> = None;
+                let mut has_trail = false;
                 for file in files.filter_map(Result::ok) {
                     if !file.file_type().is_ok_and(|t| t.is_file()) {
                         continue;
@@ -8105,6 +8263,14 @@ fn discover_analysis_bundles(project_dir: &str) -> Vec<AnalysisBundle> {
                     let meta = file.metadata().ok();
                     if let Some(mt) = meta.as_ref().and_then(|m| m.modified().ok()) {
                         modified = Some(modified.map_or(mt, |cur| cur.max(mt)));
+                    }
+                    // spec 400: the trail files are the "trail" tab, not attachments.
+                    if name == crate::trail::TRAIL_FILE {
+                        has_trail = true;
+                        continue;
+                    }
+                    if name == crate::trail::STATE_FILE {
+                        continue;
                     }
                     let is_md = StdPath::new(&name)
                         .extension()
@@ -8119,7 +8285,7 @@ fn discover_analysis_bundles(project_dir: &str) -> Vec<AnalysisBundle> {
                         });
                     }
                 }
-                if md_named.is_empty() && assets.is_empty() {
+                if md_named.is_empty() && assets.is_empty() && !has_trail {
                     continue;
                 }
                 md_named
@@ -8137,6 +8303,7 @@ fn discover_analysis_bundles(project_dir: &str) -> Vec<AnalysisBundle> {
                     md_files,
                     assets,
                     modified,
+                    has_trail,
                 });
             }
         }
@@ -8348,7 +8515,7 @@ fn render_analysis_bundle(
 ) -> String {
     let cwd = StdPath::new(project_dir);
     let mut content = String::new();
-    if bundle.md_files.len() > 1 {
+    if bundle.md_files.len() > 1 || bundle.has_trail {
         let issue_ref = format!("{}/{}/{}", bundle.owner, bundle.repo, bundle.number);
         content.push_str("<nav class=\"lb-tabs\" aria-label=\"Files\">");
         for rel in &bundle.md_files {
@@ -8369,6 +8536,16 @@ fn render_analysis_bundle(
             content.push_str("\">");
             content.push_str(&html_escape(name));
             content.push_str("</a>");
+        }
+        if bundle.has_trail {
+            // spec 400: the bug trail is its own page (the map needs the app).
+            content.push_str(
+                "<a class=\"lb-tabs__tab\" aria-selected=\"false\" href=\"/trail?project=",
+            );
+            content.push_str(&url_encode(project_id));
+            content.push_str("&amp;issue=");
+            content.push_str(&url_encode(&issue_ref));
+            content.push_str("\">trail</a>");
         }
         content.push_str("</nav>");
     }
@@ -8393,7 +8570,9 @@ fn render_analysis_bundle(
             }
         }
     }
-    if !rendered_doc {
+    if !rendered_doc && bundle.has_trail {
+        content.push_str("<p class=\"welcome\">ยังไม่มีไฟล์วิเคราะห์ในโฟลเดอร์นี้ — เปิดแท็บ trail</p>");
+    } else if !rendered_doc {
         content.push_str("<p class=\"welcome\">ยังไม่มีไฟล์วิเคราะห์ในโฟลเดอร์นี้ — มีเฉพาะไฟล์แนบ</p>");
     }
     if !bundle.assets.is_empty() {
@@ -10402,6 +10581,9 @@ pub fn start(
                 .route("/analyses", get(handle_analyses))
                 .route("/analysis", get(handle_analysis))
                 .route("/analysis-asset", get(handle_analysis_asset))
+                // spec 400 — the bug trail of one analysis bundle. Read-only.
+                .route("/trail", get(handle_trail))
+                .route("/trail.json", get(handle_trail_json))
                 // spec 211 — the Review Board archive. Read-only: it browses the
                 // durable `.krypton/reviews/` bundles, while answering a review
                 // stays in the keyboard-driven in-app Board.
@@ -11590,6 +11772,8 @@ mod tests {
             .route("/analyses", get(ok))
             .route("/analysis", get(ok))
             .route("/analysis-asset", get(ok))
+            .route("/trail", get(ok))
+            .route("/trail.json", get(ok))
             .route("/reviews", get(ok))
             .route("/review", get(ok))
             .route("/review-asset", get(ok))
@@ -13256,6 +13440,44 @@ mod git_state_tests {
         assert_eq!(bundles[0].assets.len(), 1);
         assert!(bundles[0].assets[0].rel.ends_with("shot.png"));
         assert_eq!(bundles[0].assets[0].size, 3, "\"img\" is 3 bytes");
+        assert!(!bundles[0].has_trail);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn analysis_bundle_trail_is_a_tab_not_an_attachment() {
+        // spec 400: trail.toml / trail-state.json never show as attachments; a
+        // bundle holding only a trail is still a bundle, with the trail tab.
+        let tmp = std::env::temp_dir().join(format!("krypton-analyses-trail-{}", rand_suffix()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        seed_analysis_file(&tmp, "acme", "widget", "12", "root-cause.md", "r");
+        seed_analysis_file(&tmp, "acme", "widget", "12", "trail.toml", "version = 1");
+        seed_analysis_file(&tmp, "acme", "widget", "12", "trail-state.json", "{}");
+        seed_analysis_file(&tmp, "acme", "widget", "12", "db.csv", "x");
+        seed_analysis_file(&tmp, "acme", "widget", "13", "trail.toml", "version = 1");
+        let bundles = discover_analysis_bundles(&tmp.to_string_lossy());
+        assert_eq!(bundles.len(), 2);
+        let b13 = bundles.iter().find(|b| b.number == "13").unwrap();
+        assert!(b13.has_trail && b13.md_files.is_empty() && b13.assets.is_empty());
+        let b12 = bundles.iter().find(|b| b.number == "12").unwrap();
+        assert!(b12.has_trail);
+        let names: Vec<&str> = b12
+            .assets
+            .iter()
+            .map(|a| a.rel.rsplit('/').next().unwrap())
+            .collect();
+        assert_eq!(names, vec!["db.csv"]);
+        let html = render_analysis_bundle(
+            &tmp.to_string_lossy(),
+            "hm-1",
+            "p1",
+            b12,
+            b12.md_files.first().map(String::as_str),
+        );
+        assert!(
+            html.contains("href=\"/trail?project=p1&amp;issue=acme%2Fwidget%2F12\">trail</a>"),
+            "{html}"
+        );
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

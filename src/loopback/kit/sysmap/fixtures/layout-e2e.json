@@ -1,0 +1,2190 @@
+{
+ "input": {
+  "map": {
+   "direction": "LR",
+   "groups": [
+    {
+     "id": "tli-api",
+     "label": "tli-api"
+    },
+    {
+     "id": "core",
+     "label": "Core (mock-core-api)"
+    },
+    {
+     "id": "dim",
+     "label": "DIM DB"
+    }
+   ],
+   "nodes": [
+    {
+     "id": "channel",
+     "label": "external channel\nBasic auth · X-Request-ID",
+     "group": null,
+     "shape": "actor",
+     "source": "e2e/lib/tli-online.mjs"
+    },
+    {
+     "id": "abbyy",
+     "label": "ABBYY batch\n(puts a job in place)",
+     "group": null,
+     "shape": "actor",
+     "source": "e2e/lib/abbyy.mjs"
+    },
+    {
+     "id": "staff",
+     "label": "staff / Core caller\nDone / Reject / Rescan · getWIPDocuments",
+     "group": null,
+     "shape": "actor",
+     "source": "e2e/lib/tli-api.mjs"
+    },
+    {
+     "id": "online001",
+     "label": "ONLINE001 checkList\n/tli-online/checkList/{BU}",
+     "group": "tli-api",
+     "shape": "box",
+     "source": "tli-api/src/main/java/com/bc/dim/api/service/online/OnlineCheckListService.java"
+    },
+    {
+     "id": "online002",
+     "label": "ONLINE002 uploadNewDocument\n/tli-online/uploadNewDocument/{BU}",
+     "group": "tli-api",
+     "shape": "box",
+     "source": "tli-api/src/main/java/com/bc/dim/api/service/online/OnlineUploadNewDocumentService.java"
+    },
+    {
+     "id": "online003",
+     "label": "ONLINE003 appendDocument\n/tli-online/appendDocument/{BU}",
+     "group": "tli-api",
+     "shape": "box",
+     "source": "tli-api/src/main/java/com/bc/dim/api/service/online/OnlineAppendDocumentService.java"
+    },
+    {
+     "id": "online004",
+     "label": "ONLINE004 replaceDocument\n/tli-online/replaceDocument/{BU}",
+     "group": "tli-api",
+     "shape": "box",
+     "source": "tli-api/src/main/java/com/bc/dim/api/service/online/OnlineReplaceDocumentService.java"
+    },
+    {
+     "id": "online005",
+     "label": "ONLINE005 deleteCase\n/tli-online/deleteCase/{BU}",
+     "group": "tli-api",
+     "shape": "box",
+     "source": "tli-api/src/main/java/com/bc/dim/api/service/online/OnlineDeleteCaseService.java"
+    },
+    {
+     "id": "online006",
+     "label": "ONLINE006 appendStorage\n/tli-online/appendStorage/{BU}",
+     "group": "tli-api",
+     "shape": "box",
+     "source": "tli-api/src/main/java/com/bc/dim/api/service/online/OnlineAppendStorageService.java"
+    },
+    {
+     "id": "api003",
+     "label": "POST /tli/updateStatus/{BU}\nAPI003",
+     "group": "tli-api",
+     "shape": "box",
+     "source": "tli-api/src/main/java/com/bc/dim/api/controller/tli/TliDimApiController.java"
+    },
+    {
+     "id": "api001",
+     "label": "POST /tli/getWIPDocuments/{BU}\nAPI001",
+     "group": "tli-api",
+     "shape": "box",
+     "source": "tli-api/src/main/java/com/bc/dim/api/service/tli/TliPosService.java"
+    },
+    {
+     "id": "api005",
+     "label": "POST /tli/updateCLNo\nAPI005",
+     "group": "tli-api",
+     "shape": "box",
+     "source": "tli-api/src/main/java/com/bc/dim/api/service/tli/TliClService.java"
+    },
+    {
+     "id": "api004",
+     "label": "POST /tli/uploadDocument/{BU}\nAPI004",
+     "group": "tli-api",
+     "shape": "box",
+     "source": "tli-api/src/main/java/com/bc/dim/api/service/tli/TliUwService.java"
+    },
+    {
+     "id": "api006",
+     "label": "POST /tli/download/{BU}\nAPI006",
+     "group": "tli-api",
+     "shape": "box",
+     "source": "tli-api/src/main/java/com/bc/dim/api/controller/tli/TliDimApiController.java"
+    },
+    {
+     "id": "api-log",
+     "label": "application.log",
+     "group": "tli-api",
+     "shape": "store",
+     "source": null
+    },
+    {
+     "id": "api-slog",
+     "label": "structured.log",
+     "group": "tli-api",
+     "shape": "store",
+     "source": null
+    },
+    {
+     "id": "mapping-tool",
+     "label": "tli-mapping-tool\nIndex/*.txt consumed · import",
+     "group": null,
+     "shape": "box",
+     "source": "tli-mapping-tool/src/main/java/com/bc/dim/mapping/processor"
+    },
+    {
+     "id": "core-metadata",
+     "label": "/Core/getMetadata/{BU}",
+     "group": "core",
+     "shape": "box",
+     "source": "tli-client-libraries/mock-core-api-server"
+    },
+    {
+     "id": "core-notify",
+     "label": "/Core/notifyStatus (CORE005)\nmock_notify_status_log",
+     "group": "core",
+     "shape": "box",
+     "source": "tli-client-libraries/mock-core-api-server"
+    },
+    {
+     "id": "dim-reconcile",
+     "label": "tr_reconcile_index · tr_reconcile",
+     "group": "dim",
+     "shape": "store",
+     "source": null
+    },
+    {
+     "id": "dim-scan",
+     "label": "tr_scan_parent · tr_scan\ntr_scan_doc",
+     "group": "dim",
+     "shape": "store",
+     "source": null
+    },
+    {
+     "id": "dim-policy",
+     "label": "tr_policy",
+     "group": "dim",
+     "shape": "store",
+     "source": null
+    },
+    {
+     "id": "dim-log",
+     "label": "tr_log",
+     "group": "dim",
+     "shape": "store",
+     "source": null
+    },
+    {
+     "id": "alfresco",
+     "label": "Alfresco\nWPG / WPR / STR documents",
+     "group": null,
+     "shape": "store",
+     "source": null
+    },
+    {
+     "id": "laserlite",
+     "label": "LaserLite\nwork / output TIFF files",
+     "group": null,
+     "shape": "store",
+     "source": "tli-api/src/main/java/com/bc/dim/api/service/tli/TliUwService.java"
+    },
+    {
+     "id": "dim-ui-done",
+     "label": "POST /dim-ui/done\nUW Done from staff UI",
+     "group": "tli-api",
+     "shape": "box",
+     "source": "tli-api/src/main/java/com/bc/dim/api/controller/dimui/DocumentManagementController.java"
+    }
+   ],
+   "edges": [
+    {
+     "from": "channel",
+     "to": "online001",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "channel",
+     "to": "online002",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "channel",
+     "to": "online003",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "channel",
+     "to": "online004",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "channel",
+     "to": "online005",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "channel",
+     "to": "online006",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api003",
+     "to": "dim-policy",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online006",
+     "to": "dim-policy",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online001",
+     "to": "core-metadata",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online001",
+     "to": "dim-reconcile",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online002",
+     "to": "dim-reconcile",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online002",
+     "to": "dim-scan",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online002",
+     "to": "dim-log",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online002",
+     "to": "alfresco",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online003",
+     "to": "dim-scan",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online003",
+     "to": "alfresco",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online004",
+     "to": "dim-scan",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online004",
+     "to": "alfresco",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online005",
+     "to": "dim-reconcile",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online005",
+     "to": "dim-scan",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online005",
+     "to": "dim-log",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online005",
+     "to": "alfresco",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online005",
+     "to": "core-notify",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online006",
+     "to": "dim-scan",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online006",
+     "to": "dim-log",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online006",
+     "to": "alfresco",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online001",
+     "to": "api-log",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online002",
+     "to": "api-log",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online003",
+     "to": "api-log",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online004",
+     "to": "api-log",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online005",
+     "to": "api-log",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online006",
+     "to": "api-log",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online001",
+     "to": "api-slog",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online002",
+     "to": "api-slog",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online003",
+     "to": "api-slog",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online004",
+     "to": "api-slog",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online005",
+     "to": "api-slog",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "online006",
+     "to": "api-slog",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "abbyy",
+     "to": "mapping-tool",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "mapping-tool",
+     "to": "dim-scan",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "mapping-tool",
+     "to": "alfresco",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "staff",
+     "to": "api003",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api003",
+     "to": "dim-scan",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api003",
+     "to": "alfresco",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "staff",
+     "to": "api001",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api001",
+     "to": "dim-scan",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api001",
+     "to": "dim-log",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api003",
+     "to": "core-notify",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api003",
+     "to": "laserlite",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api003",
+     "to": "dim-log",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "staff",
+     "to": "api005",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api005",
+     "to": "dim-scan",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api005",
+     "to": "core-notify",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "staff",
+     "to": "api004",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api004",
+     "to": "dim-scan",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api004",
+     "to": "dim-log",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api004",
+     "to": "alfresco",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api004",
+     "to": "api-slog",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "staff",
+     "to": "dim-ui-done",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "dim-ui-done",
+     "to": "dim-scan",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "dim-ui-done",
+     "to": "alfresco",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "dim-ui-done",
+     "to": "laserlite",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "dim-ui-done",
+     "to": "core-notify",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "dim-ui-done",
+     "to": "dim-log",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "staff",
+     "to": "api006",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api006",
+     "to": "dim-log",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api006",
+     "to": "alfresco",
+     "label": null,
+     "kind": "flow"
+    },
+    {
+     "from": "api006",
+     "to": "api-slog",
+     "label": null,
+     "kind": "flow"
+    }
+   ]
+  },
+  "pins": [
+   {
+    "key": "P1",
+    "at": "dim-scan",
+    "label": "tr_scan_parent",
+    "status": "pass",
+    "title": "P1"
+   },
+   {
+    "key": "P2",
+    "at": "api003",
+    "label": "Done",
+    "status": "fail",
+    "title": "P2",
+    "problems": "2 failed"
+   },
+   {
+    "key": "P3",
+    "at": "alfresco",
+    "label": "Done documents under the claim folder",
+    "status": "fail",
+    "title": "P3",
+    "problems": "1 failed, 2 blocked"
+   },
+   {
+    "key": "P4",
+    "at": "online006",
+    "label": "appendStorage",
+    "status": "blocked",
+    "title": "P4",
+    "problems": "1 blocked"
+   },
+   {
+    "key": "P5",
+    "at": "alfresco",
+    "label": "",
+    "status": "fail",
+    "title": "P5",
+    "problems": "3 failed"
+   },
+   {
+    "key": "P6",
+    "at": "dim-log",
+    "label": "",
+    "status": "skip",
+    "title": "P6"
+   }
+  ],
+  "lit": [
+   "channel",
+   "staff",
+   "online001",
+   "online002",
+   "online003",
+   "online005",
+   "online006",
+   "api003",
+   "api001",
+   "api005",
+   "api004",
+   "api006",
+   "api-slog",
+   "core-metadata",
+   "core-notify",
+   "dim-reconcile",
+   "dim-scan",
+   "dim-policy",
+   "dim-log",
+   "alfresco",
+   "dim-ui-done"
+  ]
+ },
+ "expected": {
+  "width": 1149,
+  "height": 1734,
+  "groups": [
+   {
+    "id": "core",
+    "box": {
+     "x": 721.2,
+     "y": 12,
+     "w": 415.79999999999995,
+     "h": 143
+    },
+    "label": {
+     "x": 731.2,
+     "y": 25,
+     "text": "Core (mock-core-api)"
+    },
+    "title": "Core (mock-core-api)"
+   },
+   {
+    "id": "tli-api",
+    "box": {
+     "x": 384,
+     "y": 319,
+     "w": 753,
+     "h": 918
+    },
+    "label": {
+     "x": 394,
+     "y": 332,
+     "text": "tli-api"
+    },
+    "title": "tli-api"
+   },
+   {
+    "id": "dim",
+    "box": {
+     "x": 721.2,
+     "y": 1255,
+     "w": 415.79999999999995,
+     "h": 379
+    },
+    "label": {
+     "x": 731.2,
+     "y": 1268,
+     "text": "DIM DB"
+    },
+    "title": "DIM DB"
+   }
+  ],
+  "edges": [
+   {
+    "from": "channel",
+    "to": "online001",
+    "kind": "flow",
+    "idle": false,
+    "d": "M289.5 534.9 C358.4 534.9 358.4 371 427.2 371",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "channel",
+    "to": "online002",
+    "kind": "flow",
+    "idle": false,
+    "d": "M289.5 548.2 C342.8 548.2 342.8 581 396 581",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "channel",
+    "to": "online003",
+    "kind": "flow",
+    "idle": false,
+    "d": "M289.5 539.3 C348.6 539.3 348.6 441 407.7 441",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "channel",
+    "to": "online004",
+    "kind": "flow",
+    "idle": true,
+    "d": "M289.5 543.8 C346.7 543.8 346.7 511 403.8 511",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "channel",
+    "to": "online005",
+    "kind": "flow",
+    "idle": false,
+    "d": "M289.5 552.7 C356.4 552.7 356.4 651 423.3 651",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "channel",
+    "to": "online006",
+    "kind": "flow",
+    "idle": false,
+    "d": "M289.5 557.1 C350.6 557.1 350.6 721 411.6 721",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api003",
+    "to": "dim-policy",
+    "kind": "flow",
+    "idle": false,
+    "d": "M657.9 1176.7 C770 1176.7 770 1600.8 882 1600.8",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online006",
+    "to": "dim-policy",
+    "kind": "flow",
+    "idle": false,
+    "d": "M669.6 732.1 C775.8 732.1 775.8 1590.2 882 1590.2",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online001",
+    "to": "core-metadata",
+    "kind": "flow",
+    "idle": false,
+    "d": "M654 361.6 C742.7 361.6 742.7 55.5 831.3 55.5",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online001",
+    "to": "dim-reconcile",
+    "kind": "flow",
+    "idle": false,
+    "d": "M654 380.4 C721.2 380.4 721.2 1299.6 788.4 1299.6",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online002",
+    "to": "dim-reconcile",
+    "kind": "flow",
+    "idle": false,
+    "d": "M685.2 583.2 C736.8 583.2 736.8 1307.5 788.4 1307.5",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online002",
+    "to": "dim-scan",
+    "kind": "flow",
+    "idle": false,
+    "d": "M685.2 587.7 C754.4 587.7 754.4 1376.5 823.5 1376.5",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online002",
+    "to": "dim-log",
+    "kind": "flow",
+    "idle": false,
+    "d": "M685.2 592.1 C789.2 592.1 789.2 1483.1 893.1 1483.1",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online002",
+    "to": "alfresco",
+    "kind": "flow",
+    "idle": false,
+    "d": "M685.2 569.9 C752.4 569.9 752.4 198.5 819.6 198.5",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online003",
+    "to": "dim-scan",
+    "kind": "flow",
+    "idle": false,
+    "d": "M673.5 450.4 C748.5 450.4 748.5 1369.5 823.5 1369.5",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online003",
+    "to": "alfresco",
+    "kind": "flow",
+    "idle": false,
+    "d": "M673.5 431.6 C746.6 431.6 746.6 190.8 819.6 190.8",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online004",
+    "to": "dim-scan",
+    "kind": "flow",
+    "idle": true,
+    "d": "M677.4 520.4 C750.5 520.4 750.5 1373 823.5 1373",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online004",
+    "to": "alfresco",
+    "kind": "flow",
+    "idle": true,
+    "d": "M677.4 501.6 C748.5 501.6 748.5 194.6 819.6 194.6",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online005",
+    "to": "dim-reconcile",
+    "kind": "flow",
+    "idle": false,
+    "d": "M657.9 654.9 C723.2 654.9 723.2 1315.5 788.4 1315.5",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online005",
+    "to": "dim-scan",
+    "kind": "flow",
+    "idle": false,
+    "d": "M657.9 658.8 C740.7 658.8 740.7 1380 823.5 1380",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online005",
+    "to": "dim-log",
+    "kind": "flow",
+    "idle": false,
+    "d": "M657.9 662.7 C775.5 662.7 775.5 1486.7 893.1 1486.7",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online005",
+    "to": "alfresco",
+    "kind": "flow",
+    "idle": false,
+    "d": "M657.9 643.2 C738.8 643.2 738.8 202.3 819.6 202.3",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online005",
+    "to": "core-notify",
+    "kind": "flow",
+    "idle": false,
+    "d": "M657.9 639.3 C732.9 639.3 732.9 107.6 807.9 107.6",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online006",
+    "to": "dim-scan",
+    "kind": "flow",
+    "idle": false,
+    "d": "M669.6 723.2 C746.6 723.2 746.6 1383.5 823.5 1383.5",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online006",
+    "to": "dim-log",
+    "kind": "flow",
+    "idle": false,
+    "d": "M669.6 727.7 C781.4 727.7 781.4 1490.2 893.1 1490.2",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online006",
+    "to": "alfresco",
+    "kind": "flow",
+    "idle": false,
+    "d": "M669.6 709.9 C744.6 709.9 744.6 206.1 819.6 206.1",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online001",
+    "to": "api-log",
+    "kind": "flow",
+    "idle": true,
+    "d": "M654 367.9 C756.3 367.9 756.3 538.2 858.6 538.2",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online002",
+    "to": "api-log",
+    "kind": "flow",
+    "idle": true,
+    "d": "M685.2 574.3 C771.9 574.3 771.9 551.8 858.6 551.8",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online003",
+    "to": "api-log",
+    "kind": "flow",
+    "idle": true,
+    "d": "M673.5 437.9 C766.1 437.9 766.1 542.8 858.6 542.8",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online004",
+    "to": "api-log",
+    "kind": "flow",
+    "idle": true,
+    "d": "M677.4 507.9 C768 507.9 768 547.3 858.6 547.3",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online005",
+    "to": "api-log",
+    "kind": "flow",
+    "idle": true,
+    "d": "M657.9 647.1 C758.3 647.1 758.3 556.4 858.6 556.4",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online006",
+    "to": "api-log",
+    "kind": "flow",
+    "idle": true,
+    "d": "M669.6 714.3 C764.1 714.3 764.1 560.9 858.6 560.9",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online001",
+    "to": "api-slog",
+    "kind": "flow",
+    "idle": false,
+    "d": "M654 374.1 C758.3 374.1 758.3 608.2 862.5 608.2",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online002",
+    "to": "api-slog",
+    "kind": "flow",
+    "idle": false,
+    "d": "M685.2 578.8 C773.9 578.8 773.9 618.8 862.5 618.8",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online003",
+    "to": "api-slog",
+    "kind": "flow",
+    "idle": false,
+    "d": "M673.5 444.1 C768 444.1 768 611.7 862.5 611.7",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online004",
+    "to": "api-slog",
+    "kind": "flow",
+    "idle": true,
+    "d": "M677.4 514.1 C770 514.1 770 615.3 862.5 615.3",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online005",
+    "to": "api-slog",
+    "kind": "flow",
+    "idle": false,
+    "d": "M657.9 651 C760.2 651 760.2 622.3 862.5 622.3",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "online006",
+    "to": "api-slog",
+    "kind": "flow",
+    "idle": false,
+    "d": "M669.6 718.8 C766.1 718.8 766.1 625.9 862.5 625.9",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "abbyy",
+    "to": "mapping-tool",
+    "kind": "flow",
+    "idle": true,
+    "d": "M273.9 925 C344.7 925 344.7 1281 415.5 1281",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "mapping-tool",
+    "to": "dim-scan",
+    "kind": "flow",
+    "idle": true,
+    "d": "M665.7 1286.2 C744.6 1286.2 744.6 1404.5 823.5 1404.5",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "mapping-tool",
+    "to": "alfresco",
+    "kind": "flow",
+    "idle": true,
+    "d": "M665.7 1275.8 C742.7 1275.8 742.7 225.2 819.6 225.2",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "staff",
+    "to": "api003",
+    "kind": "flow",
+    "idle": false,
+    "d": "M348 1006.1 C385.7 1006.1 385.7 1170 423.3 1170",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api003",
+    "to": "dim-scan",
+    "kind": "flow",
+    "idle": false,
+    "d": "M657.9 1167.8 C740.7 1167.8 740.7 1401 823.5 1401",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api003",
+    "to": "alfresco",
+    "kind": "flow",
+    "idle": false,
+    "d": "M657.9 1163.3 C738.8 1163.3 738.8 221.4 819.6 221.4",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "staff",
+    "to": "api001",
+    "kind": "flow",
+    "idle": false,
+    "d": "M348 992.8 C379.8 992.8 379.8 960 411.6 960",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api001",
+    "to": "dim-scan",
+    "kind": "flow",
+    "idle": false,
+    "d": "M669.6 954.8 C746.6 954.8 746.6 1390.5 823.5 1390.5",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api001",
+    "to": "dim-log",
+    "kind": "flow",
+    "idle": false,
+    "d": "M669.6 965.2 C781.4 965.2 781.4 1500.8 893.1 1500.8",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api003",
+    "to": "core-notify",
+    "kind": "flow",
+    "idle": false,
+    "d": "M657.9 1158.9 C732.9 1158.9 732.9 126.4 807.9 126.4",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api003",
+    "to": "laserlite",
+    "kind": "flow",
+    "idle": true,
+    "d": "M657.9 1181.1 C740.7 1181.1 740.7 1694 823.5 1694",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api003",
+    "to": "dim-log",
+    "kind": "flow",
+    "idle": false,
+    "d": "M657.9 1172.2 C775.5 1172.2 775.5 1507.9 893.1 1507.9",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "staff",
+    "to": "api005",
+    "kind": "flow",
+    "idle": false,
+    "d": "M348 1001.7 C399.3 1001.7 399.3 1100 450.6 1100",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api005",
+    "to": "dim-scan",
+    "kind": "flow",
+    "idle": false,
+    "d": "M630.6 1105.2 C727.1 1105.2 727.1 1397.5 823.5 1397.5",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api005",
+    "to": "core-notify",
+    "kind": "flow",
+    "idle": false,
+    "d": "M630.6 1094.8 C719.3 1094.8 719.3 120.1 807.9 120.1",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "staff",
+    "to": "api004",
+    "kind": "flow",
+    "idle": false,
+    "d": "M348 988.3 C381.8 988.3 381.8 890 415.5 890",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api004",
+    "to": "dim-scan",
+    "kind": "flow",
+    "idle": false,
+    "d": "M665.7 893.1 C744.6 893.1 744.6 1387 823.5 1387",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api004",
+    "to": "dim-log",
+    "kind": "flow",
+    "idle": false,
+    "d": "M665.7 899.4 C779.4 899.4 779.4 1497.3 893.1 1497.3",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api004",
+    "to": "alfresco",
+    "kind": "flow",
+    "idle": false,
+    "d": "M665.7 880.6 C742.7 880.6 742.7 213.7 819.6 213.7",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api004",
+    "to": "api-slog",
+    "kind": "flow",
+    "idle": false,
+    "d": "M665.7 886.9 C764.1 886.9 764.1 632.9 862.5 632.9",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "staff",
+    "to": "dim-ui-done",
+    "kind": "flow",
+    "idle": false,
+    "d": "M348 997.2 C397.4 997.2 397.4 1030 446.7 1030",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "dim-ui-done",
+    "to": "dim-scan",
+    "kind": "flow",
+    "idle": false,
+    "d": "M634.5 1030 C729 1030 729 1394 823.5 1394",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "dim-ui-done",
+    "to": "alfresco",
+    "kind": "flow",
+    "idle": false,
+    "d": "M634.5 1024.8 C727.1 1024.8 727.1 217.5 819.6 217.5",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "dim-ui-done",
+    "to": "laserlite",
+    "kind": "flow",
+    "idle": true,
+    "d": "M634.5 1040.4 C729 1040.4 729 1680 823.5 1680",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "dim-ui-done",
+    "to": "core-notify",
+    "kind": "flow",
+    "idle": false,
+    "d": "M634.5 1019.6 C721.2 1019.6 721.2 113.9 807.9 113.9",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "dim-ui-done",
+    "to": "dim-log",
+    "kind": "flow",
+    "idle": false,
+    "d": "M634.5 1035.2 C763.8 1035.2 763.8 1504.3 893.1 1504.3",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "staff",
+    "to": "api006",
+    "kind": "flow",
+    "idle": false,
+    "d": "M348 983.9 C393.5 983.9 393.5 820 438.9 820",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api006",
+    "to": "dim-log",
+    "kind": "flow",
+    "idle": false,
+    "d": "M642.3 827.8 C767.7 827.8 767.7 1493.7 893.1 1493.7",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api006",
+    "to": "alfresco",
+    "kind": "flow",
+    "idle": false,
+    "d": "M642.3 812.2 C731 812.2 731 209.9 819.6 209.9",
+    "label": [],
+    "labelBox": null
+   },
+   {
+    "from": "api006",
+    "to": "api-slog",
+    "kind": "flow",
+    "idle": false,
+    "d": "M642.3 820 C752.4 820 752.4 629.4 862.5 629.4",
+    "label": [],
+    "labelBox": null
+   }
+  ],
+  "stems": [
+   "M540.6 747 V754",
+   "M540.6 1196 V1203",
+   "M929.1 1422 V1429",
+   "M929.1 1522 V1529",
+   "M929.1 243 V279"
+  ],
+  "nodes": [
+   {
+    "id": "channel",
+    "shape": "actor",
+    "lit": true,
+    "box": {
+     "x": 70.5,
+     "y": 520,
+     "w": 219,
+     "h": 52
+    },
+    "d": "M80.5 520 H279.5 Q289.5 520 289.5 530 V562 Q289.5 572 279.5 572 H80.5 Q70.5 572 70.5 562 V530 Q70.5 520 80.5 520 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 180,
+      "y": 537.5,
+      "text": "external channel"
+     },
+     {
+      "x": 180,
+      "y": 554.5,
+      "text": "Basic auth · X-Request-ID"
+     }
+    ],
+    "title": "external channel Basic auth · X-Request-ID\ne2e/lib/tli-online.mjs"
+   },
+   {
+    "id": "abbyy",
+    "shape": "actor",
+    "lit": false,
+    "box": {
+     "x": 86.10000000000001,
+     "y": 899,
+     "w": 187.79999999999998,
+     "h": 52
+    },
+    "d": "M96.1 899 H263.9 Q273.9 899 273.9 909 V941 Q273.9 951 263.9 951 H96.1 Q86.1 951 86.1 941 V909 Q86.1 899 96.1 899 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 180,
+      "y": 916.5,
+      "text": "ABBYY batch"
+     },
+     {
+      "x": 180,
+      "y": 933.5,
+      "text": "(puts a job in place)"
+     }
+    ],
+    "title": "ABBYY batch (puts a job in place)\ne2e/lib/abbyy.mjs"
+   },
+   {
+    "id": "staff",
+    "shape": "actor",
+    "lit": true,
+    "box": {
+     "x": 12,
+     "y": 969,
+     "w": 336,
+     "h": 52
+    },
+    "d": "M22 969 H338 Q348 969 348 979 V1011 Q348 1021 338 1021 H22 Q12 1021 12 1011 V979 Q12 969 22 969 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 180,
+      "y": 986.5,
+      "text": "staff / Core caller"
+     },
+     {
+      "x": 180,
+      "y": 1003.5,
+      "text": "Done / Reject / Rescan · getWIPDocuments"
+     }
+    ],
+    "title": "staff / Core caller Done / Reject / Rescan · getWIPDocuments\ne2e/lib/tli-api.mjs"
+   },
+   {
+    "id": "online001",
+    "shape": "box",
+    "lit": true,
+    "box": {
+     "x": 427.2,
+     "y": 345,
+     "w": 226.79999999999998,
+     "h": 52
+    },
+    "d": "M430.2 345 H651 Q654 345 654 348 V394 Q654 397 651 397 H430.2 Q427.2 397 427.2 394 V348 Q427.2 345 430.2 345 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 540.6,
+      "y": 362.5,
+      "text": "ONLINE001 checkList"
+     },
+     {
+      "x": 540.6,
+      "y": 379.5,
+      "text": "/tli-online/checkList/{BU}"
+     }
+    ],
+    "title": "ONLINE001 checkList /tli-online/checkList/{BU}\ntli-api/src/main/java/com/bc/dim/api/service/online/OnlineCheckListService.java"
+   },
+   {
+    "id": "online002",
+    "shape": "box",
+    "lit": true,
+    "box": {
+     "x": 396,
+     "y": 555,
+     "w": 289.2,
+     "h": 52
+    },
+    "d": "M399 555 H682.2 Q685.2 555 685.2 558 V604 Q685.2 607 682.2 607 H399 Q396 607 396 604 V558 Q396 555 399 555 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 540.6,
+      "y": 572.5,
+      "text": "ONLINE002 uploadNewDocument"
+     },
+     {
+      "x": 540.6,
+      "y": 589.5,
+      "text": "/tli-online/uploadNewDocument/{BU}"
+     }
+    ],
+    "title": "ONLINE002 uploadNewDocument /tli-online/uploadNewDocument/{BU}\ntli-api/src/main/java/com/bc/dim/api/service/online/OnlineUploadNewDocumentService.java"
+   },
+   {
+    "id": "online003",
+    "shape": "box",
+    "lit": true,
+    "box": {
+     "x": 407.70000000000005,
+     "y": 415,
+     "w": 265.79999999999995,
+     "h": 52
+    },
+    "d": "M410.7 415 H670.5 Q673.5 415 673.5 418 V464 Q673.5 467 670.5 467 H410.7 Q407.7 467 407.7 464 V418 Q407.7 415 410.7 415 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 540.6,
+      "y": 432.5,
+      "text": "ONLINE003 appendDocument"
+     },
+     {
+      "x": 540.6,
+      "y": 449.5,
+      "text": "/tli-online/appendDocument/{BU}"
+     }
+    ],
+    "title": "ONLINE003 appendDocument /tli-online/appendDocument/{BU}\ntli-api/src/main/java/com/bc/dim/api/service/online/OnlineAppendDocumentService.java"
+   },
+   {
+    "id": "online004",
+    "shape": "box",
+    "lit": false,
+    "box": {
+     "x": 403.79999999999995,
+     "y": 485,
+     "w": 273.6,
+     "h": 52
+    },
+    "d": "M406.8 485 H674.4 Q677.4 485 677.4 488 V534 Q677.4 537 674.4 537 H406.8 Q403.8 537 403.8 534 V488 Q403.8 485 406.8 485 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 540.5999999999999,
+      "y": 502.5,
+      "text": "ONLINE004 replaceDocument"
+     },
+     {
+      "x": 540.5999999999999,
+      "y": 519.5,
+      "text": "/tli-online/replaceDocument/{BU}"
+     }
+    ],
+    "title": "ONLINE004 replaceDocument /tli-online/replaceDocument/{BU}\ntli-api/src/main/java/com/bc/dim/api/service/online/OnlineReplaceDocumentService.java"
+   },
+   {
+    "id": "online005",
+    "shape": "box",
+    "lit": true,
+    "box": {
+     "x": 423.3,
+     "y": 625,
+     "w": 234.6,
+     "h": 52
+    },
+    "d": "M426.3 625 H654.9 Q657.9 625 657.9 628 V674 Q657.9 677 654.9 677 H426.3 Q423.3 677 423.3 674 V628 Q423.3 625 426.3 625 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 540.6,
+      "y": 642.5,
+      "text": "ONLINE005 deleteCase"
+     },
+     {
+      "x": 540.6,
+      "y": 659.5,
+      "text": "/tli-online/deleteCase/{BU}"
+     }
+    ],
+    "title": "ONLINE005 deleteCase /tli-online/deleteCase/{BU}\ntli-api/src/main/java/com/bc/dim/api/service/online/OnlineDeleteCaseService.java"
+   },
+   {
+    "id": "online006",
+    "shape": "box",
+    "lit": true,
+    "box": {
+     "x": 411.6,
+     "y": 695,
+     "w": 258,
+     "h": 52
+    },
+    "d": "M414.6 695 H666.6 Q669.6 695 669.6 698 V744 Q669.6 747 666.6 747 H414.6 Q411.6 747 411.6 744 V698 Q411.6 695 414.6 695 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 540.6,
+      "y": 712.5,
+      "text": "ONLINE006 appendStorage"
+     },
+     {
+      "x": 540.6,
+      "y": 729.5,
+      "text": "/tli-online/appendStorage/{BU}"
+     }
+    ],
+    "title": "ONLINE006 appendStorage /tli-online/appendStorage/{BU}\ntli-api/src/main/java/com/bc/dim/api/service/online/OnlineAppendStorageService.java"
+   },
+   {
+    "id": "api003",
+    "shape": "box",
+    "lit": true,
+    "box": {
+     "x": 423.3,
+     "y": 1144,
+     "w": 234.6,
+     "h": 52
+    },
+    "d": "M426.3 1144 H654.9 Q657.9 1144 657.9 1147 V1193 Q657.9 1196 654.9 1196 H426.3 Q423.3 1196 423.3 1193 V1147 Q423.3 1144 426.3 1144 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 540.6,
+      "y": 1161.5,
+      "text": "POST /tli/updateStatus/{BU}"
+     },
+     {
+      "x": 540.6,
+      "y": 1178.5,
+      "text": "API003"
+     }
+    ],
+    "title": "POST /tli/updateStatus/{BU} API003\ntli-api/src/main/java/com/bc/dim/api/controller/tli/TliDimApiController.java"
+   },
+   {
+    "id": "api001",
+    "shape": "box",
+    "lit": true,
+    "box": {
+     "x": 411.6,
+     "y": 934,
+     "w": 258,
+     "h": 52
+    },
+    "d": "M414.6 934 H666.6 Q669.6 934 669.6 937 V983 Q669.6 986 666.6 986 H414.6 Q411.6 986 411.6 983 V937 Q411.6 934 414.6 934 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 540.6,
+      "y": 951.5,
+      "text": "POST /tli/getWIPDocuments/{BU}"
+     },
+     {
+      "x": 540.6,
+      "y": 968.5,
+      "text": "API001"
+     }
+    ],
+    "title": "POST /tli/getWIPDocuments/{BU} API001\ntli-api/src/main/java/com/bc/dim/api/service/tli/TliPosService.java"
+   },
+   {
+    "id": "api005",
+    "shape": "box",
+    "lit": true,
+    "box": {
+     "x": 450.6,
+     "y": 1074,
+     "w": 180,
+     "h": 52
+    },
+    "d": "M453.6 1074 H627.6 Q630.6 1074 630.6 1077 V1123 Q630.6 1126 627.6 1126 H453.6 Q450.6 1126 450.6 1123 V1077 Q450.6 1074 453.6 1074 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 540.6,
+      "y": 1091.5,
+      "text": "POST /tli/updateCLNo"
+     },
+     {
+      "x": 540.6,
+      "y": 1108.5,
+      "text": "API005"
+     }
+    ],
+    "title": "POST /tli/updateCLNo API005\ntli-api/src/main/java/com/bc/dim/api/service/tli/TliClService.java"
+   },
+   {
+    "id": "api004",
+    "shape": "box",
+    "lit": true,
+    "box": {
+     "x": 415.5,
+     "y": 864,
+     "w": 250.2,
+     "h": 52
+    },
+    "d": "M418.5 864 H662.7 Q665.7 864 665.7 867 V913 Q665.7 916 662.7 916 H418.5 Q415.5 916 415.5 913 V867 Q415.5 864 418.5 864 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 540.6,
+      "y": 881.5,
+      "text": "POST /tli/uploadDocument/{BU}"
+     },
+     {
+      "x": 540.6,
+      "y": 898.5,
+      "text": "API004"
+     }
+    ],
+    "title": "POST /tli/uploadDocument/{BU} API004\ntli-api/src/main/java/com/bc/dim/api/service/tli/TliUwService.java"
+   },
+   {
+    "id": "api006",
+    "shape": "box",
+    "lit": true,
+    "box": {
+     "x": 438.9,
+     "y": 794,
+     "w": 203.4,
+     "h": 52
+    },
+    "d": "M441.9 794 H639.3 Q642.3 794 642.3 797 V843 Q642.3 846 639.3 846 H441.9 Q438.9 846 438.9 843 V797 Q438.9 794 441.9 794 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 540.6,
+      "y": 811.5,
+      "text": "POST /tli/download/{BU}"
+     },
+     {
+      "x": 540.6,
+      "y": 828.5,
+      "text": "API006"
+     }
+    ],
+    "title": "POST /tli/download/{BU} API006\ntli-api/src/main/java/com/bc/dim/api/controller/tli/TliDimApiController.java"
+   },
+   {
+    "id": "api-log",
+    "shape": "store",
+    "lit": false,
+    "box": {
+     "x": 858.6,
+     "y": 523.0714285714286,
+     "w": 141,
+     "h": 53
+    },
+    "d": "M858.6 529.1 A70.5 6 0 0 1 999.6 529.1 V570.1 A70.5 6 0 0 1 858.6 570.1 Z",
+    "rim": "M858.6 529.1 A70.5 6 0 0 0 999.6 529.1",
+    "lines": [
+     {
+      "x": 929.1,
+      "y": 552.5714285714286,
+      "text": "application.log"
+     }
+    ],
+    "title": "application.log"
+   },
+   {
+    "id": "api-slog",
+    "shape": "store",
+    "lit": true,
+    "box": {
+     "x": 862.5,
+     "y": 594.0714285714286,
+     "w": 133.2,
+     "h": 53
+    },
+    "d": "M862.5 600.1 A66.6 6 0 0 1 995.7 600.1 V641.1 A66.6 6 0 0 1 862.5 641.1 Z",
+    "rim": "M862.5 600.1 A66.6 6 0 0 0 995.7 600.1",
+    "lines": [
+     {
+      "x": 929.1,
+      "y": 623.5714285714286,
+      "text": "structured.log"
+     }
+    ],
+    "title": "structured.log"
+   },
+   {
+    "id": "mapping-tool",
+    "shape": "box",
+    "lit": false,
+    "box": {
+     "x": 415.5,
+     "y": 1255,
+     "w": 250.2,
+     "h": 52
+    },
+    "d": "M418.5 1255 H662.7 Q665.7 1255 665.7 1258 V1304 Q665.7 1307 662.7 1307 H418.5 Q415.5 1307 415.5 1304 V1258 Q415.5 1255 418.5 1255 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 540.6,
+      "y": 1272.5,
+      "text": "tli-mapping-tool"
+     },
+     {
+      "x": 540.6,
+      "y": 1289.5,
+      "text": "Index/*.txt consumed · import"
+     }
+    ],
+    "title": "tli-mapping-tool Index/*.txt consumed · import\ntli-mapping-tool/src/main/java/com/bc/dim/mapping/processor"
+   },
+   {
+    "id": "core-metadata",
+    "shape": "box",
+    "lit": true,
+    "box": {
+     "x": 831.3000000000001,
+     "y": 38,
+     "w": 195.6,
+     "h": 35
+    },
+    "d": "M834.3 38 H1023.9 Q1026.9 38 1026.9 41 V70 Q1026.9 73 1023.9 73 H834.3 Q831.3 73 831.3 70 V41 Q831.3 38 834.3 38 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 929.1,
+      "y": 55.5,
+      "text": "/Core/getMetadata/{BU}"
+     }
+    ],
+    "title": "/Core/getMetadata/{BU}\ntli-client-libraries/mock-core-api-server"
+   },
+   {
+    "id": "core-notify",
+    "shape": "box",
+    "lit": true,
+    "box": {
+     "x": 807.9000000000001,
+     "y": 91,
+     "w": 242.4,
+     "h": 52
+    },
+    "d": "M810.9 91 H1047.3 Q1050.3 91 1050.3 94 V140 Q1050.3 143 1047.3 143 H810.9 Q807.9 143 807.9 140 V94 Q807.9 91 810.9 91 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 929.1000000000001,
+      "y": 108.5,
+      "text": "/Core/notifyStatus (CORE005)"
+     },
+     {
+      "x": 929.1000000000001,
+      "y": 125.5,
+      "text": "mock_notify_status_log"
+     }
+    ],
+    "title": "/Core/notifyStatus (CORE005) mock_notify_status_log\ntli-client-libraries/mock-core-api-server"
+   },
+   {
+    "id": "dim-reconcile",
+    "shape": "store",
+    "lit": true,
+    "box": {
+     "x": 788.4000000000001,
+     "y": 1281,
+     "w": 281.4,
+     "h": 53
+    },
+    "d": "M788.4 1287 A140.7 6 0 0 1 1069.8 1287 V1328 A140.7 6 0 0 1 788.4 1328 Z",
+    "rim": "M788.4 1287 A140.7 6 0 0 0 1069.8 1287",
+    "lines": [
+     {
+      "x": 929.1000000000001,
+      "y": 1310.5,
+      "text": "tr_reconcile_index · tr_reconcile"
+     }
+    ],
+    "title": "tr_reconcile_index · tr_reconcile"
+   },
+   {
+    "id": "dim-scan",
+    "shape": "store",
+    "lit": true,
+    "box": {
+     "x": 823.5,
+     "y": 1352,
+     "w": 211.2,
+     "h": 70
+    },
+    "d": "M823.5 1358 A105.6 6 0 0 1 1034.7 1358 V1416 A105.6 6 0 0 1 823.5 1416 Z",
+    "rim": "M823.5 1358 A105.6 6 0 0 0 1034.7 1358",
+    "lines": [
+     {
+      "x": 929.1,
+      "y": 1381.5,
+      "text": "tr_scan_parent · tr_scan"
+     },
+     {
+      "x": 929.1,
+      "y": 1398.5,
+      "text": "tr_scan_doc"
+     }
+    ],
+    "title": "tr_scan_parent · tr_scan tr_scan_doc"
+   },
+   {
+    "id": "dim-policy",
+    "shape": "store",
+    "lit": true,
+    "box": {
+     "x": 882,
+     "y": 1569,
+     "w": 94.2,
+     "h": 53
+    },
+    "d": "M882 1575 A47.1 6 0 0 1 976.2 1575 V1616 A47.1 6 0 0 1 882 1616 Z",
+    "rim": "M882 1575 A47.1 6 0 0 0 976.2 1575",
+    "lines": [
+     {
+      "x": 929.1,
+      "y": 1598.5,
+      "text": "tr_policy"
+     }
+    ],
+    "title": "tr_policy"
+   },
+   {
+    "id": "dim-log",
+    "shape": "store",
+    "lit": true,
+    "box": {
+     "x": 893.1,
+     "y": 1469,
+     "w": 72,
+     "h": 53
+    },
+    "d": "M893.1 1475 A36 6 0 0 1 965.1 1475 V1516 A36 6 0 0 1 893.1 1516 Z",
+    "rim": "M893.1 1475 A36 6 0 0 0 965.1 1475",
+    "lines": [
+     {
+      "x": 929.1,
+      "y": 1498.5,
+      "text": "tr_log"
+     }
+    ],
+    "title": "tr_log"
+   },
+   {
+    "id": "alfresco",
+    "shape": "store",
+    "lit": true,
+    "box": {
+     "x": 819.6,
+     "y": 173,
+     "w": 219,
+     "h": 70
+    },
+    "d": "M819.6 179 A109.5 6 0 0 1 1038.6 179 V237 A109.5 6 0 0 1 819.6 237 Z",
+    "rim": "M819.6 179 A109.5 6 0 0 0 1038.6 179",
+    "lines": [
+     {
+      "x": 929.1,
+      "y": 202.5,
+      "text": "Alfresco"
+     },
+     {
+      "x": 929.1,
+      "y": 219.5,
+      "text": "WPG / WPR / STR documents"
+     }
+    ],
+    "title": "Alfresco WPG / WPR / STR documents"
+   },
+   {
+    "id": "laserlite",
+    "shape": "store",
+    "lit": false,
+    "box": {
+     "x": 823.5,
+     "y": 1652,
+     "w": 211.2,
+     "h": 70
+    },
+    "d": "M823.5 1658 A105.6 6 0 0 1 1034.7 1658 V1716 A105.6 6 0 0 1 823.5 1716 Z",
+    "rim": "M823.5 1658 A105.6 6 0 0 0 1034.7 1658",
+    "lines": [
+     {
+      "x": 929.1,
+      "y": 1681.5,
+      "text": "LaserLite"
+     },
+     {
+      "x": 929.1,
+      "y": 1698.5,
+      "text": "work / output TIFF files"
+     }
+    ],
+    "title": "LaserLite work / output TIFF files\ntli-api/src/main/java/com/bc/dim/api/service/tli/TliUwService.java"
+   },
+   {
+    "id": "dim-ui-done",
+    "shape": "box",
+    "lit": true,
+    "box": {
+     "x": 446.7,
+     "y": 1004,
+     "w": 187.79999999999998,
+     "h": 52
+    },
+    "d": "M449.7 1004 H631.5 Q634.5 1004 634.5 1007 V1053 Q634.5 1056 631.5 1056 H449.7 Q446.7 1056 446.7 1053 V1007 Q446.7 1004 449.7 1004 Z",
+    "rim": "",
+    "lines": [
+     {
+      "x": 540.6,
+      "y": 1021.5,
+      "text": "POST /dim-ui/done"
+     },
+     {
+      "x": 540.6,
+      "y": 1038.5,
+      "text": "UW Done from staff UI"
+     }
+    ],
+    "title": "POST /dim-ui/done UW Done from staff UI\ntli-api/src/main/java/com/bc/dim/api/controller/dimui/DocumentManagementController.java"
+   }
+  ],
+  "pins": [
+   {
+    "key": "P1",
+    "at": "dim-scan",
+    "status": "pass",
+    "box": {
+     "x": 856.5,
+     "y": 1429,
+     "w": 145.2,
+     "h": 22
+    },
+    "keyW": 29.4,
+    "texts": [
+     {
+      "x": 865.5,
+      "y": 1440,
+      "text": "P1",
+      "part": "key"
+     },
+     {
+      "x": 891.9,
+      "y": 1440,
+      "text": "tr_scan_parent",
+      "part": "label"
+     }
+    ],
+    "title": "P1"
+   },
+   {
+    "key": "P2",
+    "at": "api003",
+    "status": "fail",
+    "box": {
+     "x": 470.7,
+     "y": 1203,
+     "w": 139.8,
+     "h": 22
+    },
+    "keyW": 29.4,
+    "texts": [
+     {
+      "x": 479.7,
+      "y": 1214,
+      "text": "P2",
+      "part": "key"
+     },
+     {
+      "x": 506.09999999999997,
+      "y": 1214,
+      "text": "Done",
+      "part": "label"
+     },
+     {
+      "x": 543.9,
+      "y": 1214,
+      "text": "2 failed",
+      "part": "problems"
+     }
+    ],
+    "title": "P2"
+   },
+   {
+    "key": "P3",
+    "at": "alfresco",
+    "status": "fail",
+    "box": {
+     "x": 733.2,
+     "y": 250,
+     "w": 391.8,
+     "h": 22
+    },
+    "keyW": 29.4,
+    "texts": [
+     {
+      "x": 742.2,
+      "y": 261,
+      "text": "P3",
+      "part": "key"
+     },
+     {
+      "x": 768.6,
+      "y": 261,
+      "text": "Done documents under the cl…",
+      "part": "label"
+     },
+     {
+      "x": 979.2,
+      "y": 261,
+      "text": "1 failed, 2 blocked",
+      "part": "problems"
+     }
+    ],
+    "title": "P3"
+   },
+   {
+    "key": "P4",
+    "at": "online006",
+    "status": "blocked",
+    "box": {
+     "x": 434.70000000000005,
+     "y": 754,
+     "w": 211.8,
+     "h": 22
+    },
+    "keyW": 29.4,
+    "texts": [
+     {
+      "x": 443.70000000000005,
+      "y": 765,
+      "text": "P4",
+      "part": "key"
+     },
+     {
+      "x": 470.1,
+      "y": 765,
+      "text": "appendStorage",
+      "part": "label"
+     },
+     {
+      "x": 572.7,
+      "y": 765,
+      "text": "1 blocked",
+      "part": "problems"
+     }
+    ],
+    "title": "P4"
+   },
+   {
+    "key": "P5",
+    "at": "alfresco",
+    "status": "fail",
+    "box": {
+     "x": 878.1,
+     "y": 279,
+     "w": 102,
+     "h": 22
+    },
+    "keyW": 29.4,
+    "texts": [
+     {
+      "x": 887.1,
+      "y": 290,
+      "text": "P5",
+      "part": "key"
+     },
+     {
+      "x": 913.5,
+      "y": 290,
+      "text": "3 failed",
+      "part": "problems"
+     }
+    ],
+    "title": "P5"
+   },
+   {
+    "key": "P6",
+    "at": "dim-log",
+    "status": "skip",
+    "box": {
+     "x": 912.9,
+     "y": 1529,
+     "w": 32.4,
+     "h": 22
+    },
+    "keyW": 32.4,
+    "texts": [
+     {
+      "x": 921.9,
+      "y": 1540,
+      "text": "P6",
+      "part": "key"
+     }
+    ],
+    "title": "P6"
+   }
+  ]
+ },
+ "keyCells": [
+  "M867.5 1429.8H885.9V1450.3H867.5A10.3 10.3 0 0 1 867.5 1429.8Z",
+  "M481.7 1203.8H500.1V1224.3H481.7A10.3 10.3 0 0 1 481.7 1203.8Z",
+  "M744.2 250.8H762.6V271.3H744.2A10.3 10.3 0 0 1 744.2 250.8Z",
+  "M445.7 754.8H464.1V775.3H445.7A10.3 10.3 0 0 1 445.7 754.8Z",
+  "M889.1 279.8H907.5V300.3H889.1A10.3 10.3 0 0 1 889.1 279.8Z",
+  "M923.9 1529.8H945.3V1550.3H923.9A10.3 10.3 0 0 1 923.9 1529.8Z"
+ ]
+}

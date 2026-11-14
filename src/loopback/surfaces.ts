@@ -9,6 +9,7 @@ export type SurfaceId =
   | 'journal'
   | 'timeline'
   | 'analyses'
+  | 'trail'
   | 'reviews'
   | 'commands'
   | 'tools'
@@ -169,6 +170,15 @@ export const SURFACES: readonly SurfaceDef[] = [
     scope: 'project',
     access: 'open',
     href: (ctx) => (ctx.project ? `/analyses?project=${encodeURIComponent(ctx.project.projectId)}` : null),
+  },
+  {
+    id: 'trail',
+    title: 'Bug trails',
+    summary: 'Pre-fix bug diagnoses on the system map',
+    group: 'project',
+    scope: 'project',
+    access: 'open',
+    href: (ctx) => (ctx.project ? `/trail?project=${encodeURIComponent(ctx.project.projectId)}` : null),
   },
   {
     id: 'reviews',

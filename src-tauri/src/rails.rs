@@ -985,7 +985,7 @@ fn push_rolling(buf: &mut Vec<u8>, chunk: &[u8]) {
 }
 
 /// The last ≤ `TAIL_LINES` lines of `bytes`, at most `TAIL_BYTES` long.
-fn output_tail(bytes: &[u8]) -> String {
+pub(crate) fn output_tail(bytes: &[u8]) -> String {
     let text = String::from_utf8_lossy(bytes);
     let text = text.trim_end_matches(['\n', '\r']);
     let start = text

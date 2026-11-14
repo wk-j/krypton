@@ -1,0 +1,679 @@
+{
+  "input": {
+    "map": {
+      "direction": "LR",
+      "groups": [
+        {
+          "id": "tli-api",
+          "label": "tli-api"
+        },
+        {
+          "id": "dim",
+          "label": "DIM DB"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "channel",
+          "label": "external channel\nBasic auth · X-Request-ID",
+          "group": null,
+          "shape": "actor",
+          "source": "e2e/lib/tli-online.mjs"
+        },
+        {
+          "id": "staff",
+          "label": "staff / Core caller\nDone / Reject / Rescan · getWIPDocuments",
+          "group": null,
+          "shape": "actor",
+          "source": "e2e/lib/tli-api.mjs"
+        },
+        {
+          "id": "online006",
+          "label": "ONLINE006 appendStorage\n/tli-online/appendStorage/{BU}",
+          "group": "tli-api",
+          "shape": "box",
+          "source": "tli-api/src/main/java/com/bc/dim/api/service/online/OnlineAppendStorageService.java"
+        },
+        {
+          "id": "api003",
+          "label": "POST /tli/updateStatus/{BU}\nAPI003",
+          "group": "tli-api",
+          "shape": "box",
+          "source": "tli-api/src/main/java/com/bc/dim/api/controller/tli/TliDimApiController.java"
+        },
+        {
+          "id": "dim-policy",
+          "label": "tr_policy",
+          "group": "dim",
+          "shape": "store",
+          "source": null
+        },
+        {
+          "id": "alfresco",
+          "label": "Alfresco\nWPG / WPR / STR documents",
+          "group": null,
+          "shape": "store",
+          "source": null
+        }
+      ],
+      "edges": [
+        {
+          "from": "channel",
+          "to": "online006",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api003",
+          "to": "dim-policy",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online006",
+          "to": "dim-policy",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "online006",
+          "to": "alfresco",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "staff",
+          "to": "api003",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "api003",
+          "to": "alfresco",
+          "label": null,
+          "kind": "flow"
+        }
+      ]
+    },
+    "pins": [
+      {
+        "key": "1",
+        "at": "alfresco",
+        "label": "symptom",
+        "status": "symptom",
+        "title": "1 symptom @ alfresco"
+      },
+      {
+        "key": "3",
+        "at": "dim-policy",
+        "label": "ruled out",
+        "status": "ruled out",
+        "title": "3 ruled out @ dim-policy"
+      },
+      {
+        "key": "4",
+        "at": "api003",
+        "label": "suspect",
+        "status": "suspect",
+        "title": "4 suspect @ api003"
+      },
+      {
+        "key": "5",
+        "at": "api003",
+        "label": "root cause",
+        "status": "root cause",
+        "title": "5 root cause @ api003"
+      },
+      {
+        "key": "6",
+        "at": "online006",
+        "label": "root cause",
+        "status": "root cause",
+        "title": "6 root cause @ online006"
+      },
+      {
+        "key": "?7",
+        "at": "api003",
+        "label": "decision",
+        "status": "decision",
+        "title": "?7 decision @ api003"
+      },
+      {
+        "key": "8",
+        "at": "api003",
+        "label": "plan",
+        "status": "plan",
+        "title": "8 plan @ api003"
+      },
+      {
+        "key": "9",
+        "at": "online006",
+        "label": "plan",
+        "status": "plan",
+        "title": "9 plan @ online006"
+      },
+      {
+        "key": "?10",
+        "at": "alfresco",
+        "label": "decision",
+        "status": "decision",
+        "title": "?10 decision @ alfresco"
+      }
+    ],
+    "lit": [
+      "channel",
+      "staff",
+      "online006",
+      "api003",
+      "dim-policy",
+      "alfresco"
+    ]
+  },
+  "expected": {
+    "width": 957,
+    "height": 358,
+    "groups": [
+      {
+        "id": "dim",
+        "box": {
+          "x": 702,
+          "y": 15.36533171867855,
+          "w": 243,
+          "h": 120
+        },
+        "label": {
+          "x": 712,
+          "y": 28.36533171867855,
+          "text": "DIM DB"
+        },
+        "title": "DIM DB"
+      },
+      {
+        "id": "tli-api",
+        "box": {
+          "x": 384,
+          "y": 12,
+          "w": 282,
+          "h": 334
+        },
+        "label": {
+          "x": 394,
+          "y": 25,
+          "text": "tli-api"
+        },
+        "title": "tli-api"
+      }
+    ],
+    "edges": [
+      {
+        "from": "channel",
+        "to": "online006",
+        "kind": "flow",
+        "idle": false,
+        "d": "M289.5 64 C342.8 64 342.8 64 396 64",
+        "label": [],
+        "labelBox": null
+      },
+      {
+        "from": "api003",
+        "to": "dim-policy",
+        "kind": "flow",
+        "idle": false,
+        "d": "M642.3 186.8 C709.3 186.8 709.3 73.2 776.4 73.2",
+        "label": [],
+        "labelBox": null
+      },
+      {
+        "from": "online006",
+        "to": "dim-policy",
+        "kind": "flow",
+        "idle": false,
+        "d": "M654 58.8 C715.2 58.8 715.2 62.6 776.4 62.6",
+        "label": [],
+        "labelBox": null
+      },
+      {
+        "from": "online006",
+        "to": "alfresco",
+        "kind": "flow",
+        "idle": false,
+        "d": "M654 69.2 C684 69.2 684 181.4 714 181.4",
+        "label": [],
+        "labelBox": null
+      },
+      {
+        "from": "staff",
+        "to": "api003",
+        "kind": "flow",
+        "idle": false,
+        "d": "M348 191.9 C377.9 191.9 377.9 192 407.7 192",
+        "label": [],
+        "labelBox": null
+      },
+      {
+        "from": "api003",
+        "to": "alfresco",
+        "kind": "flow",
+        "idle": false,
+        "d": "M642.3 197.2 C678.2 197.2 678.2 195.4 714 195.4",
+        "label": [],
+        "labelBox": null
+      }
+    ],
+    "stems": [
+      "M525 90 V126",
+      "M525 218 V312",
+      "M823.5 94.4 V101.4",
+      "M823.5 223.4 V259.4"
+    ],
+    "nodes": [
+      {
+        "id": "channel",
+        "shape": "actor",
+        "lit": true,
+        "box": {
+          "x": 70.5,
+          "y": 38,
+          "w": 219,
+          "h": 52
+        },
+        "d": "M80.5 38 H279.5 Q289.5 38 289.5 48 V80 Q289.5 90 279.5 90 H80.5 Q70.5 90 70.5 80 V48 Q70.5 38 80.5 38 Z",
+        "rim": "",
+        "lines": [
+          {
+            "x": 180,
+            "y": 55.5,
+            "text": "external channel"
+          },
+          {
+            "x": 180,
+            "y": 72.5,
+            "text": "Basic auth · X-Request-ID"
+          }
+        ],
+        "title": "external channel Basic auth · X-Request-ID\ne2e/lib/tli-online.mjs"
+      },
+      {
+        "id": "staff",
+        "shape": "actor",
+        "lit": true,
+        "box": {
+          "x": 12,
+          "y": 165.87929562471422,
+          "w": 336,
+          "h": 52
+        },
+        "d": "M22 165.9 H338 Q348 165.9 348 175.9 V207.9 Q348 217.9 338 217.9 H22 Q12 217.9 12 207.9 V175.9 Q12 165.9 22 165.9 Z",
+        "rim": "",
+        "lines": [
+          {
+            "x": 180,
+            "y": 183.37929562471422,
+            "text": "staff / Core caller"
+          },
+          {
+            "x": 180,
+            "y": 200.37929562471422,
+            "text": "Done / Reject / Rescan · getWIPDocuments"
+          }
+        ],
+        "title": "staff / Core caller Done / Reject / Rescan · getWIPDocuments\ne2e/lib/tli-api.mjs"
+      },
+      {
+        "id": "online006",
+        "shape": "box",
+        "lit": true,
+        "box": {
+          "x": 396,
+          "y": 38,
+          "w": 258,
+          "h": 52
+        },
+        "d": "M399 38 H651 Q654 38 654 41 V87 Q654 90 651 90 H399 Q396 90 396 87 V41 Q396 38 399 38 Z",
+        "rim": "",
+        "lines": [
+          {
+            "x": 525,
+            "y": 55.5,
+            "text": "ONLINE006 appendStorage"
+          },
+          {
+            "x": 525,
+            "y": 72.5,
+            "text": "/tli-online/appendStorage/{BU}"
+          }
+        ],
+        "title": "ONLINE006 appendStorage /tli-online/appendStorage/{BU}\ntli-api/src/main/java/com/bc/dim/api/service/online/OnlineAppendStorageService.java"
+      },
+      {
+        "id": "api003",
+        "shape": "box",
+        "lit": true,
+        "box": {
+          "x": 407.7,
+          "y": 166,
+          "w": 234.6,
+          "h": 52
+        },
+        "d": "M410.7 166 H639.3 Q642.3 166 642.3 169 V215 Q642.3 218 639.3 218 H410.7 Q407.7 218 407.7 215 V169 Q407.7 166 410.7 166 Z",
+        "rim": "",
+        "lines": [
+          {
+            "x": 525,
+            "y": 183.5,
+            "text": "POST /tli/updateStatus/{BU}"
+          },
+          {
+            "x": 525,
+            "y": 200.5,
+            "text": "API003"
+          }
+        ],
+        "title": "POST /tli/updateStatus/{BU} API003\ntli-api/src/main/java/com/bc/dim/api/controller/tli/TliDimApiController.java"
+      },
+      {
+        "id": "dim-policy",
+        "shape": "store",
+        "lit": true,
+        "box": {
+          "x": 776.4,
+          "y": 41.36533171867855,
+          "w": 94.2,
+          "h": 53
+        },
+        "d": "M776.4 47.4 A47.1 6 0 0 1 870.6 47.4 V88.4 A47.1 6 0 0 1 776.4 88.4 Z",
+        "rim": "M776.4 47.4 A47.1 6 0 0 0 870.6 47.4",
+        "lines": [
+          {
+            "x": 823.5,
+            "y": 70.86533171867855,
+            "text": "tr_policy"
+          }
+        ],
+        "title": "tr_policy"
+      },
+      {
+        "id": "alfresco",
+        "shape": "store",
+        "lit": true,
+        "box": {
+          "x": 714,
+          "y": 153.36533171867856,
+          "w": 219,
+          "h": 70
+        },
+        "d": "M714 159.4 A109.5 6 0 0 1 933 159.4 V217.4 A109.5 6 0 0 1 714 217.4 Z",
+        "rim": "M714 159.4 A109.5 6 0 0 0 933 159.4",
+        "lines": [
+          {
+            "x": 823.5,
+            "y": 182.86533171867856,
+            "text": "Alfresco"
+          },
+          {
+            "x": 823.5,
+            "y": 199.86533171867856,
+            "text": "WPG / WPR / STR documents"
+          }
+        ],
+        "title": "Alfresco WPG / WPR / STR documents"
+      }
+    ],
+    "pins": [
+      {
+        "key": "1",
+        "at": "alfresco",
+        "status": "symptom",
+        "box": {
+          "x": 779.7,
+          "y": 230.36533171867856,
+          "w": 87.6,
+          "h": 22
+        },
+        "keyW": 22.2,
+        "texts": [
+          {
+            "x": 788.7,
+            "y": 241.36533171867856,
+            "text": "1",
+            "part": "key"
+          },
+          {
+            "x": 807.9000000000001,
+            "y": 241.36533171867856,
+            "text": "symptom",
+            "part": "label"
+          }
+        ],
+        "title": "1 symptom @ alfresco"
+      },
+      {
+        "key": "3",
+        "at": "dim-policy",
+        "status": "ruled out",
+        "box": {
+          "x": 772.5,
+          "y": 101.36533171867855,
+          "w": 102,
+          "h": 22
+        },
+        "keyW": 22.2,
+        "texts": [
+          {
+            "x": 781.5,
+            "y": 112.36533171867855,
+            "text": "3",
+            "part": "key"
+          },
+          {
+            "x": 800.7,
+            "y": 112.36533171867855,
+            "text": "ruled out",
+            "part": "label"
+          }
+        ],
+        "title": "3 ruled out @ dim-policy"
+      },
+      {
+        "key": "4",
+        "at": "api003",
+        "status": "suspect",
+        "box": {
+          "x": 481.2,
+          "y": 225,
+          "w": 87.6,
+          "h": 22
+        },
+        "keyW": 22.2,
+        "texts": [
+          {
+            "x": 490.2,
+            "y": 236,
+            "text": "4",
+            "part": "key"
+          },
+          {
+            "x": 509.4,
+            "y": 236,
+            "text": "suspect",
+            "part": "label"
+          }
+        ],
+        "title": "4 suspect @ api003"
+      },
+      {
+        "key": "5",
+        "at": "api003",
+        "status": "root cause",
+        "box": {
+          "x": 470.4,
+          "y": 254,
+          "w": 109.2,
+          "h": 22
+        },
+        "keyW": 22.2,
+        "texts": [
+          {
+            "x": 479.4,
+            "y": 265,
+            "text": "5",
+            "part": "key"
+          },
+          {
+            "x": 498.59999999999997,
+            "y": 265,
+            "text": "root cause",
+            "part": "label"
+          }
+        ],
+        "title": "5 root cause @ api003"
+      },
+      {
+        "key": "6",
+        "at": "online006",
+        "status": "root cause",
+        "box": {
+          "x": 470.4,
+          "y": 97,
+          "w": 109.2,
+          "h": 22
+        },
+        "keyW": 22.2,
+        "texts": [
+          {
+            "x": 479.4,
+            "y": 108,
+            "text": "6",
+            "part": "key"
+          },
+          {
+            "x": 498.59999999999997,
+            "y": 108,
+            "text": "root cause",
+            "part": "label"
+          }
+        ],
+        "title": "6 root cause @ online006"
+      },
+      {
+        "key": "?7",
+        "at": "api003",
+        "status": "decision",
+        "box": {
+          "x": 474,
+          "y": 282.99999999999994,
+          "w": 102,
+          "h": 22
+        },
+        "keyW": 29.4,
+        "texts": [
+          {
+            "x": 483,
+            "y": 293.99999999999994,
+            "text": "?7",
+            "part": "key"
+          },
+          {
+            "x": 509.4,
+            "y": 293.99999999999994,
+            "text": "decision",
+            "part": "label"
+          }
+        ],
+        "title": "?7 decision @ api003"
+      },
+      {
+        "key": "8",
+        "at": "api003",
+        "status": "plan",
+        "box": {
+          "x": 492,
+          "y": 311.99999999999994,
+          "w": 66,
+          "h": 22
+        },
+        "keyW": 22.2,
+        "texts": [
+          {
+            "x": 501,
+            "y": 322.99999999999994,
+            "text": "8",
+            "part": "key"
+          },
+          {
+            "x": 520.2,
+            "y": 322.99999999999994,
+            "text": "plan",
+            "part": "label"
+          }
+        ],
+        "title": "8 plan @ api003"
+      },
+      {
+        "key": "9",
+        "at": "online006",
+        "status": "plan",
+        "box": {
+          "x": 492,
+          "y": 126,
+          "w": 66,
+          "h": 22
+        },
+        "keyW": 22.2,
+        "texts": [
+          {
+            "x": 501,
+            "y": 137,
+            "text": "9",
+            "part": "key"
+          },
+          {
+            "x": 520.2,
+            "y": 137,
+            "text": "plan",
+            "part": "label"
+          }
+        ],
+        "title": "9 plan @ online006"
+      },
+      {
+        "key": "?10",
+        "at": "alfresco",
+        "status": "decision",
+        "box": {
+          "x": 768.9,
+          "y": 259.36533171867853,
+          "w": 109.2,
+          "h": 22
+        },
+        "keyW": 36.6,
+        "texts": [
+          {
+            "x": 777.9,
+            "y": 270.36533171867853,
+            "text": "?10",
+            "part": "key"
+          },
+          {
+            "x": 811.5,
+            "y": 270.36533171867853,
+            "text": "decision",
+            "part": "label"
+          }
+        ],
+        "title": "?10 decision @ alfresco"
+      }
+    ]
+  },
+  "keyCells": [
+    "M790.7 231.1H801.9V251.6H790.7A10.3 10.3 0 0 1 790.7 231.1Z",
+    "M783.5 102.1H794.7V122.6H783.5A10.3 10.3 0 0 1 783.5 102.1Z",
+    "M492.2 225.8H503.4V246.3H492.2A10.3 10.3 0 0 1 492.2 225.8Z",
+    "M481.4 254.8H492.6V275.3H481.4A10.3 10.3 0 0 1 481.4 254.8Z",
+    "M481.4 97.8H492.6V118.3H481.4A10.3 10.3 0 0 1 481.4 97.8Z",
+    "M485 283.7H503.4V304.2H485A10.3 10.3 0 0 1 485 283.7Z",
+    "M503 312.7H514.2V333.2H503A10.3 10.3 0 0 1 503 312.7Z",
+    "M503 126.8H514.2V147.3H503A10.3 10.3 0 0 1 503 126.8Z",
+    "M779.9 260.1H805.5V280.6H779.9A10.3 10.3 0 0 1 779.9 260.1Z"
+  ]
+}

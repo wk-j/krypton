@@ -84,6 +84,12 @@ export const HASH_COMMANDS: readonly HashCommand[] = [
   { name: 'ui-gallery', args: '', description: 'open the live GenUI component gallery in a browser' },
   { name: 'docs', args: '', description: 'open the repo docs browser in a browser' },
   { name: 'analyses', args: '', description: 'open the GitHub issue analysis viewer in a browser' },
+  {
+    name: 'trail',
+    args: '[trust | run [<id>]] [<issue>]',
+    description:
+      "open an analysed issue's bug trail in a browser (default: the active ticket's issue); trust / run its repro commands on the analysed commit",
+  },
   { name: 'reviews', args: '', description: 'browse every Review Board ever composed, in a browser (read-only)' },
   {
     name: 'timeline',
@@ -292,6 +298,7 @@ export function commandMeta(): Record<string, CommandMeta> {
     'ui-gallery': { category: 'surface', badges: [] },
     docs: { category: 'surface', badges: [] },
     analyses: { category: 'surface', badges: [] },
+    trail: { category: 'surface', badges: [] },
     reviews: { category: 'surface', badges: [] },
     timeline: {
       category: 'surface',

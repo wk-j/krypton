@@ -1,0 +1,658 @@
+{
+  "input": {
+    "map": {
+      "direction": "TB",
+      "groups": [
+        {
+          "id": "svc",
+          "label": "Order service\n(staging)"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "user",
+          "label": "User",
+          "group": null,
+          "shape": "actor",
+          "source": null
+        },
+        {
+          "id": "gw",
+          "label": "API gateway",
+          "group": "svc",
+          "shape": "gate",
+          "source": "gw/main.go"
+        },
+        {
+          "id": "app",
+          "label": "Orders\nPOST /orders",
+          "group": "svc",
+          "shape": "box",
+          "source": "app/orders.ts"
+        },
+        {
+          "id": "db",
+          "label": "orders DB",
+          "group": "svc",
+          "shape": "store",
+          "source": null
+        },
+        {
+          "id": "queue",
+          "label": "注文キュー\nqueue",
+          "group": null,
+          "shape": "box",
+          "source": null
+        },
+        {
+          "id": "audit",
+          "label": "ระบบตรวจสอบ",
+          "group": null,
+          "shape": "store",
+          "source": null
+        },
+        {
+          "id": "mail",
+          "label": "mailer",
+          "group": null,
+          "shape": "box",
+          "source": null
+        }
+      ],
+      "edges": [
+        {
+          "from": "user",
+          "to": "gw",
+          "label": "request",
+          "kind": "flow"
+        },
+        {
+          "from": "gw",
+          "to": "app",
+          "label": "auth ok",
+          "kind": "flow"
+        },
+        {
+          "from": "app",
+          "to": "db",
+          "label": "insert\nrow",
+          "kind": "flow"
+        },
+        {
+          "from": "db",
+          "to": "app",
+          "label": "rows",
+          "kind": "reply"
+        },
+        {
+          "from": "app",
+          "to": "user",
+          "label": "201 Created",
+          "kind": "reply"
+        },
+        {
+          "from": "user",
+          "to": "db",
+          "label": "direct DB",
+          "kind": "refused"
+        },
+        {
+          "from": "app",
+          "to": "queue",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "queue",
+          "to": "audit",
+          "label": "บันทึก",
+          "kind": "flow"
+        },
+        {
+          "from": "queue",
+          "to": "mail",
+          "label": null,
+          "kind": "flow"
+        },
+        {
+          "from": "audit",
+          "to": "audit",
+          "label": "retry",
+          "kind": "flow"
+        },
+        {
+          "from": "gw",
+          "to": "mail",
+          "label": null,
+          "kind": "refused"
+        }
+      ]
+    },
+    "pins": [
+      {
+        "key": "1",
+        "at": "app",
+        "label": "root cause",
+        "status": "root cause",
+        "title": "1 root cause @ app"
+      },
+      {
+        "key": "?2",
+        "at": "db",
+        "label": "",
+        "status": "",
+        "title": "?2 @ db"
+      },
+      {
+        "key": "3",
+        "at": "gw",
+        "label": "a check group label that is far too long for a pin",
+        "status": "a check group label that is far too long for a pin",
+        "title": "3 a check group label that is far too long for a pin @ gw"
+      },
+      {
+        "key": "4",
+        "at": "app",
+        "label": "plan",
+        "status": "plan",
+        "title": "4 plan @ app"
+      }
+    ],
+    "lit": [
+      "user",
+      "gw",
+      "app",
+      "db",
+      "queue"
+    ]
+  },
+  "expected": {
+    "width": 616.7,
+    "height": 578.5,
+    "groups": [
+      {
+        "id": "svc",
+        "box": {
+          "x": 78.6,
+          "y": 116,
+          "w": 406.09999999999997,
+          "h": 303
+        },
+        "label": {
+          "x": 88.6,
+          "y": 129,
+          "text": "Order service (staging)"
+        },
+        "title": "Order service\n(staging)"
+      }
+    ],
+    "edges": [
+      {
+        "from": "user",
+        "to": "gw",
+        "kind": "flow",
+        "idle": false,
+        "d": "M245.4 61 C245.4 101.5 154.3 101.5 154.3 142",
+        "label": [
+          {
+            "x": 199.82998084647784,
+            "y": 101.49999999997237,
+            "text": "request"
+          }
+        ],
+        "labelBox": {
+          "x": 169.62998084647785,
+          "y": 91.99999999997237,
+          "w": 60.4,
+          "h": 19
+        }
+      },
+      {
+        "from": "gw",
+        "to": "app",
+        "kind": "flow",
+        "idle": false,
+        "d": "M167 177 C167 204.5 300.5 204.5 300.5 232",
+        "label": [
+          {
+            "x": 233.7199999999089,
+            "y": 204.49999999998124,
+            "text": "auth ok"
+          }
+        ],
+        "labelBox": {
+          "x": 203.51999999990892,
+          "y": 194.99999999998124,
+          "w": 60.4,
+          "h": 19
+        }
+      },
+      {
+        "from": "app",
+        "to": "db",
+        "kind": "flow",
+        "idle": false,
+        "d": "M288.7 284 C288.7 319.1 281.3 319.1 281.3 354.1",
+        "label": [
+          {
+            "x": 285.00780389916565,
+            "y": 311.50000000000944,
+            "text": "insert"
+          },
+          {
+            "x": 285.00780389916565,
+            "y": 326.50000000000944,
+            "text": "row"
+          }
+        ],
+        "labelBox": {
+          "x": 258.40780389916563,
+          "y": 302.00000000000944,
+          "w": 53.2,
+          "h": 34
+        }
+      },
+      {
+        "from": "db",
+        "to": "app",
+        "kind": "reply",
+        "idle": false,
+        "d": "M271.9 407 L271.9 425 Q271.9 433 263.9 433 L72.6 433 Q64.6 433 64.6 425 L64.6 226 Q64.6 218 72.6 218 L269.9 218 Q276.9 218 276.9 225 L276.9 232",
+        "label": [
+          {
+            "x": 64.6,
+            "y": 325.5,
+            "text": "rows"
+          }
+        ],
+        "labelBox": {
+          "x": 45.199999999999996,
+          "y": 316,
+          "w": 38.8,
+          "h": 19
+        }
+      },
+      {
+        "from": "app",
+        "to": "user",
+        "kind": "reply",
+        "idle": false,
+        "d": "M271.1 284 L271.1 291 Q271.1 298 264.1 298 L64.6 298 Q56.6 298 56.6 290 L56.6 20 Q56.6 12 64.6 12 L231.2 12 Q238.2 12 238.2 19 L238.2 26",
+        "label": [
+          {
+            "x": 56.6,
+            "y": 155,
+            "text": "201 Created"
+          }
+        ],
+        "labelBox": {
+          "x": 12,
+          "y": 145.5,
+          "w": 89.2,
+          "h": 19
+        }
+      },
+      {
+        "from": "user",
+        "to": "db",
+        "kind": "refused",
+        "idle": false,
+        "d": "M231 61 L231 93.5 Q231 101.5 223 101.5 L84.6 101.5 Q76.6 101.5 76.6 109.5 L76.6 311 Q76.6 319 84.6 319 L254.4 319 Q262.4 319 262.4 327 L262.4 347.1",
+        "label": [
+          {
+            "x": 153.8049808464157,
+            "y": 101.5,
+            "text": "direct DB"
+          }
+        ],
+        "labelBox": {
+          "x": 116.4049808464157,
+          "y": 92,
+          "w": 74.8,
+          "h": 19
+        }
+      },
+      {
+        "from": "app",
+        "to": "queue",
+        "kind": "flow",
+        "idle": false,
+        "d": "M306.3 284 C306.3 319.3 549.8 319.3 549.8 354.5",
+        "label": [],
+        "labelBox": null
+      },
+      {
+        "from": "queue",
+        "to": "audit",
+        "kind": "flow",
+        "idle": true,
+        "d": "M559.2 406.5 C559.2 440.3 549.8 440.3 549.8 474",
+        "label": [
+          {
+            "x": 554.5100000000064,
+            "y": 440.249999999977,
+            "text": "บันทึก"
+          }
+        ],
+        "labelBox": {
+          "x": 535.1100000000064,
+          "y": 430.749999999977,
+          "w": 38.8,
+          "h": 19
+        }
+      },
+      {
+        "from": "queue",
+        "to": "mail",
+        "kind": "flow",
+        "idle": true,
+        "d": "M540.4 406.5 C540.4 444.8 359.2 444.8 359.2 483",
+        "label": [],
+        "labelBox": null
+      },
+      {
+        "from": "audit",
+        "to": "audit",
+        "kind": "flow",
+        "idle": true,
+        "d": "M527.8 527 C517.8 557 581.8 557 571.8 527",
+        "label": [
+          {
+            "x": 549.8000000000001,
+            "y": 557,
+            "text": "retry"
+          }
+        ],
+        "labelBox": {
+          "x": 526.8000000000001,
+          "y": 547.5,
+          "w": 46,
+          "h": 19
+        }
+      },
+      {
+        "from": "gw",
+        "to": "mail",
+        "kind": "refused",
+        "idle": true,
+        "d": "M141.5 177 L141.5 196.5 Q141.5 204.5 149.5 204.5 L202.8 204.5 Q210.8 204.5 210.8 212.5 L210.8 432.5 Q210.8 440.5 218.8 440.5 L336.8 440.5 Q344.8 440.5 344.8 448.5 L344.8 476",
+        "label": [],
+        "labelBox": null
+      }
+    ],
+    "stems": [
+      "M217.9 159.5 H353.3 M353.3 159.5 V159.5",
+      "M347.5 258 H418.1 M418.1 243.5 V272.5",
+      "M319 380.5 H351.2 M351.2 380.5 V380.5"
+    ],
+    "nodes": [
+      {
+        "id": "user",
+        "shape": "actor",
+        "lit": true,
+        "box": {
+          "x": 202.20996169283137,
+          "y": 26,
+          "w": 72,
+          "h": 35
+        },
+        "d": "M212.2 26 H264.2 Q274.2 26 274.2 36 V51 Q274.2 61 264.2 61 H212.2 Q202.2 61 202.2 51 V36 Q202.2 26 212.2 26 Z",
+        "rim": "",
+        "lines": [
+          {
+            "x": 238.20996169283137,
+            "y": 43.5,
+            "text": "User"
+          }
+        ],
+        "title": "User"
+      },
+      {
+        "id": "gw",
+        "shape": "gate",
+        "lit": true,
+        "box": {
+          "x": 90.6,
+          "y": 142,
+          "w": 127.3,
+          "h": 35
+        },
+        "d": "M99.4 142 H209.2 L217.9 159.5 L209.2 177 H99.4 L90.6 159.5 Z",
+        "rim": "",
+        "lines": [
+          {
+            "x": 154.25,
+            "y": 159.5,
+            "text": "API gateway"
+          }
+        ],
+        "title": "API gateway\ngw/main.go"
+      },
+      {
+        "id": "app",
+        "shape": "box",
+        "lit": true,
+        "box": {
+          "x": 229.89999999999995,
+          "y": 232,
+          "w": 117.6,
+          "h": 52
+        },
+        "d": "M232.9 232 H344.5 Q347.5 232 347.5 235 V281 Q347.5 284 344.5 284 H232.9 Q229.9 284 229.9 281 V235 Q229.9 232 232.9 232 Z",
+        "rim": "",
+        "lines": [
+          {
+            "x": 288.69999999999993,
+            "y": 249.5,
+            "text": "Orders"
+          },
+          {
+            "x": 288.69999999999993,
+            "y": 266.5,
+            "text": "POST /orders"
+          }
+        ],
+        "title": "Orders POST /orders\napp/orders.ts"
+      },
+      {
+        "id": "db",
+        "shape": "store",
+        "lit": true,
+        "box": {
+          "x": 224.76998723094377,
+          "y": 354,
+          "w": 94.2,
+          "h": 53
+        },
+        "d": "M224.8 360 A47.1 6 0 0 1 319 360 V401 A47.1 6 0 0 1 224.8 401 Z",
+        "rim": "M224.8 360 A47.1 6 0 0 0 319 360",
+        "lines": [
+          {
+            "x": 271.86998723094376,
+            "y": 383.5,
+            "text": "orders DB"
+          }
+        ],
+        "title": "orders DB"
+      },
+      {
+        "id": "queue",
+        "shape": "box",
+        "lit": true,
+        "box": {
+          "x": 502.69999999999993,
+          "y": 354.5,
+          "w": 94.2,
+          "h": 52
+        },
+        "d": "M505.7 354.5 H593.9 Q596.9 354.5 596.9 357.5 V403.5 Q596.9 406.5 593.9 406.5 H505.7 Q502.7 406.5 502.7 403.5 V357.5 Q502.7 354.5 505.7 354.5 Z",
+        "rim": "",
+        "lines": [
+          {
+            "x": 549.8,
+            "y": 372,
+            "text": "注文キュー"
+          },
+          {
+            "x": 549.8,
+            "y": 389,
+            "text": "queue"
+          }
+        ],
+        "title": "注文キュー queue"
+      },
+      {
+        "id": "audit",
+        "shape": "store",
+        "lit": false,
+        "box": {
+          "x": 494.9,
+          "y": 474,
+          "w": 109.8,
+          "h": 53
+        },
+        "d": "M494.9 480 A54.9 6 0 0 1 604.7 480 V521 A54.9 6 0 0 1 494.9 521 Z",
+        "rim": "M494.9 480 A54.9 6 0 0 0 604.7 480",
+        "lines": [
+          {
+            "x": 549.8,
+            "y": 503.5,
+            "text": "ระบบตรวจสอบ"
+          }
+        ],
+        "title": "ระบบตรวจสอบ"
+      },
+      {
+        "id": "mail",
+        "shape": "box",
+        "lit": false,
+        "box": {
+          "x": 316.025,
+          "y": 483,
+          "w": 72,
+          "h": 35
+        },
+        "d": "M319 483 H385 Q388 483 388 486 V515 Q388 518 385 518 H319 Q316 518 316 515 V486 Q316 483 319 483 Z",
+        "rim": "",
+        "lines": [
+          {
+            "x": 352.025,
+            "y": 500.5,
+            "text": "mailer"
+          }
+        ],
+        "title": "mailer"
+      }
+    ],
+    "pins": [
+      {
+        "key": "1",
+        "at": "app",
+        "status": "root cause",
+        "box": {
+          "x": 363.5,
+          "y": 232.5,
+          "w": 109.2,
+          "h": 22
+        },
+        "keyW": 22.2,
+        "texts": [
+          {
+            "x": 372.5,
+            "y": 243.5,
+            "text": "1",
+            "part": "key"
+          },
+          {
+            "x": 391.7,
+            "y": 243.5,
+            "text": "root cause",
+            "part": "label"
+          }
+        ],
+        "title": "1 root cause @ app"
+      },
+      {
+        "key": "?2",
+        "at": "db",
+        "status": "",
+        "box": {
+          "x": 334.96998723094373,
+          "y": 369.5,
+          "w": 32.4,
+          "h": 22
+        },
+        "keyW": 32.4,
+        "texts": [
+          {
+            "x": 343.96998723094373,
+            "y": 380.5,
+            "text": "?2",
+            "part": "key"
+          }
+        ],
+        "title": "?2 @ db"
+      },
+      {
+        "key": "3",
+        "at": "gw",
+        "status": "a check group label that is far too long for a pin",
+        "box": {
+          "x": 233.9,
+          "y": 148.5,
+          "w": 238.79999999999998,
+          "h": 22
+        },
+        "keyW": 22.2,
+        "texts": [
+          {
+            "x": 242.9,
+            "y": 159.5,
+            "text": "3",
+            "part": "key"
+          },
+          {
+            "x": 262.1,
+            "y": 159.5,
+            "text": "a check group label that is…",
+            "part": "label"
+          }
+        ],
+        "title": "3 a check group label that is far too long for a pin @ gw"
+      },
+      {
+        "key": "4",
+        "at": "app",
+        "status": "plan",
+        "box": {
+          "x": 363.5,
+          "y": 261.5,
+          "w": 66,
+          "h": 22
+        },
+        "keyW": 22.2,
+        "texts": [
+          {
+            "x": 372.5,
+            "y": 272.5,
+            "text": "4",
+            "part": "key"
+          },
+          {
+            "x": 391.7,
+            "y": 272.5,
+            "text": "plan",
+            "part": "label"
+          }
+        ],
+        "title": "4 plan @ app"
+      }
+    ]
+  },
+  "keyCells": [
+    "M374.5 233.3H385.7V253.8H374.5A10.3 10.3 0 0 1 374.5 233.3Z",
+    "M346 370.3H367.4V390.8H346A10.3 10.3 0 0 1 346 370.3Z",
+    "M244.9 149.3H256.1V169.8H244.9A10.3 10.3 0 0 1 244.9 149.3Z",
+    "M374.5 262.3H385.7V282.8H374.5A10.3 10.3 0 0 1 374.5 262.3Z"
+  ]
+}
