@@ -202,8 +202,9 @@ void main() {
   vec3 emis = f.rgb;
   float alpha = f.a;
 
-  // Soft glow under the flames.
-  float glow = knee(bloom(d, u_p1.z, u_p1.w) * (0.25 + 0.9 * u_heat) * 1.1);
+  // Soft glow under the flames. Reach 0 (the workspace) draws none: the glow is
+  // a still wash of mid colour, read as a red background under the flames.
+  float glow = u_p1.w > 0.0 ? knee(bloom(d, u_p1.z, u_p1.w) * (0.25 + 0.9 * u_heat) * 1.1) : 0.0;
   emis += u_mid * glow;
 
   // Embers: short shutter streaks with a hot core, cooling as they rise.

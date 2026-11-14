@@ -137,6 +137,15 @@ export function titlebarFireBand(bandWidth: number, height: number): FireBand {
 }
 
 /**
+ * Workspace glow scale: none. The glow (`bloom`) and the base glow are a still
+ * wash of the look's `mid` colour along the footer seam, up to `FIRE.glowReach`
+ * px tall and filling the gaps between flames; it reads as a red background
+ * under the fire rather than as fire. The workspace draws only the animated
+ * flames and embers. The titlebar keeps its scaled glow (`titlebarGlowScale`).
+ */
+export const WORKSPACE_GLOW = 0;
+
+/**
  * Titlebar glow scale (spec 0392): the workspace glow (`FIRE.glowRadius`,
  * `FIRE.glowReach`) shrunk with the flame it lights. A fixed 80px reach outruns
  * a canvas 2.2× a 40px-or-shorter flame, and the canvas edge then cuts the
@@ -499,10 +508,11 @@ class FirePainter {
     this.invalidate();
   }
 
-  /** `glow` scales the built-in glow radius and reach (1 for the workspace). */
+  /** `glow` scales the built-in glow radius and reach; 0 draws no glow and no
+   *  base glow, only flames and embers (the workspace, `WORKSPACE_GLOW`). */
   draw(
     band: FireBand, live: LiveLook, heat: number, t: number, seed: number,
-    radius: number, height: number, withEmbers: boolean, glow = 1,
+    radius: number, height: number, withEmbers: boolean, glow: number,
   ): void {
     const gl = this.gl;
     const u = this.uniforms;
@@ -522,7 +532,7 @@ class FirePainter {
     gl.uniform1ui(u.seed, seed);
     gl.uniform1f(u.height, height);
     gl.uniform1f(u.radius, radius);
-    gl.uniform4f(u.p0, FIRE.scale, FIRE.speed, FIRE.warp, FIRE.baseGlow);
+    gl.uniform4f(u.p0, FIRE.scale, FIRE.speed, FIRE.warp, glow > 0 ? FIRE.baseGlow : 0);
     gl.uniform4f(u.p1, FIRE.occlusion, FIRE.intensity * live.intensity, FIRE.glowRadius * glow, FIRE.glowReach * glow);
     gl.uniform3fv(u.low, live.low);
     gl.uniform3fv(u.mid, live.mid);
@@ -749,7 +759,9 @@ export class FireAnimation implements BackgroundAnimation {
   private draw(withEmbers: boolean): void {
     if (this.lost) return;
     const height = this.flameBase * this.live.height * (0.45 + 0.55 * this.heat);
-    this.painter.draw(this.band, this.live, this.heat, this.t, this.seed, this.radius, height, withEmbers);
+    this.painter.draw(
+      this.band, this.live, this.heat, this.t, this.seed, this.radius, height, withEmbers, WORKSPACE_GLOW,
+    );
   }
 
   private readonly onMotionChange = (): void => {

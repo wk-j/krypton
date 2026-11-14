@@ -395,7 +395,8 @@ Links use the theme link colour, underlined with a 2px offset; no glow. Inline c
   chrome shows, and while it shows the window is lifted over its sibling windows so the part
   reaching past a short window's bottom paints over the window below (overlays, the Quick Terminal
   and the footer stay on top). Each titlebar uses its own window's configured burn state; the workspace fire stays
-  beneath all windows and uses the aggregate priority. No new trigger or config key; OSC 9;4 progress
+  beneath all windows, fades across 72px at each screen edge and uses the aggregate priority.
+  No new trigger or config key; OSC 9;4 progress
   alone never ignites fire. Keys and readouts keep their materials, hit testing and drag behaviour;
   chrome height is unchanged. Under reduced motion, fire is static and redraws only on state,
   look or size changes.

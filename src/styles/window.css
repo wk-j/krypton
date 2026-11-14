@@ -23,6 +23,10 @@
   pointer-events: none;
   display: none;
   transform: translateZ(0);
+  /* Fade the canvas ends over 72px (3x the titlebar's 24px mask, for a flame
+     3x as tall) so the flames never stop at a lit vertical edge. */
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 72px, #000 calc(100% - 72px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 72px, #000 calc(100% - 72px), transparent);
 }
 
 /* ─── Window ───

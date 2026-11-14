@@ -54,7 +54,7 @@ progress band ใต้ titlebar ยังคง layout และ fill เต็
 
 | File | งาน |
 |---|---|
-| `src/fire.ts` | `FirePainter` ใช้ร่วมกัน (รับตัวคูณ glow, workspace ใช้ 1); `titlebarFireBand()`; `titlebarGlowScale()`; `TitlebarFires` วาง canvas ตาม band, ตั้ง chrome modifier, ตั้ง window modifier ตามการแสดงของ canvas, ขยายหรือหด canvas ตาม look height และต่อเข้ากับ controller เดิม |
+| `src/fire.ts` | `FirePainter` ใช้ร่วมกัน (รับตัวคูณ glow, workspace ใช้ `WORKSPACE_GLOW = 0` คือไม่วาด glow ตั้งแต่ 2026-11-14 ดู 0391); `titlebarFireBand()`; `titlebarGlowScale()`; `TitlebarFires` วาง canvas ตาม band, ตั้ง chrome modifier, ตั้ง window modifier ตามการแสดงของ canvas, ขยายหรือหด canvas ตาม look height และต่อเข้ากับ controller เดิม |
 | `src/compositor.ts` | ส่ง titlebar เข้า fire sync; รักษา remove/resize/config lifecycle |
 | `src/styles/window.css` | `.krypton-window__chrome--fire`, `.krypton-window--fire`, ตำแหน่งและ stacking ของ canvas, mask ปลาย band |
 | `src/fire-controller.test.ts` | regression tests ของความกว้างตาม band, ขอบบน, ส่วนที่ห้อยลงใต้ chrome, การ copy แบบกลับหัว, stacking เหนือ titlebar, การยก window, look height, สถานะ window, host replacement, cleanup, progress และ context restore |

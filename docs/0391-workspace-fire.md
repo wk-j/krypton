@@ -16,7 +16,11 @@ Fire becomes a single workspace band. One WebGL2 canvas sits along the bottom of
 ### 0392 Amendment — Current Fire Contract
 
 The workspace fire remains above the footer and beneath every window, with the aggregate
-highest-priority burn state and unchanged flame/ember behaviour. In addition, a burning window's
+highest-priority burn state and unchanged flame/ember behaviour. It draws only the animated
+flames and embers: the shader's glow (`bloom`) and base glow are off for the workspace
+(`WORKSPACE_GLOW = 0`), because they are a still wash of the look's `mid` colour that filled
+the gaps between flames and read as a red background along the footer seam. Its canvas fades
+across 72 px at each screen edge so the flames do not stop at a vertical line. In addition, a burning window's
 own configured state and look burn along its progress band: flames only as wide as the band (its
 existing horizontal margins) and a third as tall as the workspace fire (40 px built in) hang from
 the band's top edge down over the window's own terminal; their embers fall below the flames and
@@ -59,7 +63,7 @@ verify titlebar coverage, compositing, copies or lifecycle.
 - **One driver stays.** `paintProgramStatus(win)` (`compositor.ts:1471-1489`) is the only caller of `fire.sync`. `removeWindow` calls `fire.remove(win.id)` (`:5579`), `fitAll` calls `fire.resize()` (`:8742`), and `applyConfig` calls `fire.configure` and then repaints every window (`:780-781`). Keeping these four call sites lets the controller own the aggregation, and the compositor barely changes.
 - **The host.** There is one workspace element, `#krypton-workspace` (`index.html:10`). It is `position: fixed`, full viewport, transparent and flat, with no `preserve-3d` (`window.css:2-9`; the 3D tilt lives inside each window's `__perspective`). Windows are its children. Their inline `z-index` is empty in Grid and set to 1–110 in Focus, Stage and Wheel (`compositor.ts:8001`, `:8204`, `:8396`). A positioned canvas at `z-index: 0`, inserted as the **first** child, is painted before every window, so no window is ever covered. No code walks `workspace.children` (only `main.ts:47` clears it before the compositor exists).
 - **The floor.** Every layout reserves `Compositor.FOOTER_HEIGHT = 28` (`:7686`) whether or not the footer shows. `WorkspaceFooter.setVisible` hides the 28 px plate (`workspace-footer.ts:208-213`), and the compositor already hears about it through `setKeyboardOverlayFooterVisible` (`:5476`, wired at `main.ts:149-150`). The band's bottom edge follows that: 28 px while the footer shows, 0 when it is hidden.
-- **Geometry.** `fireBand(w, h, height)` sizes the flame from the host height (22%, clamped to 40–120 px), so any workspace taller than about 545 px gets the 120 px built-in flame and a 264 px band. The shader's host is a rounded rect under the band (`fire-shader.ts:193-199`). `sdRRect` clamps the radius and `sdGrad` guards the divide (`:117-128`), so radius 0 is safe: the flames then run to both screen edges, which matches the square footer seam.
+- **Geometry.** `fireBand(w, h, height)` sizes the flame from the host height (22%, clamped to 40–120 px), so any workspace taller than about 545 px gets the 120 px built-in flame and a 264 px band. The shader's host is a rounded rect under the band (`fire-shader.ts:193-199`). `sdRRect` clamps the radius and `sdGrad` guards the divide (`:117-128`), so radius 0 is safe: the flames span the screen width at the square footer seam. The current CSS mask fades the rendered ends over 72 px.
 - **What a window hides.** `.krypton-window` paints `--mat-screen`, the theme backdrop at `[visual] opacity` (`window.css:19-36`). The flames therefore show through a window's screen at that opacity, fully in gaps and empty workspace, and not at all behind opaque plates (titlebar, tab bar, window foot, the Harness command centre).
 - **0365 surface thinning.** `data-fire-lit` on the window and the rule `.krypton-window[data-fire-lit] .acp-harness__command-center { background: none }` (`harness-shared.css:1244-1250`) existed only because that fire burned under the command centre. With no window fire it has no job, and keeping it would mean a window-wide style change driven by a workspace signal.
 - **Cost.** There is one context instead of one per burning window, so WebKit's 16-context limit (0362 Research) can no longer be reached. On a 1728 px wide screen the band holds about 456k px per frame, close to two burning 900 px windows today. An unlit workspace costs nothing, as before.
@@ -140,6 +144,8 @@ export class FireController {
   position: absolute; left: 0; right: 0; bottom: 28px; /* inline: floor; height from fireBand */
   z-index: 0; pointer-events: none; display: none;
   transform: translateZ(0);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 72px, #000 calc(100% - 72px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 72px, #000 calc(100% - 72px), transparent);
 }
 ```
 
@@ -180,12 +186,17 @@ Deviations from the approved design:
 - `npm run check` passes.
 - `npx vitest run`: 309 files and 3772 tests pass, including 3 new `workspaceFireState` tests in `fire.test.ts` (20 in the file).
 - Smoke in the user's Chromium through the `browse` MCP, on a throwaway Vite page (deleted afterwards) with the real `FireController`, `index.css`, two mock `.krypton-window`s and a footer, 1200×700, `on = ["working", "blocked"]` and a violet `[fire.blocked]` with `height = 1.4`:
-  - window 1 `working`: one `.krypton-fire-canvas`, the workspace's first child, 1200×264 at `bottom: 28px` (band top at y 408, bottom on the footer seam at 672). Neither window gets a canvas or `data-fire-lit`. The flames run to both screen edges, show through the window screens behind the text and are hidden by the foot plates, and the bottom prompt lines stay readable;
+  - window 1 `working`: one `.krypton-fire-canvas`, the workspace's first child, 1200×264 at `bottom: 28px` (band top at y 408, bottom on the footer seam at 672). Neither window gets a canvas or `data-fire-lit`. The flames span the screen width (the later CSS edge mask fades their ends), show through the window screens behind the text and are hidden by the foot plates, and the bottom prompt lines stay readable;
   - window 2 `blocked` as well: the workspace eases to the violet look and the band grows to 370 px;
   - `remove(2)`: back to the orange `working` look, and the band shrinks to 264 px;
   - `setFloor(0)`: `bottom: 0px`, band top at y 436;
   - window 1 `done` (not in `on`): the canvas hides (`display: none`);
   - viewport 900×500 then `resize()`: 900×229, which is `ceil(0.22·472·2.2)`.
+
+**Glow removal (2026-11-14).** The user still saw a red background under the workspace fire after the titlebar glow was shrunk (0392). The workspace drew the full glow (radius 30, reach 80 px) at every look height, so with `height = 0.5` (60 px flames) a still wash of `mid` rose higher than the flames and filled every gap between them. `FirePainter.draw()` now takes a required `glow` scale; `0` zeroes the bloom reach (the shader skips the bloom term when its reach is 0) and the base glow. The workspace passes `WORKSPACE_GLOW = 0`; titlebars keep `titlebarGlowScale()` and `FIRE.baseGlow`. Verified:
+
+- `npx vitest run src/fire.test.ts src/fire-controller.test.ts` passes 34 tests; the new controller test (workspace draws with glow reach 0 and base glow 0, titlebar keeps both) fails with `WORKSPACE_GLOW = 1`. `npm run check` passes.
+- Chromium smoke through `browse` on a throwaway Vite page (deleted afterwards), the real `FireController` and the user's `[fire]` looks, 1200×700: with `error`, before the change the darkest pixel of the row 42 px above the footer seam was red (92, 27, 22) across the width; after it, the gaps between flames are the page background (14, 15, 17) and only the flames are coloured. `working` shows the same.
 
 **Not yet verified:**
 

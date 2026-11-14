@@ -22,6 +22,9 @@ interface Paint {
   radius: number;
   width: number;
   height: number;
+  /** `u_p0.w` and `u_p1.w`: the base glow and the bloom glow's reach. */
+  baseGlow: number;
+  glowReach: number;
 }
 
 interface CanvasFixture {
@@ -96,6 +99,8 @@ function canvasFixture(): CanvasFixture {
           radius: uniforms.get('u_radius')![0],
           width: uniforms.get('u_res')![0],
           height: uniforms.get('u_res')![1],
+          baseGlow: uniforms.get('u_p0')![3],
+          glowReach: uniforms.get('u_p1')![3],
         }),
       });
     }
@@ -310,6 +315,21 @@ describe('FireController titlebar lifecycle (spec 0392)', () => {
     expect(shown(secondCanvas)).toBe(false);
     expectPaint(titlebarCanvas(first.titlebar), 0.75);
     expectPaint(workspace.querySelector<HTMLCanvasElement>(WORKSPACE_FIRE)!, 0.75);
+  });
+
+  it('burns the workspace without the still glow wash while titlebars keep their scaled glow', () => {
+    const first = makeWindow(workspace);
+    controller.sync(FIRST, 'working', null, first.titlebar);
+    observers.flush();
+    advanceFrames(1000);
+
+    const ground = graphics.rendered.get(workspace.querySelector<HTMLCanvasElement>(WORKSPACE_FIRE)!);
+    expect(ground?.heat).toBeGreaterThan(0);
+    expect(ground?.glowReach).toBe(0);
+    expect(ground?.baseGlow).toBe(0);
+    const band = graphics.copied.get(titlebarCanvas(first.titlebar));
+    expect(band?.glowReach).toBeGreaterThan(0);
+    expect(band?.baseGlow).toBe(FIRE.baseGlow);
   });
 
   it('detaches canvases and observers when a live titlebar is replaced or nulled', () => {
