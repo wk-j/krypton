@@ -102,7 +102,6 @@
   .acp-harness__picker-logo--codex    { color: var(--krypton-backend-codex); }
   .acp-harness__picker-logo--opencode { color: var(--krypton-backend-opencode); }
   .acp-harness__picker-logo--pi       { color: var(--krypton-backend-pi); }
-  .acp-harness__picker-logo--droid    { color: var(--krypton-backend-droid); }
   .acp-harness__picker-logo--cursor   { color: var(--krypton-backend-cursor); }
   .acp-harness__picker-logo--omp      { color: var(--krypton-backend-omp); }
   .acp-harness__picker-logo--grok     { color: var(--krypton-backend-grok); }

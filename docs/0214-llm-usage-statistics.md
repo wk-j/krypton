@@ -78,7 +78,7 @@ the prompt-response variant carries `inputTokens`/`outputTokens`. Presence of a 
 the discriminator, and the only safe one.
 
 **Coverage is partial and must stay visible.** Twelve backends are built in (`acp.rs:37`) — claude,
-gemini, codex, opencode, pi-acp, droid, cursor, junie, omp, grok, copilot, cline — and not all
+gemini, codex, opencode, pi-acp, cursor, junie, omp, grok, copilot, cline — and not all
 emit usage; `docs/109` already tells surfaces to render `tokens --` when absent. A missing counter must
 produce a row marked unreported, never a zero, or the totals lie.
 

@@ -49,7 +49,6 @@
   .acp-harness__lane-mail-logo--codex    { color: var(--krypton-backend-codex); }
   .acp-harness__lane-mail-logo--opencode { color: var(--krypton-backend-opencode); }
   .acp-harness__lane-mail-logo--pi-acp   { color: var(--krypton-backend-pi); }
-  .acp-harness__lane-mail-logo--droid    { color: var(--krypton-backend-droid); }
   .acp-harness__lane-mail-logo--cursor   { color: var(--krypton-backend-cursor); }
   .acp-harness__lane-mail-logo--omp      { color: var(--krypton-backend-omp); }
   .acp-harness__lane-mail-logo--grok     { color: var(--krypton-backend-grok); }

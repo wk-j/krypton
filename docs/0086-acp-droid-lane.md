@@ -1,6 +1,8 @@
-# Droid-1 Lane (Factory Droid Native ACP) — Implementation Spec
+# Droid-1 Lane (Factory Droid Native ACP) — Retired Implementation Spec
 
-> Status: Implemented
+> Retired: Droid backend support has been removed entirely. This document is retained as historical design context; its launch, configuration and MCP instructions no longer describe supported behavior. See [Droid Backend Removal](./0399-remove-droid-backend.md).
+
+> Status: Retired
 > Date: 2026-05-07
 > Milestone: M-ACP — Harness convergence
 

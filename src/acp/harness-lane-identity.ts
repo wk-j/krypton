@@ -12,7 +12,6 @@ export const BACKEND_LABELS: Record<string, string> = {
   grok: 'Grok',
   opencode: 'OpenCode',
   'pi-acp': 'Pi',
-  droid: 'Droid',
   cursor: 'Cursor',
   omp: 'OMP',
   copilot: 'Copilot',
@@ -41,7 +40,7 @@ export function harnessBackends(
     return index === -1 ? HARNESS_BACKEND_ORDER.length : index;
   };
   return backends
-    .filter((backend) => backend.id !== 'mimo')
+    .filter((backend) => backend.id !== 'mimo' && backend.id !== 'droid')
     .filter((backend) => !(options.remote && backend.id === 'antigravity'))
     .slice()
     .sort((a, b) => {
@@ -65,8 +64,6 @@ export function backendLogoId(backendId: string): string {
       return 'krypton-logo-opencode';
     case 'pi-acp':
       return 'krypton-logo-pi';
-    case 'droid':
-      return 'krypton-logo-droid';
     case 'cursor':
       return 'krypton-logo-cursor';
     case 'omp':
@@ -151,7 +148,6 @@ export function laneAccentForLabel(label: string): string {
   if (/claude/i.test(label)) return laneAccent(2);
   if (/opencode/i.test(label)) return laneAccent(4);
   if (/^pi(-|$)/i.test(label)) return laneAccent(5);
-  if (/droid/i.test(label)) return laneAccent(6);
   if (/cursor/i.test(label)) return laneAccent(7);
   if (/^omp(-|$)/i.test(label)) return laneAccent(9);
   if (/grok/i.test(label)) return laneAccent(10);

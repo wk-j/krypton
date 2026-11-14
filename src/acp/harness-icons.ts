@@ -7,7 +7,7 @@
 import { BRANCH_ICON_BODY } from '../chrome-icons';
 import { CODEX_LOGO_MARK, GROK_LOGO_MARK, codeAgentLogoSymbol } from '../code-agent-logos';
 
-// Inline <symbol> defs for the fourteen built-in backends. Codex and Grok use
+// Inline <symbol> defs for the built-in backends. Codex and Grok use
 // the official shared geometry above; the remaining compact marks come from
 // docs/prototypes/125-lane-rail-disambiguation.html. All strokes/fills use
 // currentColor so the rail can recolor via a single CSS class.
@@ -30,14 +30,6 @@ export const BACKEND_LOGO_SVG_DEFS = [
   // pi-acp: pi glyph
   '<symbol id="krypton-logo-pi" viewBox="0 0 16 16">' +
     '<path d="M2.5 5 H13.5 M5 5 V12 Q5 13 6 13 M11 5 V12 Q11 13 12 13 M13 13 L13.5 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +
-    '</symbol>',
-  // droid: robot face
-  '<symbol id="krypton-logo-droid" viewBox="0 0 16 16">' +
-    '<rect x="2.5" y="3.5" width="11" height="9" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.3"/>' +
-    '<circle cx="6" cy="7.5" r="1" fill="currentColor"/>' +
-    '<circle cx="10" cy="7.5" r="1" fill="currentColor"/>' +
-    '<line x1="6.5" y1="10.5" x2="9.5" y2="10.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>' +
-    '<line x1="8" y1="1.5" x2="8" y2="3.5" stroke="currentColor" stroke-width="1.3"/>' +
     '</symbol>',
   // cursor: isometric cube, filled top face (Anysphere mark)
   '<symbol id="krypton-logo-cursor" viewBox="0 0 16 16">' +

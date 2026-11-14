@@ -392,7 +392,7 @@ d. The loop stops once the grip, the mouse and the button fades settle
    d. Returns harnessId and hook server port to frontend.
 6. AcpHarnessView lists ACP backends and starts with an empty roster. The user
    opens `Cmd+P → +` to spawn installed harness backends such as Codex, Claude,
-   OpenCode, Pi, Droid, Cursor, or OMP with the same cwd. After `session/new`,
+   OpenCode, Pi, Cursor, or OMP with the same cwd. After `session/new`,
    a configured `lane_models.<backend>.active` is applied via `session/set_model`
    (`models` advertised) or `session/set_config_option` (`configOptions` model
    select, e.g. OpenCode v2); failure is non-fatal.

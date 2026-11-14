@@ -297,18 +297,6 @@ fn builtin_backends() -> Vec<(&'static str, AcpBackend)> {
             },
         ),
         (
-            "droid",
-            AcpBackend {
-                command: "droid".to_string(),
-                args: vec![
-                    "exec".to_string(),
-                    "--output-format".to_string(),
-                    "acp".to_string(),
-                ],
-                display_name: "Droid".to_string(),
-            },
-        ),
-        (
             "cursor",
             AcpBackend {
                 command: "cursor-agent".to_string(),
@@ -859,9 +847,7 @@ struct AcpClient {
     /// MCP servers passed through to `session/new`.
     mcp_servers: RwLock<Vec<Value>>,
     /// Model id chosen by the user via `acp_harness.lane_models` config — applied
-    /// after `session/new` for backends that advertise model state over ACP. For
-    /// backends that take a CLI flag (Gemini, Droid), the override is applied to
-    /// spawn args before the client is created.
+    /// after `session/new` for backends that advertise model state over ACP.
     model_override: RwLock<Option<String>>,
     /// How this session switches models; set from the session/new, resume, or
     /// load response. `None` until then or when no model state is advertised.
@@ -2542,14 +2528,6 @@ pub async fn acp_spawn(
             .and_then(|cfg| cfg.acp_harness.lane_models.get(&backend_id).cloned())
             .map(|m| m.active),
     );
-
-    // Backends that take the model via CLI flag — apply before spawn.
-    if let Some(ref model) = configured_model {
-        if backend_id == "droid" {
-            backend.args.push("-m".to_string());
-            backend.args.push(model.clone());
-        }
-    }
 
     if backend_id == "antigravity" {
         if remote_runtime_id
@@ -4667,7 +4645,10 @@ mod tests {
     #[test]
     fn removed_backend_is_not_resolvable() {
         assert!(resolve_backend("mimo").is_none());
+        assert!(resolve_backend("droid").is_none());
         assert!(resolve_backend("claude").is_some());
+        let backends = super::acp_list_backends().expect("backend list");
+        assert!(!backends.iter().any(|backend| backend.id == "droid"));
     }
 
     #[test]
@@ -4684,7 +4665,7 @@ mod tests {
     fn advertise_read_text_file_is_off_for_grok_and_omp() {
         assert!(!advertise_read_text_file("grok"));
         assert!(!advertise_read_text_file("omp"));
-        for id in ["claude", "codex", "copilot", "droid", "opencode"] {
+        for id in ["claude", "codex", "copilot", "opencode"] {
             assert!(advertise_read_text_file(id), "{id}");
         }
     }

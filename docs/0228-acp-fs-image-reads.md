@@ -120,7 +120,7 @@ Grok write_file
 
 ### Tests (`acp.rs`)
 
-- `advertise_read_text_file("grok") == false`; `"claude" | "codex" | "copilot" | "droid" == true`.
+- `advertise_read_text_file("grok") == false`; `"claude" | "codex" | "copilot" | "opencode" == true`.
 - `sniff_binary_kind` on PNG/JPEG/GIF/WebP magic and on a `.png` with unknown magic; unknown bytes → `"binary"`.
 - `binary_read_error` includes kind + size + the `text-only` clause.
 - Existing Spec 135 `fs_path_in_scope` tests stay (writes still unscoped for Grok).

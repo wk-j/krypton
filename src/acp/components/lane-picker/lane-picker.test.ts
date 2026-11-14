@@ -6,7 +6,7 @@ import { LanePicker, type LanePickerProps } from './index';
 const BACKENDS: readonly AcpBackendDescriptor[] = [
   { id: 'claude', display_name: 'Claude Code', command: 'claude' },
   { id: 'codex', display_name: 'Codex', command: 'codex' },
-  { id: 'droid', display_name: 'Droid', command: 'droid' },
+  { id: 'cursor', display_name: 'Cursor', command: 'cursor-agent' },
 ];
 
 const pickers: LanePicker[] = [];
@@ -55,7 +55,7 @@ describe('LanePicker', () => {
     }))).toStrictEqual([
       { logo: '#krypton-logo-claude', label: 'Claude', id: 'claude', count: '·2 running', active: false },
       { logo: '#krypton-logo-codex', label: 'Codex', id: 'codex', count: null, active: true },
-      { logo: '#krypton-logo-droid', label: 'Droid', id: 'droid', count: null, active: false },
+      { logo: '#krypton-logo-cursor', label: 'Cursor', id: 'cursor', count: null, active: false },
     ]);
   });
 

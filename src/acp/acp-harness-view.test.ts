@@ -3603,9 +3603,10 @@ describe('pickLaneAccent', () => {
 });
 
 describe('harnessBackends', () => {
-  it('excludes removed MiMo backends advertised by older runtimes', () => {
+  it('excludes removed MiMo and Droid backends advertised by older runtimes', () => {
     const backends = [
       { id: 'mimo', display_name: 'MiMo', command: 'mimo' },
+      { id: 'droid', display_name: 'Droid', command: 'droid' },
       { id: 'claude', display_name: 'Claude', command: 'npx' },
     ];
     expect(harnessBackends(backends).map((backend) => backend.id)).toEqual(['claude']);
@@ -3624,7 +3625,7 @@ describe('harnessBackends', () => {
   it('pins Claude, Codex, Grok, OpenCode, Pi first, then remaining backends by id', () => {
     const backends = [
       { id: 'cline', display_name: 'Cline', command: 'cline' },
-      { id: 'droid', display_name: 'Droid', command: 'droid' },
+      { id: 'cursor', display_name: 'Cursor', command: 'cursor-agent' },
       { id: 'pi-acp', display_name: 'Pi', command: 'pi-acp' },
       { id: 'opencode', display_name: 'OpenCode', command: 'opencode' },
       { id: 'grok', display_name: 'Grok', command: 'grok' },
@@ -3639,7 +3640,7 @@ describe('harnessBackends', () => {
       'opencode',
       'pi-acp',
       'cline',
-      'droid',
+      'cursor',
     ]);
   });
 });
@@ -3651,7 +3652,6 @@ describe('spec 125 lane rail disambiguation', () => {
       expect(backendLogoId('codex')).toBe('krypton-logo-codex');
       expect(backendLogoId('opencode')).toBe('krypton-logo-opencode');
       expect(backendLogoId('pi-acp')).toBe('krypton-logo-pi');
-      expect(backendLogoId('droid')).toBe('krypton-logo-droid');
       expect(backendLogoId('cursor')).toBe('krypton-logo-cursor');
       expect(backendLogoId('omp')).toBe('krypton-logo-omp');
       expect(backendLogoId('grok')).toBe('krypton-logo-grok');

@@ -41,6 +41,7 @@ Listed by spec number. Older specs remain in this directory.
 | 396 | [Harness Git Panel](./0396-harness-git-panel.md) |
 | 397 | [Active Background Task Strip](./0397-active-background-task-strip.md) |
 | 398 | [OMP Async Bash Monitor](./0398-omp-async-bash-monitor.md) |
+| 399 | [Droid Backend Removal](./0399-remove-droid-backend.md) |
 
 ## ADRs (31)
 

@@ -56,7 +56,6 @@
   --krypton-backend-codex:    #d7e7f0;
   --krypton-backend-opencode: #c186d9;
   --krypton-backend-pi:       #6fd9c0;
-  --krypton-backend-droid:    #d9a86f;
   --krypton-backend-cursor:   #c0c0c0;
   --krypton-backend-omp:      #d9c66f;
   --krypton-backend-grok:     #5ce6a8;
@@ -1634,7 +1633,6 @@ html[data-acp-composer-bloom="off"] .acp-harness__composer-bloom {
     --krypton-backend-codex:    #2c6280;
     --krypton-backend-opencode: #8a4aa8;
     --krypton-backend-pi:       #1a8a78;
-    --krypton-backend-droid:    #a07838;
     --krypton-backend-cursor:   #5a5a5a;
     --krypton-backend-omp:      #8a7820;
     --krypton-backend-grok:     #1a8a5c;
