@@ -15,12 +15,14 @@ Krypton is a keyboard-driven terminal emulator with a skeuomorphic instrument-fa
 ```sh
 npm install              # Install frontend dependencies
 npx tauri dev            # Run full app (Rust backend + Vite dev server)
-npm run build            # Build frontend (tsc --noEmit && vite build)
+npm run build            # Build frontend (tsc --noEmit, app bundle, loopback app bundle)
 npm run check            # Type-check frontend only (tsc --noEmit)
+npm test                 # Run frontend tests (vitest run)
+npx vitest run src/x.test.ts  # Run a single test file
 npx tauri build          # Build distributable app bundle
 make dev                 # Shortcut for npx tauri dev
-make build               # Shortcut for npx tauri build
-make install             # Build + copy to /Applications (macOS)
+make build               # npx tauri build + kryptonctl and krypton-bridge binaries
+make install             # Build + copy app to /Applications, CLIs to ~/.local/bin (macOS)
 make clean               # cargo clean + rm -rf dist
 ```
 
@@ -44,12 +46,12 @@ The app has two halves that communicate over Tauri IPC:
 
 **TypeScript frontend** (`src/`) — renders terminal windows using xterm.js inside custom faceplate chrome. The major subsystems are:
 
-- **Compositor** (`compositor.ts`) — window lifecycle, layout management (Grid/Focus), Quick Terminal overlay, tab/pane management. Owns the `WindowState[]` array and the session routing map (`sessionMap: Map<SessionId, SessionLocation>` for O(1) routing of PTY output to the correct pane).
-- **Input Router** (`input-router.ts`) — modal keyboard system with modes: Normal, Compositor, Resize, Move, Swap, Selection, Hint, TabMove, SearchPalette, Dashboard. Leader key (`Cmd+P`) enters Compositor mode; Escape returns to Normal. Single-action compositor keys auto-return to Normal after execution. The `customKeyHandler` intercepts keys BEFORE xterm.js processes them — returning `false` prevents xterm.js from seeing the key.
-- **Layout Engine** (`layout.ts`) — Grid (auto-tile balanced grid) and Focus (65/35 split with pinned windows on right) algorithms.
+- **Compositor** (`compositor.ts`) — window lifecycle, layout management, Quick Terminal overlay, tab/pane management. Owns the window map (`windows: Map<WindowId, KryptonWindow>`) and the session routing map (`sessionMap: Map<SessionId, SessionLocation>` for O(1) routing of PTY output to the correct pane).
+- **Input Router** (`input-router.ts`) — modal keyboard system; the modes are the `Mode` enum in `src/types.ts`. Leader key (`Cmd+P`) enters Compositor mode; Escape returns to Normal. Single-action compositor keys auto-return to Normal after execution. The `customKeyHandler` intercepts keys BEFORE xterm.js processes them — returning `false` prevents xterm.js from seeing the key.
+- **Layout Engine** (`layout.ts`) — window geometry for each `LayoutMode` (`src/types.ts`). The modes and their behaviour are described in `docs/0004-architecture.md`.
 - **Sound Engine** (`sound.ts`) — thin frontend wrapper that calls Rust backend (`sound.rs`), which uses `rodio` on a dedicated audio thread with WAV packs bundled as Tauri resources.
 - **Animation** (`animation.ts`) — WAAPI-based transitions (morph, slide, crossfade) with keyboard input buffering during animations.
-- **UI Component Kernel** (`src/ui/`) — a ~400-line, framework-free component layer used by the harness: `Component`/`LiveComponent` (own a node, update in place via a declared dependency tuple, dispose what you attached), `reconcile()` (one keyed, node-identity-preserving list diff), `RenderScheduler` (region invalidation coalesced into one frame), `el()` (typed element builder) and `LayoutHost` (named slots + a declarative placement table). Harness surfaces live one-per-directory under `src/acp/components/<name>/` — class, stylesheet, scheme overrides and test together — listed in `src/acp/components/registry.ts`. Specs [301](docs/0301-harness-ui-components.md) and [302](docs/0302-harness-component-catalog.md).
+- **UI Component Kernel** (`src/ui/`) — a small, framework-free component layer used by the harness: `Component`/`LiveComponent` (own a node, update in place via a declared dependency tuple, dispose what you attached), `reconcile()` (one keyed, node-identity-preserving list diff), `RenderScheduler` (region invalidation coalesced into one frame), `el()` (typed element builder) and `LayoutHost` (named slots + a declarative placement table). Harness surfaces live one-per-directory under `src/acp/components/<name>/` — class, stylesheet, scheme overrides and test together — listed in `src/acp/components/registry.ts`. Specs [301](docs/0301-harness-ui-components.md) and [302](docs/0302-harness-component-catalog.md).
 - **ACP Harness Peering** (`src/acp/`, served by `src-tauri/src/hook_server.rs`) — user-directed inter-lane messaging (a lane status bus, per-lane inboxes drained on the next `idle` turn, and `peer_send`/`peer_list` MCP tools) plus a family of read-only loopback observability surfaces (lane-monitor dashboard, artifact gallery, docs browser) the OS browser can open. Memory is handoff-only, peering can cross harness views, and `#review` rides `peer_send`. Each capability — the peering model, cross-harness directory, review tooling, diff-priority hints, and every loopback surface — is specified per-feature under `docs/` with decisions in `docs/adr/` (see `docs/README.md` for the index). **Those specs/ADRs are authoritative; do not restate their implementation detail here** — keep this file to durable, cross-cutting guidance only.
 - **Loopback App** (`src/loopback/`, served by `src-tauri/src/loopback_app.rs` + `hook_server.rs`) — every browser page the loopback server serves is one document of one Vite app: Rust builds the document (`AppPage`), the code is `src/loopback/entries/<entry>.ts`, every page carries the shell (Home link, `` ` `` switcher, `?` keys), and pages are React components built from the kit in `src/loopback/kit/` (one root on `#lb-shell`; reader bodies stay Rust-rendered and React never owns them). A new browser page is a new surface + entry there, never a self-contained HTML file; Krypton opens pages with `openLoopback(path)`. Specs [341](docs/0341-loopback-app.md), [361](docs/0361-loopback-app-react.md); ADRs 0026, 0028.
 
@@ -57,10 +59,10 @@ Another standalone piece lives outside the app build: the **Raycast extension** 
 
 ### IPC Pattern
 
-- **Commands** (request/response): `spawn_pty`, `write_to_pty`, `resize_pty`, `get_config`, `get_theme`, `list_themes`, `reload_config`, `open_url`, `get_pty_cwd`
-- **Events** (streaming): `pty-output` (terminal data), `theme-changed`, `config-changed` (`set_theme` / `reload_config`), `pty-progress`, `process-changed`
+- **Commands** (request/response), core examples: `spawn_pty`, `write_to_pty`, `resize_pty`, `get_config`, `get_theme`, `list_themes`, `set_theme`, `reload_config`, `open_url`, `get_pty_cwd`. The full list is the `generate_handler![...]` call in `lib.rs`.
+- **Events** (streaming), core examples: `pty-output` (terminal data), `theme-changed`, `config-changed` (`set_theme` / `reload_config`), `pty-progress`, `process-changed`
 - All Rust commands return `Result<T, String>` for IPC serialization. Register in `lib.rs` via `.invoke_handler(tauri::generate_handler![...])`.
-- Frontend uses `invoke()` for commands, `listen()` for events (from `@tauri-apps/api/core`).
+- Frontend uses `invoke()` (`@tauri-apps/api/core`) for commands and `listen()` (`@tauri-apps/api/event`) for events.
 
 ### Config & Themes
 
@@ -121,8 +123,6 @@ Another standalone piece lives outside the app build: the **Raycast extension** 
 Skills in `.claude/skills/` define repeatable workflows. Load the appropriate skill when its trigger conditions are met:
 
 - **`/design-first`** — Before writing code for a new feature or significant change (3+ files or 2+ subsystems), write an implementation spec at `docs/<NNNN>-<feature-name>.md` (four-digit zero-padded), present it, and wait for explicit user approval. Skip for bug fixes, one-line changes, doc-only changes, or when user says "just do it".
-- **`/feature-implementation`** — When implementing any feature, ensures all related docs in `docs/` are updated (architecture, data-flow, configuration, requirements). A feature is not complete until docs reflect the actual implementation. See the skill for the full doc map of which changes require which doc updates.
-- **`/ghost-signal-theme`** — Automates adding a new ghost-signal sound pack: copy 17 WAVs to `src-tauri/sounds/<pack-id>/`, register in `sound.rs` and `sound.ts`, update `docs/0017-sound-themes.md`. Trigger on "add sound theme", "new sound pack", or referencing a WAV directory.
 - **`/external-source-reference`** — Single reference router for the local external-source repos that are ground truth for Krypton: **pi-mono** (`@mariozechner/pi-agent-core`, `pi-ai`, `pi-coding-agent` at `/Users/wk/Source/pi-mono`), **zed** (Zed editor ACP/MCP/agent-server/model prior art at `/Users/wk/Source/zed`), and **obsidian-clipper** (Obsidian Web Clipper browser clipping, Markdown extraction, template rendering, highlights, and Obsidian handoff at `/Users/wk/Source/obsidian-clipper`). Load when working on `src/agent/` / agent events / tools / model-provider changes (pi-mono), ACP harness questions about how Zed implements the ACP client, MCP `context_servers` forwarding, external agent servers, or model selection (zed), or clipping/import flows, template engines, browser-extension surfaces, highlights, reader mode, and Obsidian URI/CLI handoff (obsidian-clipper). The skill routes to `pi-mono.md`, `zed.md`, or `obsidian-clipper.md`.
 - **`/perf-checklist`** — Performance audit for each window/view implementation. Run against a single view (`/perf-checklist agent-view`) or all views (`/perf-checklist all`). Checks DOM rendering, event lifecycle, animation, memory, layout, rendering budget, and streaming content.
 
@@ -130,7 +130,6 @@ Skills in `.claude/skills/` define repeatable workflows. Load the appropriate sk
 
 - `DESIGN.md` — Visual identity spec for Krypton Console, the skeuomorphic instrument faceplate every app surface uses (materials, parts, colour and state, motion). Load when adding UI components, modifying chrome, or verifying visual consistency. Validate with `npx @google/design.md lint DESIGN.md`
 - `DESIGN.binance.md` — Shared visual identity and kit catalog for the **loopback app opened in the OS browser** (every `src/loopback/` surface plus the artifact scaffold): Binance-dark exchange aesthetic. Load when styling or adding any browser-served harness page.
-- The Agent view (`.agent-view`, `src/agent/`) has a persistent per-lane permission mode cycled with `Shift+Tab` (`normal` → `acceptEdits` → `bypass`) that survives turn boundaries.
 - `docs/README.md` — Spec and ADR index
 - `docs/0004-architecture.md` — System architecture, DOM structure, module responsibilities
 - `docs/0005-data-flow.md` — How keystrokes, resize, and workspace switching flow through the system
