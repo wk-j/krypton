@@ -286,11 +286,11 @@ The compositor is a TypeScript module running in the webview that manages worksp
     `SystemRow`, while usage and notices retain their existing
     dispatch priority. No new command execution or permission path is involved.
 
-    **Visible background work (spec 384).** `Composer` owns a `BackgroundTaskStrip` before its
+    **Visible background work (specs 384/397).** `Composer` owns a `BackgroundTaskStrip` before its
     draft or decision controls. It reads the active lane's independent task registry; launch
     capture and the shared metrics feed patch only this child, even while the lane is idle. It
-    shows unsettled and failed jobs, lets a success go after 5 s, and takes no height when
-    nothing qualifies. The existing log reader supplies progress/exit state. Completed transcript
+    shows only `running` jobs, includes a PID when the process tree finds one, and takes no height when
+    none remain. The existing log reader supplies progress/exit state. Completed transcript
     rows, draft focus and scroll containers remain untouched; Lane Metrics stays the detailed
     observer.
 

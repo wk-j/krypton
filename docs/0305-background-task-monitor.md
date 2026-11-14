@@ -160,14 +160,14 @@ pub async fn acp_background_task_status(
 
 ### UI Changes
 
-**Composer strip (spec 384).** Automatically present above draft and permission/question
-controls for the active lane, including idle, Zen and concise layouts, one line per job with no
-head line. It shows state, command, latest log line and — once settled — the final duration; there
-is no live clock. Unsettled jobs always show; a failure stays until a job starts after it ended; a
-success (`exit 0`) leaves the strip 5 s after it ended. With nothing to show the strip takes no
-height. At most three rows, newest-started first, then `+N more`. Unknown/orphaned states stay
-explicit, not success. Each lane owns a fresh registry; reset/restart clears it, and the registry
-still lists jobs the strip no longer shows. The shared metrics feed patches only this child, never
+**Composer strip (specs 384/397).** Automatically present above draft and permission/question
+controls for the active lane, including idle, Zen and concise layouts, one line per running job with no
+head line. It shows `RUNNING`, the matched PID when known, command and latest log line; there
+is no live clock or final duration. `exited`, `unknown` and `orphaned` jobs leave the strip on the
+poll that sets those states. With nothing to show the strip takes no height. At most three running
+rows show, newest-started first, then `+N more`. Each lane owns a fresh registry;
+reset/restart clears it, and the registry still lists jobs the strip no longer shows.
+The shared metrics feed patches only this child, never
 the draft or sealed transcript. The strip has no timer or process-control action of its own.
 
 **Lane head chip** (`headChips()`, grid column 4): `bg 2` when ≥1 task is `running`, title `2 background tasks: <commands> — ⌘P = for detail`. Plain `Chip`, tone `on`, no spinner — `Chip` owns its own markup and the count is the signal, not an animation.

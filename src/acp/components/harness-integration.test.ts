@@ -8,6 +8,10 @@
 // component.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const nativeDrop = vi.hoisted(() => ({
+  handler: null as null | ((event: { payload: { type: 'drop'; paths: string[]; position: { x: number; y: number } } }) => void),
+}));
+
 // The view talks to Tauri on mount and on its metric poll; every call returns an
 // empty list so the poll parses instead of rejecting.
 vi.mock('@tauri-apps/api/core', () => ({
@@ -17,6 +21,14 @@ vi.mock('@tauri-apps/api/core', () => ({
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn(async () => () => {}),
   emit: vi.fn(async () => undefined),
+}));
+vi.mock('@tauri-apps/api/webview', () => ({
+  getCurrentWebview: () => ({
+    onDragDropEvent: async (handler: typeof nativeDrop.handler) => {
+      nativeDrop.handler = handler;
+      return () => { nativeDrop.handler = null; };
+    },
+  }),
 }));
 vi.mock('../../profiler/ipc', () => ({ invoke: vi.fn(async () => []) }));
 
@@ -65,6 +77,8 @@ function genUiPanel(v: AcpHarnessView): { el: HTMLElement; isOpen: boolean } {
 }
 
 beforeEach(() => {
+  nativeDrop.handler = null;
+  vi.stubGlobal('__TAURI_INTERNALS__', {});
   document.body.replaceChildren();
   const storage = new Map<string, string>();
   vi.stubGlobal('localStorage', {
@@ -74,6 +88,51 @@ beforeEach(() => {
   });
   view = new AcpHarnessView('/tmp/proj');
   document.body.appendChild(view.element);
+});
+
+describe('native image drop into the harness prompt', () => {
+  it('stages an image dropped by Tauri onto the active composer', async () => {
+    const lane = call<HarnessLane>(view, 'createLane', 0, 'codex', 'Codex-1');
+    lane.status = 'idle';
+    lanes(view).push(lane);
+    activate(view, lane.id);
+    call(view, 'renderComposer');
+    const input = view.element.querySelector<HTMLElement>('.acp-harness__input')!;
+    vi.spyOn(document, 'elementFromPoint').mockReturnValue(input);
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === 'read_image_file') return PNG.buffer;
+      if (command === 'save_temp_image') return '/tmp/krypton-prompt-images/staged.png';
+      return [];
+    });
+
+    expect(nativeDrop.handler).not.toBeNull();
+    nativeDrop.handler!({ payload: {
+      type: 'drop', paths: ['/tmp/prompt.png'], position: { x: 100, y: 100 },
+    } });
+    await vi.waitFor(() => expect(lane.stagedImages).toHaveLength(1));
+    expect(lane.stagedImages[0]).toMatchObject({
+      mimeType: 'image/png', path: '/tmp/krypton-prompt-images/staged.png',
+    });
+    expect(lane.stagedImages[0].data).toBe(PNG_BASE64);
+  });
+
+  it('ignores a native drop over another window', async () => {
+    const lane = call<HarnessLane>(view, 'createLane', 0, 'codex', 'Codex-1');
+    lane.status = 'idle';
+    lanes(view).push(lane);
+    activate(view, lane.id);
+    const outside = document.createElement('div');
+    document.body.appendChild(outside);
+    vi.spyOn(document, 'elementFromPoint').mockReturnValue(outside);
+    vi.mocked(invoke).mockClear();
+
+    nativeDrop.handler!({ payload: {
+      type: 'drop', paths: ['/tmp/prompt.png'], position: { x: 100, y: 100 },
+    } });
+    await Promise.resolve();
+    expect(lane.stagedImages).toHaveLength(0);
+    expect(invoke).not.toHaveBeenCalledWith('read_image_file', { path: '/tmp/prompt.png' });
+  });
 });
 
 afterEach(() => {
@@ -728,8 +787,8 @@ describe('Assistant Instances dock (spec 357)', () => {
   });
 });
 
-describe('visible background activity (spec 384)', () => {
-  it('survives a completed launch and idle turn, then updates only chrome when the job exits', async () => {
+describe('visible background activity (specs 384/397)', () => {
+  it('shows only a running launch and removes it on exit without touching the sealed turn', async () => {
     const lane = call<HarnessLane>(view, 'createLane', 0, 'claude', 'Claude-1');
     lane.status = 'idle';
     lane.draft = 'keep this draft';
@@ -761,14 +820,18 @@ describe('visible background activity (spec 384)', () => {
       expect(strip.hidden).toBe(false);
       expect(strip.textContent).toContain('mvn test');
       expect(strip.textContent).toContain('RUNNING');
+      lane.backgroundTasks[0].pid = 4321;
+      call(view, 'refreshMetricsRender');
+      expect(strip.textContent).toContain('RUNNING · PID 4321');
       vi.mocked(invoke).mockImplementation(async (command) => command === 'acp_background_task_status' ? [{
         id: 'bg1', exists: true, bytes: 20, modified_ms: Date.now(),
         exit_code: 0, last_line: 'All tests completed',
       }] : []);
       await call<Promise<void>>(view, 'applyMetrics', []);
-      expect(strip.textContent).toContain('DONE');
-      expect(strip.textContent).toContain('exit 0');
-      expect(strip.textContent).toContain('All tests completed');
+      expect(strip.hidden).toBe(true);
+      expect(strip.querySelector('.acp-harness__background-strip-row')).toBeNull();
+      expect(lane.backgroundTasks[0].state).toBe('exited');
+      expect(lane.backgroundTasks[0].lastLine).toBe('All tests completed');
       expect(lane.status).toBe('idle');
       expect(lane.draft).toBe('keep this draft');
       expect(view.element.querySelector('.acp-harness__input')).toBe(input);
@@ -785,21 +848,8 @@ describe('visible background activity (spec 384)', () => {
       expect(strip.hidden).toBe(true);
       activate(view, lane.id);
       call(view, 'renderComposer');
-      expect(strip.hidden).toBe(false);
-      expect(strip.textContent).toContain('DONE');
-      // A success leaves the strip after its linger window; the registry keeps it.
-      const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 6_000);
-      try {
-        call(view, 'refreshMetricsRender');
-        expect(strip.hidden).toBe(true);
-        expect(lane.backgroundTasks).toHaveLength(1);
-        lane.backgroundTasks[0].exitCode = 3; // a failure has no time limit
-        call(view, 'refreshMetricsRender');
-        expect(strip.hidden).toBe(false);
-        expect(strip.textContent).toContain('FAILED · exit 3');
-      } finally {
-        clock.mockRestore();
-      }
+      expect(strip.hidden).toBe(true);
+      expect(lane.backgroundTasks).toHaveLength(1);
       lane.backgroundTasks = [];
       call(view, 'refreshMetricsRender');
       expect(strip.hidden).toBe(true);

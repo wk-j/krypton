@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { listComponent } from '../../../ui/list';
 import type { BackgroundTask } from '../../harness-view-types';
-import { BACKGROUND_DONE_LINGER_MS, BackgroundTaskStrip } from './index';
+import { BackgroundTaskStrip } from './index';
 
 const block = 'acp-harness__background-strip';
 const task = (over: Partial<BackgroundTask> & { id: string }): BackgroundTask => ({
@@ -52,70 +52,48 @@ describe('BackgroundTaskStrip', () => {
     strip.dispose();
   });
 
-  it('patches the same keyed row through in-place uncertain and terminal transitions', () => {
+  it('shows the matched PID, updates it in place, and removes a settled row', () => {
     const strip = new BackgroundTaskStrip();
     const job = task({ id: 'a' });
     const tasks = [job];
     strip.update({ tasks, now: 2_000 });
     const row = cell(strip, 'row');
 
-    job.state = 'unknown';
-    job.command = 'Build Case Preserved';
-    job.lastLine = 'Output no longer readable';
+    job.pid = 1234;
     strip.update({ tasks, now: 2_000 });
     expect(cell(strip, 'row')).toBe(row);
-    expect(cell(strip, 'state').textContent).toBe('OUTPUT UNAVAILABLE');
-    expect(cell(strip, 'command').textContent).toBe(job.command);
-    expect(cell(strip, 'tail').textContent).toBe(job.lastLine);
+    expect(cell(strip, 'state').textContent).toBe('RUNNING · PID 1234');
 
-    job.state = 'orphaned';
+    job.pid = 5678;
     strip.update({ tasks, now: 3_000 });
-    expect(cell(strip, 'state').textContent).toBe('NO PROCESS MATCH');
+    expect(cell(strip, 'row')).toBe(row);
+    expect(cell(strip, 'state').textContent).toBe('RUNNING · PID 5678');
+
+    job.pid = null;
+    strip.update({ tasks, now: 3_500 });
+    expect(cell(strip, 'state').textContent).toBe('RUNNING');
 
     job.state = 'exited';
     job.exitCode = 7;
     job.endedAt = 4_000;
     strip.update({ tasks, now: 5_000 });
-    expect(cell(strip, 'row')).toBe(row);
-    expect(cell(strip, 'state').textContent).toBe('FAILED · exit 7');
-    expect(cell(strip, 'elapsed').textContent).toBe('0:03');
-    expect(strip.el.hidden).toBe(false);
-
-    job.exitCode = 0;
-    strip.update({ tasks, now: 6_000 });
-    expect(cell(strip, 'state').textContent).toBe('DONE · exit 0');
-    expect(cell(strip, 'row')).toBe(row);
+    expect(rowIds(strip)).toEqual([]);
+    expect(strip.el.hidden).toBe(true);
     strip.dispose();
   });
 
-  it('keeps a terminal task without an exit code, never calling it successful', () => {
+  it('hides unknown, orphaned, successful and failed tasks immediately', () => {
     const strip = new BackgroundTaskStrip();
-    const tasks = [task({ id: 'a', state: 'exited', endedAt: 2_000 })];
+    const tasks = [
+      task({ id: 'unknown', state: 'unknown' }),
+      task({ id: 'orphaned', state: 'orphaned' }),
+      task({ id: 'done', state: 'exited', exitCode: 0, endedAt: 2_000 }),
+      task({ id: 'failed', state: 'exited', exitCode: 2, endedAt: 2_000 }),
+      task({ id: 'no-code', state: 'exited', endedAt: 2_000 }),
+    ];
     strip.update({ tasks, now: 3_000 });
-    expect(cell(strip, 'state').textContent).toBe('OUTPUT UNAVAILABLE');
-    expect(strip.el.textContent).not.toContain('DONE');
-    strip.update({ tasks, now: 2_000 + 10 * BACKGROUND_DONE_LINGER_MS });
-    expect(strip.el.hidden).toBe(false);
-    expect(rowIds(strip)).toEqual(['a']);
-    strip.dispose();
-  });
-
-  it('clears a successful result once its linger window passes, but keeps a failure', () => {
-    const strip = new BackgroundTaskStrip();
-    const done = task({ id: 'done', state: 'exited', exitCode: 0, endedAt: 10_000, lastLine: 'UP after 54s' });
-    strip.update({ tasks: [done], now: 10_000 });
-    expect(cell(strip, 'state').textContent).toBe('DONE · exit 0');
-    strip.update({ tasks: [done], now: 10_000 + BACKGROUND_DONE_LINGER_MS - 1 });
-    expect(strip.el.hidden).toBe(false);
-    strip.update({ tasks: [done], now: 10_000 + BACKGROUND_DONE_LINGER_MS });
     expect(strip.el.hidden).toBe(true);
     expect(rowIds(strip)).toEqual([]);
-
-    const failed = task({ id: 'failed', state: 'exited', exitCode: 2, endedAt: 10_000 });
-    strip.update({ tasks: [failed], now: 1_000_000 });
-    expect(strip.el.hidden).toBe(false);
-    expect(rowIds(strip)).toEqual(['failed']);
-    expect(cell(strip, 'state').textContent).toBe('FAILED · exit 2');
     strip.dispose();
   });
 
@@ -128,51 +106,44 @@ describe('BackgroundTaskStrip', () => {
       task({ id: 'orphaned', startedAt: 3_000, state: 'orphaned' }),
       task({ id: 'new', startedAt: 5_000 }),
       task({ id: 'older', startedAt: 2_000 }),
+      task({ id: 'newest', startedAt: 6_000 }),
     ]);
     strip.update({ tasks, now: 10_000 });
-    expect(rowIds(strip)).toEqual(['new', 'unknown', 'orphaned']);
+    expect(rowIds(strip)).toEqual(['newest', 'new', 'older']);
     expect(cell(strip, 'more').hidden).toBe(false);
-    expect(cell(strip, 'more').textContent).toBe('+2 more · ⌘P then = Lane Metrics');
+    expect(cell(strip, 'more').textContent).toBe('+1 more · ⌘P then = Lane Metrics');
     expect(Array.from(cell(strip, 'more').querySelectorAll('kbd'), (key) => key.textContent)).toEqual(['⌘P', '=']);
-    expect(tasks.map((job) => job.id)).toEqual(['old', 'completed', 'unknown', 'orphaned', 'new', 'older']);
+    expect(tasks.map((job) => job.id)).toEqual(['old', 'completed', 'unknown', 'orphaned', 'new', 'older', 'newest']);
 
-    tasks[0].startedAt = 6_000;
+    tasks[0].startedAt = 7_000;
     strip.update({ tasks, now: 10_000 });
-    expect(rowIds(strip)).toEqual(['old', 'new', 'unknown']);
+    expect(rowIds(strip)).toEqual(['old', 'newest', 'new']);
     strip.dispose();
   });
 
-  it('keeps a failure beside an earlier-started job until a job starts after it ended', () => {
+  it('keeps another running job when a sibling exits', () => {
     const strip = new BackgroundTaskStrip();
     const earlier = task({ id: 'earlier', startedAt: 1_000 });
     const tasks = [
       earlier,
-      task({ id: 'failed', startedAt: 2_000, endedAt: 3_000, state: 'exited', exitCode: 1 }),
+      task({ id: 'later', startedAt: 2_000 }),
     ];
     strip.update({ tasks, now: 3_500 });
-    expect(rowIds(strip)).toEqual(['failed', 'earlier']);
+    expect(rowIds(strip)).toEqual(['later', 'earlier']);
+
+    tasks[1].state = 'exited';
+    tasks[1].exitCode = 1;
+    tasks[1].endedAt = 4_000;
+    strip.update({ tasks, now: 4_500 });
+    expect(rowIds(strip)).toEqual(['earlier']);
+    expect(strip.el.hidden).toBe(false);
 
     earlier.state = 'exited';
     earlier.exitCode = 0;
-    earlier.endedAt = 4_000;
-    strip.update({ tasks, now: 4_500 });
-    expect(rowIds(strip)).toEqual(['failed', 'earlier']);
-    strip.update({ tasks, now: 4_000 + BACKGROUND_DONE_LINGER_MS });
-    expect(rowIds(strip)).toEqual(['failed']);
-    expect(cell(strip, 'elapsed').textContent).toBe('0:01');
-
-    const next = task({ id: 'next', startedAt: 20_000 });
-    tasks.push(next);
-    strip.update({ tasks, now: 21_000 });
-    expect(rowIds(strip)).toEqual(['next']);
-    next.state = 'exited';
-    next.exitCode = 0;
-    next.endedAt = 22_000;
-    strip.update({ tasks, now: 22_000 + BACKGROUND_DONE_LINGER_MS });
+    earlier.endedAt = 5_000;
+    strip.update({ tasks, now: 5_000 });
     expect(strip.el.hidden).toBe(true);
     expect(rowIds(strip)).toEqual([]);
-    strip.update({ tasks: [], now: 30_000 });
-    expect(strip.el.hidden).toBe(true);
     strip.dispose();
   });
 
@@ -197,7 +168,7 @@ describe('BackgroundTaskStrip', () => {
     strip.dispose();
   });
 
-  it('repaints only the changed cell of a row', () => {
+  it('repaints only the changed output or PID cell of a row', () => {
     const strip = new BackgroundTaskStrip();
     const tasks = [task({ id: 'a', lastLine: 'Compiling' })];
     strip.update({ tasks, now: 2_000 });
@@ -208,6 +179,14 @@ describe('BackgroundTaskStrip', () => {
       (record.target instanceof HTMLElement ? record.target : record.target.parentElement)?.className));
     expect(targets).toEqual(new Set([`${block}-tail`]));
     observer.disconnect();
+
+    const pidObserver = observe(strip.el);
+    tasks[0].pid = 2468;
+    strip.update({ tasks, now: 5_000 });
+    const pidTargets = new Set(pidObserver.takeRecords().map((record) =>
+      (record.target instanceof HTMLElement ? record.target : record.target.parentElement)?.className));
+    expect(pidTargets).toEqual(new Set([`${block}-state`]));
+    pidObserver.disconnect();
     strip.dispose();
   });
 

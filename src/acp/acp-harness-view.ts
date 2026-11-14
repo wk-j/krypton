@@ -4,6 +4,7 @@
 import * as smd from 'streaming-markdown';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { openExternalUrl } from '../external-url';
 import { nextPermissionMode, permissionModeDescription } from '../agent/permission-mode';
 import { assistantInstanceStore } from '../assistant-instance-store';
@@ -1358,6 +1359,7 @@ export class AcpHarnessView implements ContentView {
   private remoteConnectionState: RemoteConnectionState = 'connected';
   private remoteConnectionMessage: string | null = null;
   private remoteConnectionUnlisten: UnlistenFn | null = null;
+  private nativeDropUnlisten: UnlistenFn | null = null;
   /** spec 128: global ViewBus, used to publish the open attention count so the
    * workspace footer can show it regardless of which view is focused. */
   private viewBus: ViewBus | null = null;
@@ -1927,6 +1929,7 @@ export class AcpHarnessView implements ContentView {
     });
     this.buildDOM();
     this.render();
+    void this.subscribeNativeImageDrop();
     if (this.remoteRuntimeId) void this.subscribeRemoteConnection();
     void this.refreshGitBranch();
     void this.start();
@@ -5226,6 +5229,9 @@ export class AcpHarnessView implements ContentView {
 
   dispose(): void {
     this.permissionCountDisposed = true;
+    this.nativeDropUnlisten?.();
+    this.nativeDropUnlisten = null;
+    this.element.classList.remove('acp-harness--drag-over');
     this.notifyPendingPermissionCountChanged();
     this.permissionCountListeners.clear();
     this.element.removeEventListener('focusout', this.dictationFocusOutHandler);
@@ -15687,9 +15693,75 @@ export class AcpHarnessView implements ContentView {
     }
   }
 
+  private nativeDropHitsView(position: { x: number; y: number }): boolean {
+    const scale = window.devicePixelRatio || 1;
+    const target = document.elementFromPoint(position.x / scale, position.y / scale);
+    return target !== null && this.element.contains(target);
+  }
+
+  private async subscribeNativeImageDrop(): Promise<void> {
+    // Tauri's default file-drop handler consumes OS file drags before the DOM
+    // `drop` listener below sees them. DOM drops still handle browser sources.
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    try {
+      const unlisten = await getCurrentWebview().onDragDropEvent((event) => {
+        const drop = event.payload;
+        if (drop.type === 'leave') {
+          this.element.classList.remove('acp-harness--drag-over');
+          return;
+        }
+        const hit = this.nativeDropHitsView(drop.position);
+        if (drop.type === 'enter' || drop.type === 'over') {
+          this.element.classList.toggle('acp-harness--drag-over', hit && !this.remoteRuntimeId);
+          return;
+        }
+        this.element.classList.remove('acp-harness--drag-over');
+        if (hit) void this.stageNativeImageDrop(drop.paths);
+      });
+      if (this.permissionCountDisposed) unlisten();
+      else this.nativeDropUnlisten = unlisten;
+    } catch (error) {
+      console.warn('[AcpHarnessView] native image drop unavailable', error);
+    }
+  }
+
+  private async stageNativeImageDrop(paths: string[]): Promise<void> {
+    if (this.remoteRuntimeId) {
+      this.flashChip('local image files are unavailable in a remote Harness');
+      return;
+    }
+    const lane = this.activeLane();
+    if (
+      !lane
+      || lane.pendingPermissions.length > 0
+      || lane.pendingQuestions.length > 0
+      || lane.pendingComputerCommands.length > 0
+    ) return;
+    for (const path of paths) {
+      const image = await readImageFile(path);
+      if (!image.ok) {
+        if (image.reason === 'too large') {
+          this.flashChip('image too large (max 5MB)');
+          return;
+        }
+        continue;
+      }
+      if (image.bytes.length > MAX_IMAGE_BYTES) {
+        this.flashChip('image too large (max 5MB)');
+        return;
+      }
+      if (this.permissionCountDisposed || !this.lanes.includes(lane)) return;
+      const file = new File([image.bytes], path.split('/').pop() ?? 'image', { type: image.mimeType });
+      this.stageImageFile(lane, file);
+      return;
+    }
+    if (paths.length > 0) this.flashChip('drop an image file');
+  }
+
   private stageImageFile(lane: HarnessLane, file: File): void {
     const reader = new FileReader();
     reader.onload = (): void => {
+      if (this.permissionCountDisposed || !this.lanes.includes(lane)) return;
       const dataUrl = reader.result as string;
       const commaIdx = dataUrl.indexOf(',');
       const base64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
@@ -15709,6 +15781,7 @@ export class AcpHarnessView implements ContentView {
     }
     try {
       const path = await invoke<string>('save_temp_image', { data, mimeType });
+      if (this.permissionCountDisposed || !this.lanes.includes(lane)) return;
       this.stageImageData(lane, data, mimeType, path);
     } catch (e) {
       this.flashChip(`image save failed: ${String(e)}`);

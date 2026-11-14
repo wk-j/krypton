@@ -1283,9 +1283,11 @@ PUBLISH
     Ctrl+Shift+S screen capture. For global capture, main.ts invokes
     capture_screen only when the focused content type is acp_harness, then
     routes the PNG through Compositor.stageCapturedImageOnFocusedContent().
-    Pasted and dropped images are first saved through save_temp_image. The
-    harness sends staged images as embedded ACP image blocks with base64 data
-    plus a file:// URI to the saved path on the next prompt, then clears the
+    OS file drops arrive through Tauri's native webview event, are hit-tested
+    against the harness root, and read through read_image_file. All pasted and
+    dropped images then use save_temp_image. The harness sends staged images as
+    embedded ACP image blocks with base64 data plus a file:// URI to the saved
+    path on the next prompt, then clears the
     transient composer thumbnails after dispatch.
 15. Closing the harness disposes every lane client, calls dispose_harness_memory(),
     and drops transcripts and file-touch warnings. Persistent memory stays on
@@ -1677,7 +1679,8 @@ cannot see (`clientCapabilities.terminal` is `false` — `src-tauri/src/acp.rs`)
    no marker + no pid, twice in a row                   → 'orphaned'
    file missing      → 'unknown' (last known bytes/line kept)
 5. refreshMetricsRender → LaneHead `bg N` chip + Composer.patchBackgroundTasks
-   → visible BackgroundTaskStrip above the active lane's draft or decision controls
+   → BackgroundTaskStrip above the active lane's draft or decision controls
+     (only 'running' tasks; PID shown when the lane process tree finds it)
    + BackgroundTasks inside the optional `=` Lane Metrics overlay
    `#bg` still prints a transcript snapshot; none of these updates repaints a sealed row
 ```
@@ -1693,9 +1696,11 @@ unstructured system messages continue through `SystemRow` (spec 387).
 
 
 The composer strip uses steady LEDs, not a spinner or a new timer. It stays visible
-after the launch turn ends, shows up to three unsettled jobs and a remaining count,
-and retains the newest-started final result when none remain unsettled. Lane switches
-select independent registries; reset/restart clears the old lane's registry. Its
+after the launch turn ends while tasks remain `running`, shows up to three such jobs
+and a remaining count, and drops rows on the poll that changes them to `exited`,
+`unknown` or `orphaned`. A matched PID appears beside `RUNNING`; without one the
+label remains `RUNNING`. Lane switches select independent registries;
+reset/restart clears the old lane's registry. Its
 display dependencies snapshot mutable task fields, so equal polls write nothing.
 The existing overlay spinner ticker remains gated on the metrics overlay being open.
 

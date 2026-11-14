@@ -969,7 +969,7 @@ replacement for the spec-117 `console.warn` guard (`acp-harness-view.ts:12136-12
 | 6.6 | `DictationControl` | `[● REC th  ⌘D]` (phases `MIC · MIC en · REC th · FINALIZING…`) | `harness-dictation-controller.ts:37-82` |
 | 6.7 | `LiveVoiceStrip` | `LIVE  muted  alloy  ░░░░░░░░ ██░░░░░░  you: refactor the composer   ⌘⇧L stop · hold left ⌥ to talk` | `harness-live-voice-controller.ts:461-499` |
 | 6.8 | `DecisionComposer` | `perm      a accept · A all · r reject · R all` | `acp-harness-view.ts:13299-13313` |
-| 6.9 | `BackgroundTaskStrip` | `BACKGROUND ● RUNNING mvn test   Running tests` — one line per job, no head line; `+2 more · ⌘P then = Lane Metrics` only on overflow | Spec 384; first child of both draft and decision composers, updated directly from launch/metrics |
+| 6.9 | `BackgroundTaskStrip` | `BACKGROUND ● RUNNING · PID 4321 mvn test   Running tests` — one line per running job, no head line; `+2 more · ⌘P then = Lane Metrics` only on overflow | Specs 384/397; first child of both draft and decision composers, updated directly from launch/metrics |
 
 `LiveVoiceStrip` keeps `LiveVoiceSessionProps.muted: boolean`. The microphone starts muted;
 the muted hint is `⌘⇧L stop · hold left ⌥ to talk`, changing to
@@ -977,13 +977,13 @@ the muted hint is `⌘⇧L stop · hold left ⌥ to talk`, changing to
 loss closes the microphone without stopping playback/session; see
 [spec 314](./0314-harness-live-push-to-talk.md) for cancellation and safety behavior.
 
-`BackgroundTaskStrip` reads the active lane's registered tasks and the poll timestamp, snapshots
-displayed scalar values, and reconciles rows by task ID. Running/unknown/orphaned jobs always
-qualify for a row; a final result qualifies until a job starts after it ended, and an `exit 0`
-also drops out `BACKGROUND_DONE_LINGER_MS` (5 s) after it ended. Up to three rows show,
-newest-started first; `+N more` names the overflow. With no qualifying job it reserves no height.
-There is no live clock — only a settled row shows its (fixed) duration — so a poll that learns
-nothing writes no DOM. It owns no timer and never touches sealed transcript DOM;
+`BackgroundTaskStrip` reads the active lane's registered tasks, snapshots displayed scalar
+values, and reconciles rows by task ID. Only `running` jobs qualify; a known process-tree PID
+appears in the state label, while a task without a match says `RUNNING` alone. `exited`, `unknown`
+and `orphaned` jobs leave the strip on the poll that sets those states but stay in the registry
+for `#bg` and Lane Metrics. Up to three rows show, newest-started first; `+N more` counts only
+other running jobs. With none it reserves no height. There is no live clock or duration readout,
+so a poll that learns nothing writes no DOM. It owns no timer and never touches sealed transcript DOM;
 `Composer.patchBackgroundTasks()` updates it without rebuilding the draft or decision controls.
 
 ---

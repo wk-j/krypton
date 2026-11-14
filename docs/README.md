@@ -19,7 +19,6 @@ Listed by spec number. Older specs remain in this directory.
 
 | # | Spec |
 |---|------|
-| 376 | [Commit Explainer Background Job](./0376-commit-explainer-background-job.md) |
 | 377 | [Commit Explainer Job Strip](./0377-commit-explainer-job-strip.md) |
 | 378 | [Codex Guardian Review Row](./0378-codex-guardian-review-row.md) |
 | 379 | [Connected Transcript Sources](./0379-connected-transcript-sources.md) |
@@ -40,6 +39,7 @@ Listed by spec number. Older specs remain in this directory.
 | 394 | [Junie Backend Removal](./0394-remove-junie-backend.md) |
 | 395 | [Workspace Backgrounds](./0395-workspace-backgrounds.md) |
 | 396 | [Harness Git Panel](./0396-harness-git-panel.md) |
+| 397 | [Active Background Task Strip](./0397-active-background-task-strip.md) |
 
 ## ADRs (31)
 

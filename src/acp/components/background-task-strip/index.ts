@@ -1,9 +1,8 @@
-// Spec 384 — persistent background activity beside the prompt.
+// Specs 384/397 — current background activity beside the prompt.
 import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
 import { keyHint } from '../../../ui/kbd';
 import { disposeList, reconcile } from '../../../ui/list';
-import { formatElapsed } from '../../harness-format';
 import type { BackgroundTask } from '../../harness-view-types';
 import type { ComponentDef } from '../types';
 import './background-task-strip.css';
@@ -24,59 +23,24 @@ interface RowProps {
 
 const block = 'acp-harness__background-strip';
 
-/** A successful job's final row leaves the strip this long after it ended. */
-export const BACKGROUND_DONE_LINGER_MS = 5_000;
-
-/** No live clock: an unsettled row carries no elapsed time, so a poll that
- *  learns nothing new writes nothing. A settled row shows its final duration. */
+/** Only running jobs reach this view. The matched PID is advisory and may be
+ *  absent until the first process-tree sample. */
 function rowProps(task: BackgroundTask): RowProps {
-  let state: string = task.state;
-  let label: string;
-  switch (task.state) {
-    case 'running':
-      label = 'RUNNING';
-      break;
-    case 'unknown':
-      label = 'OUTPUT UNAVAILABLE';
-      break;
-    case 'orphaned':
-      label = 'NO PROCESS MATCH';
-      break;
-    case 'exited':
-      state = task.exitCode === null ? 'unknown' : task.exitCode === 0 ? 'done' : 'failed';
-      label = task.exitCode === null
-        ? 'OUTPUT UNAVAILABLE'
-        : `${task.exitCode === 0 ? 'DONE' : 'FAILED'} · exit ${task.exitCode}`;
-      break;
-  }
   return {
     id: task.id,
-    state,
-    label,
+    state: 'running',
+    label: task.pid === null ? 'RUNNING' : `RUNNING · PID ${task.pid}`,
     command: task.command,
-    elapsed: task.state === 'exited' && task.endedAt !== null ? formatElapsed(task.endedAt - task.startedAt) : '',
+    elapsed: '',
     lastLine: task.lastLine,
   };
 }
 
 const MAX_ROWS = 3;
 
-/**
- * Unsettled jobs always qualify. A final result qualifies until a job is started
- * after it ended; an `exit 0` additionally drops out once its linger window
- * passes, while a failure (or an exit without a code) stays.
- */
-function visibleTasks(
-  tasks: readonly BackgroundTask[],
-  now: number,
-): { shown: BackgroundTask[]; overflow: number } {
-  const latestStart = tasks.reduce((latest, task) => Math.max(latest, task.startedAt), -Infinity);
-  const qualifying = tasks.filter((task) => {
-    if (task.state !== 'exited') return true;
-    const endedAt = task.endedAt ?? task.startedAt;
-    if (latestStart > endedAt) return false;
-    return task.exitCode !== 0 || now - endedAt < BACKGROUND_DONE_LINGER_MS;
-  });
+/** The composer strip is a live-activity view; history stays in the registry. */
+function visibleTasks(tasks: readonly BackgroundTask[]): { shown: BackgroundTask[]; overflow: number } {
+  const qualifying = tasks.filter((task) => task.state === 'running');
   qualifying.sort((a, b) => b.startedAt - a.startedAt);
   return { shown: qualifying.slice(0, MAX_ROWS), overflow: Math.max(0, qualifying.length - MAX_ROWS) };
 }
@@ -141,7 +105,7 @@ export class BackgroundTaskStrip extends Component<BackgroundTaskStripProps> {
   }
 
   protected readDeps(next: BackgroundTaskStripProps): readonly unknown[] {
-    const { shown, overflow } = visibleTasks(next.tasks, next.now);
+    const { shown, overflow } = visibleTasks(next.tasks);
     // Snapshot displayed scalars, never mutable task/array identities or raw poll time.
     return [overflow, ...shown.flatMap((task) => {
       const row = rowProps(task);
@@ -150,13 +114,13 @@ export class BackgroundTaskStrip extends Component<BackgroundTaskStripProps> {
   }
 
   protected syncClasses(next: BackgroundTaskStripProps): void {
-    const hidden = visibleTasks(next.tasks, next.now).shown.length === 0;
+    const hidden = visibleTasks(next.tasks).shown.length === 0;
     if (this.el.hidden !== hidden) this.el.hidden = hidden;
   }
 
   protected paint(next: BackgroundTaskStripProps): void {
     this.syncClasses(next);
-    const { shown, overflow } = visibleTasks(next.tasks, next.now);
+    const { shown, overflow } = visibleTasks(next.tasks);
     const moreText = overflow > 0 ? `+${overflow} more` : '';
     if (this.moreCount.textContent !== moreText) this.moreCount.textContent = moreText;
     if (this.more.hidden !== !moreText) this.more.hidden = !moreText;
