@@ -44,6 +44,7 @@ Listed by spec number. Older specs remain in this directory.
 | 399 | [Droid Backend Removal](./0399-remove-droid-backend.md) |
 | 400 | [Bug Trail — Pre-Fix Diagnosis on the System Map](./0400-bug-trail.md) |
 | 401 | [Harness Session Info Panel](./0401-harness-session-info-panel.md) |
+| 402 | [Harness Session MCP Connection](./0402-harness-session-mcp-connection.md) |
 
 ## ADRs (31)
 

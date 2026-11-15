@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { SessionInfo, sessionContext, sessionInfoProps, type SessionInfoProps } from './index';
 import type { HarnessLane } from '../../harness-view-types';
+import type { HarnessMcpLaneStats } from '../../types';
 
 const sample: SessionInfoProps = {
   laneName: 'Codex-1',
@@ -14,6 +15,12 @@ const sample: SessionInfoProps = {
   status: 'busy',
   contextUsed: 74_600,
   contextSize: 1_000_000,
+  mcpEndpointAvailable: true,
+  mcpInitializeCount: 1,
+  mcpToolsListCount: 1,
+  mcpToolsCallCount: 3,
+  mcpLastMethod: 'tools/call',
+  mcpLastSeenAt: Date.UTC(2026, 10, 15, 6, 0),
   projectName: 'krypton',
   cacheHit: '99%',
   cacheRead: 71_200,
@@ -58,6 +65,7 @@ describe('Session Info (spec 401)', () => {
     expect(panel.el.textContent).toContain('40.4k');
     expect(panel.el.textContent).toContain('190');
     expect(panel.el.textContent).toContain('287');
+    expect(panel.el.textContent).toContain('Tools listed on this lane');
 
     panel.update({ ...sample, contextUsed: 30_000 });
     expect(panel.el.querySelector('.acp-session-info__readout')).toBe(readout);
@@ -69,14 +77,17 @@ describe('Session Info (spec 401)', () => {
       effortName: null, status: 'starting', contextUsed: null, contextSize: null,
       projectName: null, cacheHit: null, cacheRead: null, cacheWrite: null,
       turnInput: null, inputTokens: null, outputTokens: null, toolCalls: 0,
-      transcriptRows: 0,
+      transcriptRows: 0, mcpInitializeCount: 0, mcpToolsListCount: 0,
+      mcpToolsCallCount: 0, mcpLastMethod: null, mcpLastSeenAt: null,
     });
     expect(panel.el.textContent).toContain('Claude-2');
     expect(panel.el.textContent).toContain('Pending');
     expect(panel.el.textContent).toContain('Context unavailable');
     expect(panel.el.textContent).not.toContain('session-123');
-    expect(panel.el.textContent).not.toContain('krypton');
+    expect(panel.el.querySelector<HTMLElement>('section[aria-label="Session details"] .acp-session-info__fact:nth-child(2)')?.hidden).toBe(true);
     expect(panel.el.textContent).not.toContain('140.3k');
+    expect(panel.el.textContent).toContain('No contact observed');
+    expect(panel.el.textContent).not.toContain('tools/call');
     expect(meter.hidden).toBe(true);
   });
 
@@ -101,7 +112,7 @@ describe('Session Info (spec 401)', () => {
       rejectAllForTurn: false, peerAutoAcceptForTurn: false,
       pollyBuiltinRole: null, permissionMode: 'normal', error: 'adapter error',
     } as unknown as HarnessLane;
-    const snapshot = sessionInfoProps(lane, '/tmp/krypton', 'Codex');
+    const snapshot = sessionInfoProps(lane, '/tmp/krypton', 'Codex', null, true);
     const panel = new SessionInfo();
     panel.update(snapshot);
     expect(snapshot.projectName).toBe('krypton');
@@ -116,5 +127,55 @@ describe('Session Info (spec 401)', () => {
     expect(panel.el.textContent).toContain('adapter error');
     expect(panel.el.textContent).toContain('Permissions1');
     expect(panel.el.textContent).toContain('Questions1');
+  });
+
+  it('describes MCP request evidence without claiming a live connection', () => {
+    const panel = new SessionInfo();
+    const mcp = (): HTMLElement => panel.el.querySelector<HTMLElement>('section[aria-label="MCP connection"]')!;
+    panel.update({ ...sample, mcpInitializeCount: 0, mcpToolsListCount: 0,
+      mcpToolsCallCount: 0, mcpLastMethod: null, mcpLastSeenAt: null });
+    expect(mcp().textContent).toContain('No contact observed');
+    expect(mcp().querySelector<HTMLElement>('.acp-session-info__fact:last-child')?.hidden).toBe(true);
+
+    panel.update({ ...sample, mcpInitializeCount: 1, mcpToolsListCount: 0,
+      mcpToolsCallCount: 0, mcpLastMethod: 'initialize' });
+    expect(mcp().textContent).toContain('Initialized; tools not listed');
+
+    panel.update({ ...sample, mcpInitializeCount: 0, mcpToolsListCount: 0,
+      mcpToolsCallCount: 0, mcpLastMethod: 'notifications/initialized' });
+    expect(mcp().textContent).toContain('Contact observed; tools not listed');
+
+    panel.update(sample);
+    expect(mcp().textContent).toContain('Tools listed on this lane');
+    expect(mcp().textContent).toContain('tools/call');
+    expect(mcp().textContent).toContain(new Date(sample.mcpLastSeenAt!).toLocaleString());
+    expect(mcp().textContent).toContain('not a live connection check');
+
+    panel.update({ ...sample, mcpEndpointAvailable: false });
+    expect(mcp().textContent).toContain('Not supplied');
+    expect(mcp().textContent).toContain('tools/call');
+  });
+
+  it('snapshots mutable MCP counters before the next lane update', () => {
+    const lane = {
+      displayName: 'Codex-1', sessionId: null, backendId: 'codex', modelName: null,
+      effort: null, status: 'idle', usage: null, lastTurnTokens: null,
+      toolViews: new Map(), transcript: [], pendingPermissions: [], pendingQuestions: [],
+      acceptAllForTurn: false, rejectAllForTurn: false, peerAutoAcceptForTurn: false,
+      permissionMode: 'normal', error: null,
+    } as unknown as HarnessLane;
+    const stats: HarnessMcpLaneStats = {
+      laneLabel: 'Codex-1', initializeCount: 1, toolsListCount: 0,
+      toolsCallCount: 0, lastMethod: 'initialize', lastSeenAt: Date.UTC(2026, 10, 15, 6, 0),
+    };
+    const first = sessionInfoProps(lane, null, 'Codex', stats, true);
+    const panel = new SessionInfo();
+    panel.update(first);
+    stats.toolsListCount = 1;
+    stats.lastMethod = 'tools/list';
+    panel.update(sessionInfoProps(lane, null, 'Codex', stats, true));
+    expect(first.mcpToolsListCount).toBe(0);
+    expect(panel.el.querySelector('section[aria-label="MCP connection"]')?.textContent)
+      .toContain('Tools listed on this lane');
   });
 });

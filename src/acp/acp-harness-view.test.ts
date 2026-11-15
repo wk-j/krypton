@@ -705,9 +705,11 @@ describe('lane event region scheduling (spec 301)', () => {
   it('refreshes metrics on an MCP stats poll without invalidating a region', async () => {
     type McpStatsHost = { refreshMcpStats(): Promise<void> };
     const refreshMcpStats = (AcpHarnessView.prototype as unknown as McpStatsHost).refreshMcpStats;
+    let sessionRefreshes = 0;
     const { regions, target } = regionSpy({
       harnessMemoryId: 'h1',
       mcpStatsByLane: new Map<string, unknown>(),
+      renderSessionDock: (): void => { sessionRefreshes++; },
     });
     invokeMock.mockResolvedValueOnce([{ laneLabel: 'Codex-1' }]);
 
@@ -715,6 +717,7 @@ describe('lane event region scheduling (spec 301)', () => {
 
     expect((target.mcpStatsByLane as Map<string, unknown>).has('Codex-1')).toBe(true);
     expect(regions).toEqual(['metrics']);
+    expect(sessionRefreshes).toBe(1);
   });
 });
 
@@ -740,17 +743,28 @@ describe('Session Info dock (spec 401)', () => {
       permissionMode: 'normal',
       error: null,
     } as unknown as HarnessLane;
-    const paints: Array<{ contextUsed: number | null; laneName: string; effortName: string | null }> = [];
+    const paints: Array<{
+      contextUsed: number | null; laneName: string; effortName: string | null;
+      mcpToolsListCount: number; mcpEndpointAvailable: boolean;
+    }> = [];
     const available: boolean[] = [];
     const target = viewDouble({
       activeLane: (): HarnessLane => lane,
       isPanelHidden: (): boolean => false,
+      memoryServerForLane: (): unknown[] => [{}],
+      mcpStatsByLane: new Map([['Codex-1', {
+        laneLabel: 'Codex-1', initializeCount: 1, toolsListCount: 2,
+        toolsCallCount: 3, lastMethod: 'tools/call', lastSeenAt: 100,
+      }]]),
       dock: {
         setAvailable: (_tab: string, value: boolean): void => { available.push(value); },
         isShown: (): boolean => true,
       },
       sessionInfo: {
-        update: (props: { contextUsed: number | null; laneName: string; effortName: string | null }): void => {
+        update: (props: {
+          contextUsed: number | null; laneName: string; effortName: string | null;
+          mcpToolsListCount: number; mcpEndpointAvailable: boolean;
+        }): void => {
           paints.push(props);
         },
       },
@@ -767,10 +781,11 @@ describe('Session Info dock (spec 401)', () => {
     render.call(target);
 
     expect(available).toEqual([true, true, true]);
-    expect(paints.map((props) => [props.laneName, props.contextUsed, props.effortName])).toEqual([
-      ['Codex-1', 74_600, 'High'],
-      ['Codex-1', 30_000, 'High'],
-      ['Codex-2', null, 'High'],
+    expect(paints.map((props) => [props.laneName, props.contextUsed, props.effortName,
+      props.mcpToolsListCount, props.mcpEndpointAvailable])).toEqual([
+      ['Codex-1', 74_600, 'High', 2, true],
+      ['Codex-1', 30_000, 'High', 2, true],
+      ['Codex-2', null, 'High', 0, true],
     ]);
   });
 });

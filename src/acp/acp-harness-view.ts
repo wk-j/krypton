@@ -7940,6 +7940,7 @@ export class AcpHarnessView implements ContentView {
       this.mcpStatsByLane.clear();
       for (const entry of stats) this.mcpStatsByLane.set(entry.laneLabel, entry);
       this.refreshMetricsRender();
+      this.renderSessionDock();
     } catch {
       // ignore — stats are diagnostic only
     }
@@ -16455,7 +16456,13 @@ export class AcpHarnessView implements ContentView {
     const lane = this.activeLane();
     this.dock.setAvailable('session', lane !== null && !this.isPanelHidden('session'));
     if (!lane || !this.dock.isShown('session')) return;
-    this.sessionInfo.update(sessionInfoProps(lane, this.projectDir, backendLabel(lane.backendId)));
+    this.sessionInfo.update(sessionInfoProps(
+      lane,
+      this.projectDir,
+      backendLabel(lane.backendId),
+      this.mcpStatsByLane.get(lane.displayName) ?? null,
+      this.memoryServerForLane(lane).length > 0,
+    ));
   }
 
   private showSessionDock(): void {

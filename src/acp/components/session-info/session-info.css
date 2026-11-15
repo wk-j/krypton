@@ -8,6 +8,10 @@
     padding: 10px 8px 8px;
   }
 
+  .acp-session-info[hidden] {
+    display: none;
+  }
+
   .acp-session-info__head {
     display: flex;
     align-items: center;
@@ -24,6 +28,20 @@
     letter-spacing: 0.11em;
     text-shadow: var(--mat-engrave);
     text-transform: uppercase;
+  }
+
+  .acp-session-info__eyebrow,
+  .acp-session-info__heading {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .acp-session-info__icon {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 14px;
+    color: inherit;
   }
 
   .acp-session-info__eyebrow {
@@ -177,6 +195,13 @@
     overflow-wrap: anywhere;
     color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
     user-select: text;
+  }
+
+  .acp-session-info__mcp-note {
+    margin: 5px 4px 0;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    line-height: 1.35;
   }
 
   .acp-session-info__keys {

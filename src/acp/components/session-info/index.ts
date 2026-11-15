@@ -7,9 +7,10 @@ import { Component } from '../../../ui/component';
 import { el, setAttr } from '../../../ui/dom';
 import { keyHintNodes } from '../../../ui/kbd';
 import { basename, formatCount } from '../../harness-format';
+import { harnessIconEl } from '../../harness-icons';
 import { isPollyImplementerBypass } from '../../harness-lane-chrome';
 import type { HarnessLane } from '../../harness-view-types';
-import type { HarnessLaneStatus } from '../../types';
+import type { HarnessLaneStatus, HarnessMcpLaneStats } from '../../types';
 import { cacheHitRate, formatCacheHitPercent } from '../../usage-log';
 import type { ComponentDef } from '../types';
 
@@ -22,6 +23,12 @@ export interface SessionInfoProps {
   readonly status: HarnessLaneStatus;
   readonly contextUsed: number | null;
   readonly contextSize: number | null;
+  readonly mcpEndpointAvailable: boolean;
+  readonly mcpInitializeCount: number;
+  readonly mcpToolsListCount: number;
+  readonly mcpToolsCallCount: number;
+  readonly mcpLastMethod: string | null;
+  readonly mcpLastSeenAt: number | null;
   readonly projectName: string | null;
   readonly cacheHit: string | null;
   readonly cacheRead: number | null;
@@ -51,8 +58,14 @@ const STATUS_LABEL: Readonly<Record<HarnessLaneStatus, string>> = {
   stopped: 'STOPPED',
 };
 
-/** Snapshot every value previously shown by LaneStats before the lane mutates again. */
-export function sessionInfoProps(lane: HarnessLane, projectDir: string | null, backendName: string): SessionInfoProps {
+/** Snapshot lane and MCP values before their mutable sources change again. */
+export function sessionInfoProps(
+  lane: HarnessLane,
+  projectDir: string | null,
+  backendName: string,
+  mcpStats: HarnessMcpLaneStats | null,
+  mcpEndpointAvailable: boolean,
+): SessionInfoProps {
   const usage = lane.usage;
   const tokens = usage ? lane.lastTurnTokens : null;
   const hitRate = tokens ? cacheHitRate(tokens) : null;
@@ -73,6 +86,13 @@ export function sessionInfoProps(lane: HarnessLane, projectDir: string | null, b
     status: lane.status,
     contextUsed: usage?.used ?? null,
     contextSize: usage?.size ?? null,
+    mcpEndpointAvailable,
+    mcpInitializeCount: mcpStats?.initializeCount ?? 0,
+    mcpToolsListCount: mcpStats?.toolsListCount ?? 0,
+    mcpToolsCallCount: mcpStats?.toolsCallCount ?? 0,
+    mcpLastMethod: mcpStats?.lastMethod ?? null,
+    mcpLastSeenAt: mcpStats && Number.isFinite(mcpStats.lastSeenAt)
+      && mcpStats.lastSeenAt > 0 && mcpStats.lastSeenAt <= 8.64e15 ? mcpStats.lastSeenAt : null,
     projectName: projectDir ? basename(projectDir) : null,
     cacheHit: hitRate !== null ? formatCacheHitPercent(hitRate) : null,
     cacheRead: typeof cache?.cachedRead === 'number' ? cache.cachedRead : hitRate !== null ? 0 : null,
@@ -123,6 +143,16 @@ function fact(label: string): { row: HTMLElement; value: HTMLElement } {
   return { row, value };
 }
 
+function mcpContactLabel(next: SessionInfoProps): string {
+  if (!next.mcpEndpointAvailable) return 'Not supplied';
+  if (next.mcpToolsListCount > 0) return 'Tools listed on this lane';
+  if (next.mcpInitializeCount > 0) return 'Initialized; tools not listed';
+  if (next.mcpToolsCallCount > 0 || next.mcpLastMethod !== null || next.mcpLastSeenAt !== null) {
+    return 'Contact observed; tools not listed';
+  }
+  return 'No contact observed';
+}
+
 export class SessionInfo extends Component<SessionInfoProps> {
   private readonly laneEl = el('p', { class: B + '__lane' });
   private readonly statusEl = el('span', { class: B + '__status' });
@@ -135,6 +165,13 @@ export class SessionInfo extends Component<SessionInfoProps> {
   private readonly backend = fact('Backend');
   private readonly model = fact('Model');
   private readonly effort = fact('Effort');
+  private readonly mcpServer = fact('Server');
+  private readonly mcpContact = fact('Contact');
+  private readonly mcpInitialize = fact('Initialize');
+  private readonly mcpToolsList = fact('Tools/list');
+  private readonly mcpToolsCall = fact('Tools/call');
+  private readonly mcpLastMethod = fact('Last method');
+  private readonly mcpLastSeen = fact('Last contact');
   private readonly cacheHit = fact('Cache hit');
   private readonly cacheRead = fact('Cache read');
   private readonly cacheWrite = fact('Cache write');
@@ -154,24 +191,37 @@ export class SessionInfo extends Component<SessionInfoProps> {
     this.meterEl.appendChild(this.fillEl);
     this.el.append(
       el('header', { class: B + '__head' },
-        el('span', { class: B + '__eyebrow', text: 'SESSION' }),
+        el('span', { class: B + '__eyebrow' },
+          harnessIconEl('panel-session', B + '__icon'), 'SESSION'),
         this.statusEl),
       this.laneEl,
       el('section', { class: B + '__section', attrs: { 'aria-label': 'Context' } },
-        el('h3', { class: B + '__heading', text: 'Context' }),
+        el('h3', { class: B + '__heading' },
+          harnessIconEl('gauge', B + '__icon'), 'Context'),
         el('div', { class: B + '__readout' }, this.percentEl, this.countEl),
         this.meterEl),
       el('section', { class: B + '__section', attrs: { 'aria-label': 'Session details' } },
-        el('h3', { class: B + '__heading', text: 'Details' }),
+        el('h3', { class: B + '__heading' },
+          harnessIconEl('list', B + '__icon'), 'Details'),
         el('dl', { class: B + '__facts' },
           this.session.row, this.project.row, this.backend.row, this.model.row, this.effort.row)),
+      el('section', { class: B + '__section', attrs: { 'aria-label': 'MCP connection' } },
+        el('h3', { class: B + '__heading' },
+          harnessIconEl('remote', B + '__icon'), 'MCP connection'),
+        el('dl', { class: B + '__facts' },
+          this.mcpServer.row, this.mcpContact.row, this.mcpInitialize.row,
+          this.mcpToolsList.row, this.mcpToolsCall.row,
+          this.mcpLastMethod.row, this.mcpLastSeen.row),
+        el('p', { class: B + '__mcp-note', text: 'Request history for this lane; not a live connection check.' })),
       el('section', { class: B + '__section', attrs: { 'aria-label': 'Usage details' } },
-        el('h3', { class: B + '__heading', text: 'Usage' }),
+        el('h3', { class: B + '__heading' },
+          harnessIconEl('embedded', B + '__icon'), 'Usage'),
         el('dl', { class: B + '__facts' },
           this.cacheHit.row, this.cacheRead.row, this.cacheWrite.row, this.turnInput.row,
           this.input.row, this.output.row, this.cost.row)),
       el('section', { class: B + '__section', attrs: { 'aria-label': 'Activity' } },
-        el('h3', { class: B + '__heading', text: 'Activity' }),
+        el('h3', { class: B + '__heading' },
+          harnessIconEl('exec-activity', B + '__icon'), 'Activity'),
         el('dl', { class: B + '__facts' },
           this.tools.row, this.rows.row, this.permissions.row, this.questions.row,
           this.flags.row, this.error.row)),
@@ -187,6 +237,8 @@ export class SessionInfo extends Component<SessionInfoProps> {
     return [
       next.laneName, next.sessionId, next.backendName, next.modelName,
       next.effortName, next.status, next.contextUsed, next.contextSize,
+      next.mcpEndpointAvailable, next.mcpInitializeCount, next.mcpToolsListCount,
+      next.mcpToolsCallCount, next.mcpLastMethod, next.mcpLastSeenAt,
       next.projectName, next.cacheHit, next.cacheRead, next.cacheWrite,
       next.turnInput, next.inputTokens, next.outputTokens, next.costAmount,
       next.costCurrency, next.toolCalls, next.transcriptRows,
@@ -209,6 +261,14 @@ export class SessionInfo extends Component<SessionInfoProps> {
     setText(this.backend.value, next.backendName);
     setText(this.model.value, next.modelName ?? 'Unknown');
     setText(this.effort.value, next.effortName ?? 'Unknown');
+    setText(this.mcpServer.value, 'krypton-harness-memory');
+    setText(this.mcpContact.value, mcpContactLabel(next));
+    setText(this.mcpInitialize.value, formatCount(next.mcpInitializeCount));
+    setText(this.mcpToolsList.value, formatCount(next.mcpToolsListCount));
+    setText(this.mcpToolsCall.value, formatCount(next.mcpToolsCallCount));
+    this.paintOptional(this.mcpLastMethod, next.mcpLastMethod);
+    this.paintOptional(this.mcpLastSeen, next.mcpLastSeenAt === null
+      ? null : new Date(next.mcpLastSeenAt).toLocaleString());
     this.paintOptional(this.cacheHit, next.cacheHit);
     this.paintOptional(this.cacheRead, next.cacheRead === null ? null : formatCount(next.cacheRead));
     this.paintOptional(this.cacheWrite, next.cacheWrite === null ? null : formatCount(next.cacheWrite));
