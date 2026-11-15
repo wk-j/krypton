@@ -122,6 +122,8 @@ export interface HarnessReviewLoopHost extends HarnessViewHost {
   fanOutReview(lane: HarnessLane, targets: MentionFanOutTarget[], body: string): MentionFanOutResult;
   /** Withdraw the loop's harness-consumed review requests; the lane's own peer waits stay. */
   cancelPeerConversations(lane: HarnessLane): void;
+  /** A reviewer's whole reply was read: clear its review request without a cancellation notice. */
+  settleReviewRequest(lane: HarnessLane, reviewerLaneId: string): void;
   /** spec 277: loop state changed — republish the lane-monitor telemetry. */
   loopChanged(): void;
   pendingPeerCount(lane: HarnessLane): number;

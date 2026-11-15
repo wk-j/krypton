@@ -160,6 +160,8 @@ export class HarnessRailsController {
   private progress: RailsProgress = { kind: 'idle' };
   private selectedKey: string | null = null;
   private expanded: ReadonlySet<string> = new Set();
+  /** Spec 404: the check whose page replaces the row list, or null. */
+  private detail: string | null = null;
   private readonly runPaths = new Map<string, string>();
   /** Spec 368 amendment A: what the last Send-all delivered. Memory only. */
   private lastSend: RailsSendMark | null = null;
@@ -183,6 +185,20 @@ export class HarnessRailsController {
 
   private readonly selectRow = (key: string): void => {
     this.selectedKey = key;
+    this.renderDock();
+  };
+
+  /** A click on a row selects it; a click on the already-selected check row
+   *  opens its page (spec 404), as `Enter` does. */
+  private readonly clickRow = (key: string): void => {
+    if (key === this.selectedKey && this.openPage()) return;
+    this.selectRow(key);
+  };
+
+  /** Spec 404: the page's `‹ ESC` key and `Esc` on a page. */
+  private readonly closePage = (): void => {
+    if (this.detail === null) return;
+    this.detail = null;
     this.renderDock();
   };
 
@@ -395,15 +411,44 @@ export class HarnessRailsController {
   handleDockKey(event: KeyboardEvent): boolean {
     if (event.metaKey || event.ctrlKey || event.altKey) return false;
     const key = event.key;
+    if (this.detail !== null) return this.handlePageKey(event);
     if (key === 'j' || key === 'ArrowDown') this.moveSelection(1);
     else if (key === 'k' || key === 'ArrowUp') this.moveSelection(-1);
-    else if (key === 'Enter') this.toggleExpanded();
-    else if (key >= '1' && key <= '5' && key.length === 1) this.jumpToSection(Number(key) as RailsDockSection);
+    else if (key === 'Enter') {
+      if (!this.openPage()) this.toggleExpanded();
+    } else if (key >= '1' && key <= '5' && key.length === 1) this.jumpToSection(Number(key) as RailsDockSection);
     else if (key === 's') this.sendSelected();
     else if (key === 'r') this.runSelected();
     else if (key === 'Escape') this.host.focusComposer();
     else return false;
     event.preventDefault();
+    return true;
+  }
+
+  /** Spec 404: keys while a check page replaces the list. The selected row is
+   *  still that check's, so `s` / `r` act exactly as they do on its row. */
+  private handlePageKey(event: KeyboardEvent): boolean {
+    const key = event.key;
+    if (key === 'Escape') this.closePage();
+    else if (key === 'j' || key === 'ArrowDown') this.dock.scrollPage(1);
+    else if (key === 'k' || key === 'ArrowUp') this.dock.scrollPage(-1);
+    else if (key >= '1' && key <= '5' && key.length === 1) {
+      this.detail = null;
+      this.jumpToSection(Number(key) as RailsDockSection);
+      this.renderDock();
+    } else if (key === 's') this.sendSelected();
+    else if (key === 'r') this.runSelected();
+    else return false;
+    event.preventDefault();
+    return true;
+  }
+
+  /** Open the selected check's page; false when the selection is not a check. */
+  private openPage(): boolean {
+    const row = railsDockRows(this.model()).find((candidate) => candidate.key === this.selectedKey);
+    if (row?.kind !== 'check') return false;
+    this.detail = row.decl.name;
+    this.renderDock();
     return true;
   }
 
@@ -413,13 +458,18 @@ export class HarnessRailsController {
     const present = this.snapshot?.present === true;
     this.host.setDockTabAvailable('rails', present && !this.host.isPanelHidden('rails'));
     this.host.setRailsBadge(this.badge());
+    // Spec 404: a page closes when its check row is gone (the manifest no longer declares it).
+    if (this.detail !== null && !(this.snapshot?.checks ?? []).some((decl) => decl.name === this.detail)) {
+      this.detail = null;
+    }
     if (!this.host.dockTabShown('rails')) return;
     this.dock.update({
       model: this.model(),
       actions: this.actions(),
-      onSelectRow: this.selectRow,
+      onSelectRow: this.clickRow,
       onAction: this.runDockAction,
       onRunCheck: this.runCheckAction,
+      onBack: this.closePage,
     });
   }
 
@@ -992,6 +1042,7 @@ export class HarnessRailsController {
       expanded: this.expanded,
       checkRuns: this.checkRuns,
       checkInFlight: this.checkInFlight,
+      detail: this.detail,
     };
   }
 

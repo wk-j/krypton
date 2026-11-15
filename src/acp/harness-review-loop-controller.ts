@@ -12,13 +12,14 @@
 import type { HarnessLaneStatus } from './types';
 import type { HarnessLane } from './harness-view-types';
 import type { HarnessReviewLoopHost } from './harness-view-host';
-import type { HarnessConsumedReply } from './inter-lane';
+import type { HarnessConsumedReply, HarnessReplyState } from './inter-lane';
 import type { TelemetryReviewLoop } from './harness-telemetry-schema';
 import { lessonsEnabled } from './lessons';
 import { takeBoardToken } from './review';
 import {
   blockerCount,
   evaluateRound,
+  hasVerdictLine,
   parseReviewPassArgs,
   parseReviewerReply,
   reviewLoopFixPrompt,
@@ -52,6 +53,8 @@ interface ReviewLoop {
   packetId: string | null;
   /** Current round, keyed by reviewer displayName. */
   replies: Map<string, ReviewerResult>;
+  /** Current round: what a reviewer sent before its VERDICT line, keyed by displayName. */
+  partials: Map<string, string>;
   history: ReviewRoundSummary[];
   /** `#review stop`. */
   stopRequested: boolean;
@@ -177,6 +180,7 @@ export class HarnessReviewLoopController {
       round: 0,
       packetId: null,
       replies: new Map(),
+      partials: new Map(),
       history: [],
       stopRequested: false,
       cancelled: false,
@@ -240,21 +244,60 @@ export class HarnessReviewLoopController {
     this.host.invalidate('composer');
   }
 
-  /** A reviewer's reply to this round's request (spec 276 harness-consumed). */
-  onHarnessReply(laneId: string, reply: HarnessConsumedReply): void {
+  /** spec 276: while a loop runs on `laneId`, every message its reviewers send
+   *  that lane is the loop's to read — never a new request or a turn for the author. */
+  holdsReplies(laneId: string, fromLaneId: string): boolean {
+    return this.loops.get(laneId)?.reviewers.some((r) => r.laneId === fromLaneId) ?? false;
+  }
+
+  /** A reviewer's message answering this round's request (spec 276
+   *  harness-consumed). A reply may span several peer_send calls: it is whole at
+   *  its VERDICT line, or once the reviewer's turn has ended without one. */
+  onHarnessReply(laneId: string, reply: HarnessConsumedReply): HarnessReplyState {
     const loop = this.loops.get(laneId);
-    if (!loop || loop.phase !== 'reviewing') return;
-    if (reply.packetId !== null && reply.packetId !== loop.packetId) return;
+    if (!loop || loop.phase !== 'reviewing') return 'complete';
+    if (reply.packetId !== null && reply.packetId !== loop.packetId) return 'complete';
     const reviewer = loop.reviewers.find((r) => r.laneId === reply.fromLaneId);
-    if (!reviewer || loop.replies.has(reviewer.displayName)) return;
-    loop.replies.set(reviewer.displayName, parseReviewerReply(reviewer.displayName, reply.message));
-    loop.replyTimes.set(reviewer.displayName, Date.now());
+    if (!reviewer || loop.replies.has(reviewer.displayName)) return 'complete';
+    const earlier = loop.partials.get(reviewer.displayName);
+    const text = earlier === undefined ? reply.message : `${earlier}\n\n${reply.message}`;
+    if (hasVerdictLine(text)) {
+      this.acceptReply(loop, reviewer.displayName, text);
+      return 'complete';
+    }
+    loop.partials.set(reviewer.displayName, text);
+    // Called from inside the coordinator's drain — check once it unwinds.
+    queueMicrotask(() => this.settleEndedTurns(loop));
+    return 'incomplete';
+  }
+
+  private acceptReply(loop: ReviewLoop, displayName: string, text: string): void {
+    loop.partials.delete(displayName);
+    loop.replies.set(displayName, parseReviewerReply(displayName, text));
+    loop.replyTimes.set(displayName, Date.now());
     this.host.loopChanged();
     if (loop.replies.size === loop.reviewers.length) {
       // Called from inside the coordinator's drain — evaluate once it unwinds.
       queueMicrotask(() => {
         void this.completeRound(loop);
       });
+    }
+  }
+
+  /** A reviewer whose turn ended without a VERDICT line sent its whole reply.
+   *  Waits while the author is busy: its inbox may still hold more of the reply. */
+  private settleEndedTurns(loop: ReviewLoop): void {
+    if (!this.isCurrent(loop) || loop.phase !== 'reviewing' || loop.partials.size === 0) return;
+    const author = this.laneFor(loop);
+    if (!author || (author.status !== 'idle' && author.status !== 'awaiting_peer')) return;
+    for (const reviewer of loop.reviewers) {
+      const text = loop.partials.get(reviewer.displayName);
+      if (text === undefined) continue;
+      const status = this.host.lanes.find((l) => l.id === reviewer.laneId)?.status;
+      if (status === 'busy' || status === 'needs_permission') continue;
+      this.host.settleReviewRequest(author, reviewer.laneId);
+      if (!this.isCurrent(loop) || loop.phase !== 'reviewing') return;
+      this.acceptReply(loop, reviewer.displayName, text);
     }
   }
 
@@ -272,6 +315,7 @@ export class HarnessReviewLoopController {
     if (!this.isCurrent(loop)) return;
     loop.round += 1;
     loop.replies = new Map();
+    loop.partials = new Map();
     loop.replyTimes = new Map();
     loop.packetId = null;
     this.setPhase(loop, 'collecting');
@@ -495,6 +539,16 @@ export class HarnessReviewLoopController {
       const own = this.loops.get(laneId);
       if (own) void this.finish(own, 'lane_lost');
       this.onReviewerGone(laneId);
+    }
+    if (next === 'idle' || next === 'awaiting_peer') {
+      // A reviewer's turn ended, or the author drained its inbox: a reply
+      // still waiting for its VERDICT line may now be whole. The coordinator
+      // drains in this same emit, so check once every subscriber has run.
+      for (const loop of this.loops.values()) {
+        if (loop.partials.size === 0) continue;
+        if (loop.laneId !== laneId && !loop.reviewers.some((r) => r.laneId === laneId)) continue;
+        queueMicrotask(() => this.settleEndedTurns(loop));
+      }
     }
     if (this.idleWaiters.has(laneId)) {
       // Another drain-on-idle queue may claim the lane in this same emit;

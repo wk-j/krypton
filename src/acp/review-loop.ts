@@ -112,6 +112,21 @@ function toFinding(item: string, severity: ReviewFinding['severity']): ReviewFin
   return { file: '(unanchored)', severity, note: item };
 }
 
+/** Whether `text` holds a VERDICT line `parseReviewerReply` would read (fenced
+ *  code ignored). The line ends a reply that may span several peer_send calls. */
+export function hasVerdictLine(text: string): boolean {
+  let inFence = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (line.startsWith('```')) {
+      inFence = !inFence;
+      continue;
+    }
+    if (!inFence && VERDICT_RE.test(line)) return true;
+  }
+  return false;
+}
+
 /** Read one reviewer reply in the spec 145 skim format plus the spec 276
  *  `VERDICT:` line. The last VERDICT line wins; fenced code is ignored. */
 export function parseReviewerReply(reviewer: string, text: string): ReviewerResult {

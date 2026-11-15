@@ -46,6 +46,7 @@ Listed by spec number. Older specs remain in this directory.
 | 401 | [Harness Session Info Panel](./0401-harness-session-info-panel.md) |
 | 402 | [Harness Session MCP Connection](./0402-harness-session-mcp-connection.md) |
 | 403 | [Compact Session Info Layout](./0403-compact-session-info-layout.md) |
+| 404 | [Rails Dock — Check Rules and the Check Page](./0404-rails-check-enforced-rules.md) |
 
 ## ADRs (31)
 

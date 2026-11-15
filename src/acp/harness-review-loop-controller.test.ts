@@ -87,6 +87,7 @@ function setup(subjects: ReviewSubjectResult[] = [diffResult('+a'), diffResult('
       cancels += 1;
       if ((lane as unknown as FakeLane).status === 'awaiting_peer') setStatus(lane as unknown as FakeLane, 'idle');
     },
+    settleReviewRequest: () => {},
     pendingPeerCount: () => 0,
     loopChanged: () => {
       changes += 1;

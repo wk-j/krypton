@@ -1,6 +1,6 @@
 # Rails Verifier — Implementation Spec
 
-> Status: Implemented (rev 3, 2026-10-28: the Rails dock is a second tab in the Active Ticket dock's place; amended by spec 344, 2026-10-29: an Actions bar with Run, Send, Trust and Update buttons; by spec 345, 2026-10-29: a display budget for the dock content; and by spec 368, 2026-11-07: a check may be `manual`, skipped by Rails runs and run alone from its dock row, and Send carries a failed manual result (amendment A); amended by spec 368 amendment B, 2026-11-12: Send carries a run whose only fault is a failed auto check)
+> Status: Implemented (rev 3, 2026-10-28: the Rails dock is a second tab in the Active Ticket dock's place; amended by spec 344, 2026-10-29: an Actions bar with Run, Send, Trust and Update buttons; by spec 345, 2026-10-29: a display budget for the dock content; and by spec 368, 2026-11-07: a check may be `manual`, skipped by Rails runs and run alone from its dock row, and Send carries a failed manual result (amendment A); amended by spec 368 amendment B, 2026-11-12: Send carries a run whose only fault is a failed auto check; amended by spec 404, 2026-11-16: a rule line under each check, and a check page in place of the row list)
 > Date: 2026-10-27
 > Milestone: ACP Harness — architecture conformance
 > Builds on: 306 (assist sidecar) · 276 / ADR-0021 (harness-owned verdict) · 145 (`#review` diff subject) · 328 (`#e2e` process runner) · 238 / 320 / 331 (ticket dock, panel toggles) · ADR-0001 · ADR-0004 · ADR-0007 · ADR-0008 · ADR-0017
@@ -280,7 +280,7 @@ The prompt tells the current lane to:
 `RailsDock` lives in `src/acp/components/rails-dock/` (layer `krypton.component`, BEM `.acp-rails-dock`). Its sections, top to bottom, sized by spec 345:
 
 1. **Head**, at most three lines: `RAILS`, the verdict pill and the run time (`▸` when an error or warnings are behind `Enter`); one state line (a run in progress such as `check 2/3 typecheck`, an error, the trust state such as `changed since trust · 4 checks wait`, the other progress lines, the empty-manifest hint or a warning count, the first that applies); and the trigger, lane and mode. `Enter` on the head shows the full state line, the manifest path, the full error and the warnings.
-2. **Checks**: `name  PASS|FAIL|TIMEOUT|ERROR  1.2s`, with a labelled outcome badge (success, fault or warning), or muted `skipped` / `not run`. While trust is pending, each check's argv follows on one line. A manual check row (spec 368) reads its newest manual result instead of the run: `name  RUN  FAIL  14:02`, with a `RUN` key, the outcome badge (muted `manual` when never run) and the finish time; the duration moves into the expanded detail.
+2. **Checks**: `name  PASS|FAIL|TIMEOUT|ERROR  1.2s`, with a labelled outcome badge (success, fault or warning), or muted `skipped` / `not run`. While trust is pending, each check's argv follows on one line. A manual check row (spec 368) reads its newest manual result instead of the run: `name  RUN  FAIL  14:02`, with a `RUN` key, the outcome badge (muted `manual` when never run) and the finish time; the duration moves to its check page. Spec 404: under each check a rule line names what it proves — the first rule whose `check:<name>` names it (`0025#1 The verdict is computed…`, `+N` for more), or `no rule — command only`. A check row never expands: `Enter` (or a click on the selected check row) replaces the row list with that check's **page** in the same panel — `‹ ESC` and `CHECKS › <name>`, its outcome line and where the result came from, then **Proves** (each rule in full with its source), **Command** and **Output** (the whole tail) — and `Esc` returns to the list.
    The head's verdict and each check's outcome keep their state ink, tinted background and LED but no coloured
    outline or wrapper shadow; their transparent 1px border preserves dimensions (DESIGN.md 2.3.2).
 3. **Findings**: each open finding as `violation|suspect  0008#2  file:line`, with the note on a second line and a tag `new` or `since 14:02`. A collapsed `resolved N` row follows.
@@ -294,12 +294,12 @@ Below the rows, outside the list, a fixed **Actions** bar (spec 344) holds four 
 | Key | Action |
 |---|---|
 | `j` / `k` | Move between rows |
-| `Enter` | Expand the row: full note, check tail, rule text, or run detail |
+| `Enter` | Expand the row: full note, rule text, or run detail; on a check row, open its page (spec 404) |
 | `1`–`5` | Jump to a section |
 | `s` | Send the selected finding to the active lane; on a manual check row showing `FAIL` or `TIMEOUT`, that result alone (spec 368 amendment A); on the head row, the whole Send set |
 | `r` | Start a manual run; on a manual check row, run that check alone (spec 368) |
 | `[` / `]` | Previous / next available dock tab, wrapping in Ticket → Rails → Assistants order |
-| `Escape` | Return focus to the composer |
+| `Escape` | On a check page, back to the list (spec 404); otherwise return focus to the composer |
 
 In the Rails tab, `Escape` does not hide the tab, unlike the Ticket tab (spec 331), because tracking is meant to stay on screen; the titlebar toggle hides it. The view routes these keys only after a pending permission, question or file review has had them, and while the dock has focus it consumes every other unmodified key and the Ctrl editing chords, so nothing reaches the hidden draft. A tab switch moves focus to the newly shown dock. Section headings show their jump key as `[n]`. Rows and the Actions bar buttons are also clickable; the mouse is secondary, and Trust and Update have no dock key (spec 344). The dock has no `infinite` animation.
 

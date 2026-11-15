@@ -229,6 +229,7 @@ describe('harness-consumed review replies (spec 276)', () => {
       appendSystemNotice: () => {},
       onHarnessReply: (laneId, reply) => {
         replies.push({ laneId, packetId: reply.packetId, fromLaneId: reply.fromLaneId, message: reply.message });
+        return 'complete';
       },
     };
   }

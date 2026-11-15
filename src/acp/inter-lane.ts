@@ -85,8 +85,17 @@ export interface LaneHost {
   appendSystemNotice(laneId: string, text: string): void;
   /** spec 276: a reply to a harness-consumed request was drained into `laneId`.
    *  The reply is rendered as usual but is not turned into a prompt. */
-  onHarnessReply?(laneId: string, reply: HarnessConsumedReply): void;
+  onHarnessReply?(laneId: string, reply: HarnessConsumedReply): HarnessReplyState;
+  /** spec 276: the harness reads every message `fromLaneId` sends `requesterId`
+   *  (a running `#review pass` on the requester, `fromLaneId` among its
+   *  reviewers). Such a message is a reply: it opens no request of its own and is
+   *  rendered but never composed into a turn. */
+  holdsPeerReplies?(requesterId: string, fromLaneId: string): boolean;
 }
+
+/** spec 276: `incomplete` keeps the harness request pending, so the replier's
+ *  next message is read as more of the same reply. */
+export type HarnessReplyState = 'complete' | 'incomplete';
 
 export interface HarnessConsumedReply {
   packetId: string | null;
@@ -138,6 +147,10 @@ function shouldTrackPending(env: InterLaneEnvelope): boolean {
 
 function isInboundRequestEnvelope(env: InterLaneEnvelope): boolean {
   return env.kind === 'mention_request';
+}
+
+function pendingMatcher(replierId: string, envelopeId: string): (s: PendingSend) => boolean {
+  return (s) => s.toLaneId === replierId && (s.envelopeId === envelopeId || s.mentionPacketId === envelopeId);
 }
 
 export interface MentionFanOutTarget {
@@ -273,7 +286,9 @@ export class InterLaneCoordinator {
     // is a replier — coerce their done flag to false (a reply is not a new
     // initiation). Harness-injected envelopes bypass this rule.
     const senderIsReplier =
-      env.fromLaneId !== '__harness__' && this.hasPendingTo(env.toLaneId, env.fromLaneId);
+      env.fromLaneId !== '__harness__' &&
+      (this.hasPendingTo(env.toLaneId, env.fromLaneId) ||
+        this.host.holdsPeerReplies?.(env.toLaneId, env.fromLaneId) === true);
     let effective = env;
     if (senderIsReplier && env.done) {
       effective = { ...env, done: false };
@@ -676,8 +691,7 @@ export class InterLaneCoordinator {
       cleared = sends[idx] ?? null;
       remaining = sends.filter((_, i) => i !== idx);
     } else {
-      const matches = (s: PendingSend): boolean =>
-        s.toLaneId === replierId && (s.envelopeId === envelopeId || s.mentionPacketId === envelopeId);
+      const matches = pendingMatcher(replierId, envelopeId);
       cleared = sends.find(matches) ?? null;
       remaining = sends.filter((s) => !matches(s));
     }
@@ -685,6 +699,25 @@ export class InterLaneCoordinator {
     else this.pending.set(requesterId, remaining);
     this.recomputePeerStatus(requesterId);
     return cleared;
+  }
+
+  /** The entry `clearPendingFromPeer` would return, left in place. */
+  private findPendingFromPeer(requesterId: string, replierId: string, envelopeId?: string): PendingSend | null {
+    const sends = this.pending.get(requesterId) ?? [];
+    const matches = envelopeId ? pendingMatcher(replierId, envelopeId) : (s: PendingSend) => s.toLaneId === replierId;
+    return sends.find(matches) ?? null;
+  }
+
+  /** spec 276: the harness read a whole reply to its own request — clear that
+   *  request without the notice a withdrawal (`cancelConversationsFor`) sends. */
+  settleHarnessRequest(requesterId: string, replierId: string): void {
+    const sends = this.pending.get(requesterId);
+    if (!sends) return;
+    const remaining = sends.filter((s) => !(s.consumer === 'harness' && s.toLaneId === replierId));
+    if (remaining.length === sends.length) return;
+    if (remaining.length === 0) this.pending.delete(requesterId);
+    else this.pending.set(requesterId, remaining);
+    this.recomputePeerStatus(requesterId);
   }
 
   private onBus(event: LaneBusEvent): void {
@@ -752,15 +785,22 @@ export class InterLaneCoordinator {
       // Clear requester pending only on inbound replies — not when draining an
       // outbound consult the target received (spec 115/116).
       if (!isInboundRequestEnvelope(env)) {
-        const cleared = this.clearPendingFromPeer(laneId, env.fromLaneId, env.mentionPacketId);
-        if (cleared?.consumer === 'harness') {
+        const pending = this.findPendingFromPeer(laneId, env.fromLaneId, env.mentionPacketId);
+        if (pending?.consumer === 'harness') {
           harnessConsumed.add(env.id);
-          this.host.onHarnessReply?.(laneId, {
-            packetId: cleared.mentionPacketId ?? null,
-            fromLaneId: env.fromLaneId,
-            fromDisplayName: senderName,
-            message: env.message,
-          });
+          const state =
+            this.host.onHarnessReply?.(laneId, {
+              packetId: pending.mentionPacketId ?? null,
+              fromLaneId: env.fromLaneId,
+              fromDisplayName: senderName,
+              message: env.message,
+            }) ?? 'complete';
+          if (state === 'complete') this.clearPendingFromPeer(laneId, env.fromLaneId, env.mentionPacketId);
+        } else if (pending) {
+          this.clearPendingFromPeer(laneId, env.fromLaneId, env.mentionPacketId);
+        } else if (this.host.holdsPeerReplies?.(laneId, env.fromLaneId)) {
+          // spec 276: a reviewer's message after its reply — the loop's to read.
+          harnessConsumed.add(env.id);
         }
       }
     }

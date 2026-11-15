@@ -4,7 +4,29 @@
 // the same list, so painting and navigation can never disagree.
 
 import { latestRuleStatus, manualCheckStatus } from './track';
-import type { RailsDockModel, RailsDockRow } from './types';
+import type { RailsDockModel, RailsDockRow, RailsRule, RailsSnapshot } from './types';
+
+const NO_RULES: readonly RailsRule[] = Object.freeze([]);
+const enforcedBySnapshot = new WeakMap<RailsSnapshot, Map<string, readonly RailsRule[]>>();
+
+/** Spec 404: the rules whose `check` is `name`, in snapshot order. The same
+ *  array comes back for the same snapshot, so a check row's deps stay equal
+ *  across the row list `railsDockRows` rebuilds on every paint. */
+export function enforcedRules(snapshot: RailsSnapshot, name: string): readonly RailsRule[] {
+  let byCheck = enforcedBySnapshot.get(snapshot);
+  if (!byCheck) {
+    const built = new Map<string, RailsRule[]>();
+    for (const rule of snapshot.rules) {
+      if (rule.check === null) continue;
+      const list = built.get(rule.check);
+      if (list) list.push(rule);
+      else built.set(rule.check, [rule]);
+    }
+    byCheck = built;
+    enforcedBySnapshot.set(snapshot, byCheck);
+  }
+  return byCheck.get(name) ?? NO_RULES;
+}
 
 /** `docs/adr/0008-x.md#2` → `0008#2`; `AGENTS.md#3` → `AGENTS#3`; `CONTEXT.md#Lane` → `CONTEXT#Lane`. */
 export function shortRuleId(id: string): string {
@@ -34,7 +56,8 @@ export function railsDockRows(model: RailsDockModel): RailsDockRow[] {
     const result = decl.manual
       ? manualRun?.result ?? null
       : latest?.checks.find((check) => check.name === decl.name) ?? null;
-    rows.push({ kind: 'check', key: `check:${decl.name}`, section: 2, decl, manualRun, result });
+    const enforces = snapshot ? enforcedRules(snapshot, decl.name) : NO_RULES;
+    rows.push({ kind: 'check', key: `check:${decl.name}`, section: 2, decl, manualRun, result, enforces });
   }
 
   for (const finding of latest?.open ?? []) {

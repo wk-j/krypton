@@ -1648,8 +1648,12 @@ replies never wake the authoring lane — the controller reads them.
 3. coordinator.deliverMentionFanOut(L, reviewers, body, {replyConsumer:'harness'})
    → releaseReservedTurn(L, 'awaiting_peer'); the body asks for a final `VERDICT:` line
 4. Each reviewer drains the [mention] request on idle and peer_sends its reply to L
-5. L's drain(): the reply clears a pending entry whose consumer is 'harness'
+5. L's drain(): the reply matches a pending entry whose consumer is 'harness'
    → `in` row rendered, LaneHost.onHarnessReply(L, reply), NO prompt composed for L
+   → 'incomplete' (no VERDICT line yet) keeps the entry: the reviewer's next message is
+     more of the same reply; it is whole at its VERDICT line or when the reviewer's turn ends
+   → a loop reviewer's later message (no entry left) is rendered and dropped
+     (LaneHost.holdsPeerReplies), never a turn for L
 6. All replies in → parseReviewerReply ×N → matrix row (spec 146) + `round k/N` row
    → evaluateRound: pass | max_rounds | no_progress | no_findings | inconclusive | no_structure → stop
                     otherwise → fix turn ('fixing k/N': Blockers only, resolves at turn end) → round k+1

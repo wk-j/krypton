@@ -8,6 +8,12 @@
 > **Amended by spec 300 (Board is opt-in), 2026-10-14.** The loop ends in a turn-text summary;
 > `#review pass board …` is what makes the final summary a Review Board. The round sequencing,
 > stop rules, and per-round `review_outcome` rows are unchanged.
+>
+> **Amendment A (2026-11-15): a reply may span several `peer_send` calls.** The loop reads a
+> reviewer's messages as one reply up to its `VERDICT:` line, or until the reviewer's turn ends
+> without one. While the loop runs, a reviewer's later messages are kept out of the authoring lane.
+> See "Reviewer reply contract", Data flow step 5, and Edge Cases.
+> Test: `src/acp/review-loop-split-reply.test.ts` (the real coordinator and controller together).
 
 ## Problem
 
@@ -98,7 +104,7 @@ equivalent.
 | `src/acp/review-loop.ts` | **New.** Pure functions and types: `parseReviewPassArgs`, `parseReviewerReply`, `evaluateRound`, `subjectFingerprint`, and the prompt builders `reviewLoopRequestBody`, `reviewLoopFixPrompt`, `reviewLoopSummaryPrompt`. |
 | `src/acp/harness-review-loop-controller.ts` | **New.** Per-lane loop state and round sequencing. |
 | `src/acp/harness-view-host.ts` | Add the `HarnessReviewLoopHost` contract. |
-| `src/acp/inter-lane.ts` | `deliverMentionFanOut(…, { replyConsumer: 'harness' })` and `PendingSend.consumer`. `clearPendingFromPeer` returns the entry it cleared. `drain()` renders harness-consumed replies, calls `host.onHarnessReply`, and leaves them out of `composePrompt`; it injects no turn when every drained envelope was harness-consumed. |
+| `src/acp/inter-lane.ts` | `deliverMentionFanOut(…, { replyConsumer: 'harness' })` and `PendingSend.consumer`. `clearPendingFromPeer` returns the entry it cleared. `drain()` renders harness-consumed replies, calls `host.onHarnessReply`, and leaves them out of `composePrompt`; it injects no turn when every drained envelope was harness-consumed. Amendment A: `onHarnessReply` returns `'complete' \| 'incomplete'` and only `'complete'` clears the entry; `holdsPeerReplies` makes a loop reviewer's later message a reply that is never composed; `settleHarnessRequest` clears a request with no notice. |
 | `src/acp/acp-harness-view.ts` | Route `#review pass|stop` to the controller. Factor `resolveReviewers` and `collectReviewSubject` out of `runReviewCommand`, and `recordReviewOutcomeFor` out of `handleReviewOutcome`. Add `releaseReservedTurn(lane, next = 'idle')`. `cancelLane` calls `reviewLoopCtl.onLaneCancelled`. Add the chip prefix and help line. |
 | `src/acp/review.ts`, `src/acp/types.ts` | Export `parseReviewCommandArgs` (moved from the view, re-exported there), `diffSubjectLines`, `diffstatHeadline`, and the Board rule text (`REVIEW_BOARD_SKIM_RULES`, `REVIEW_BOARD_LANGUAGE_RULE`) for the loop prompts — the `#review` prompt text is unchanged. `InterLaneEnvelope.replyConsumer`. |
 | `src/acp/hash-commands.ts` | `review` args hint and `commandMeta` anatomy. |
@@ -179,6 +185,23 @@ anchors, and the verdict line stay English (parsed); concern prose may be Thai.
 2. Verdict = the **last** line matching `/^\W*VERDICT:\W*(PASS|FAIL|PARTIAL)\b(.*)$/im`; none → `missing`.
 3. Any Blocker ⇒ `fail`, whatever the reviewer claimed (a "PASS" listing Blockers is a FAIL).
 
+**A reply may span several `peer_send` calls (amendment A).** A reply envelope carries no packet
+id, so the harness reads a reviewer's messages, in arrival order, as one reply:
+- Each message that arrives while the reviewer's request is pending is appended (blank line between)
+  to what the reviewer sent before, and the request stays pending.
+- The reply is whole at the first message after which the text holds a `VERDICT:` line outside
+  fenced code (`hasVerdictLine`, the same reading as rule 2). The request is then cleared and the
+  whole text goes through the parse rules above.
+- A reviewer whose turn ends (lane `idle` or `awaiting_peer`) with no `VERDICT:` line has sent its
+  whole reply. The harness clears the request without a cancellation notice
+  (`settleHarnessRequest`) and parses what arrived: `missing`, or `fail` when it lists a Blocker. It
+  waits while the authoring lane is busy, because the rest of the reply may still be in that
+  lane's inbox.
+- While the loop runs, a message a reviewer sends the authoring lane with no request pending (an
+  afterthought after its reply) is rendered in the transcript, never composed into a turn, and opens
+  no request of its own (`LaneHost.holdsPeerReplies`), so the reviewer is not left waiting on the
+  author. A `VERDICT:` line in it changes nothing.
+
 **Rounds ≥ 2** (reviewers are reused, not fresh) add the round number, the previous round's
 Blockers per reviewer as data, and: "Judge the CURRENT subject; your memory of earlier rounds may
 be stale. Keep a previous Blocker only if it still holds. Raise a new Blocker only for a real defect
@@ -224,12 +247,17 @@ Warnings never block and never go to a fix turn; they appear in the final Board.
       any target failed → cancelConversationsFor(L, {consumer:'harness'}); finish('reviewer_lost')
    g. releaseReservedTurn(L, 'awaiting_peer'); system row "review pass · round k/N → A, B"
 4. Each reviewer lane drains the [mention] request when idle, reviews, and peer_sends its
-   reply to L (existing spec 115 behaviour).
-5. L's drain(): a reply clears a pending entry whose consumer is 'harness' →
+   reply to L (existing spec 115 behaviour), in one message or several.
+5. L's drain(): a message matches a pending entry whose consumer is 'harness' →
    - the row is rendered as today
-   - host.onHarnessReply(L, {packetId, from, message})
-   - the reply is NOT composed into a prompt for L
-   The controller runs parseReviewerReply and stores the result in loop.replies.
+   - host.onHarnessReply(L, {packetId, from, message}) → 'complete' | 'incomplete'
+   - the message is NOT composed into a prompt for L
+   - 'complete' clears the pending entry; 'incomplete' (no VERDICT line yet) keeps it
+   The controller appends the message to the reviewer's partial text. At a VERDICT line it runs
+   parseReviewerReply on the whole text and stores the result in loop.replies; a reviewer whose
+   turn ends first is settled as "Reviewer reply contract" says (amendment A).
+   A message from a loop reviewer with no pending entry (it already replied) is rendered and
+   dropped: LaneHost.holdsPeerReplies makes it a reply that opens no request.
 6. When replies.size === reviewers.length (in a microtask):
    a. recordReviewOutcomeFor(L, …)               matrix row + journal, see below
    b. system row "round k/N: FAIL · 2 blockers (A FAIL 2 · B PASS)"
@@ -310,9 +338,19 @@ None. The number of rounds comes from `N` (default 3, cap 8).
 - **Reviewer never replies** → the round waits, as `#review` does; `#review stop` ends it with a summary.
 - **Reviewer lane stops / errors / closes mid-round** → `cancelConversationsFor(L, { consumer: 'harness' })`, stop
   `reviewer_lost`, summary turn.
-- **Reviewer sends a second message after its reply** → no pending entry left → ordinary peer turn on
-  L (existing). A busy reviewer's request waits in its inbox (existing). One lane reviewing for two
+- **Reviewer splits its reply over several messages** → read as one reply up to its `VERDICT:` line
+  (amendment A). Before amendment A only the first message counted: a first part with no Blocker
+  and no verdict line parsed as `missing`, and the rest woke L as an ordinary peer turn.
+- **Reviewer sends a second message after its reply** → rendered on L, never a turn for L, and it
+  opens no request while the loop runs (amendment A). After the loop ends it is an ordinary peer
+  turn again. A busy reviewer's request waits in its inbox (existing). One lane reviewing for two
   loops → each packet's pending is tracked separately.
+- **Afterthought drained after the next round went out** → no packet id ties a message to a round,
+  so it is read as the first part of that reviewer's next reply. The usual afterthought reaches L
+  during the fix turn and drains on L's idle, before the next round fans out, so it is dropped. One
+  that L drains later is mis-attributed: sent during the next round's subject collection (L is
+  reserved busy, so it drains after the fan-out), or by a reviewer still in its previous turn when
+  the next round goes out. Residual.
 - **Authoring lane closed / `#new` / restarted** → `lane:closed` or `stopped` → loop dropped silently.
 - **Authoring lane errors or stops mid-round** → `finish('lane_lost')` withdraws the round's requests
   first, so no reviewer keeps working for a dead loop and no stale pending entry survives `#restart`

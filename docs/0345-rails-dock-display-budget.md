@@ -1,6 +1,6 @@
 # Rails Dock Display Budget — Implementation Spec
 
-> Status: Implemented (approved 2026-10-29 after the UI preview: "ลงมือ implement สเปก docs/0345-rails-dock-display-budget.md ตามภาพจำลองที่แก้แล้วได้เลย"); amended by spec 368, 2026-11-07: manual check rows
+> Status: Implemented (approved 2026-10-29 after the UI preview: "ลงมือ implement สเปก docs/0345-rails-dock-display-budget.md ตามภาพจำลองที่แก้แล้วได้เลย"); amended by spec 368, 2026-11-07: manual check rows; amended by spec 404, 2026-11-16: a check row adds a rule line and no longer expands (its detail is a check page that replaces the row list), and rule 1 holds for the list's default view
 > Date: 2026-10-29
 > Milestone: ACP Harness — architecture conformance
 > Builds on: 337 (Rails dock content) · 344 (Actions bar)

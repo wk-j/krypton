@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { RAILS_DOCK_RECENT_RUNS, railsDockRows, shortRuleId } from './rows';
+import { RAILS_DOCK_RECENT_RUNS, enforcedRules, railsDockRows, shortRuleId } from './rows';
 import type { RailsCheckRun, RailsDockModel, RailsDockRow, RailsRunRecord, RailsSnapshot, TrackedFinding } from './types';
 
 function tracked(rule: string, file: string): TrackedFinding {
@@ -45,6 +45,7 @@ function model(over: Partial<RailsDockModel> = {}): RailsDockModel {
     expanded: new Set(),
     checkRuns: new Map(),
     checkInFlight: null,
+    detail: null,
     ...over,
   };
 }
@@ -55,6 +56,29 @@ describe('shortRuleId', () => {
     expect(shortRuleId('AGENTS.md#3')).toBe('AGENTS#3');
     expect(shortRuleId('CONTEXT.md#Lane')).toBe('CONTEXT#Lane');
     expect(shortRuleId('docs/0337-rails-verifier.md#1')).toBe('0337#1');
+  });
+});
+
+describe('enforcedRules (spec 404)', () => {
+  it('lists the rules naming a check in snapshot order, as the same array for the same snapshot', () => {
+    const second = { id: 'docs/adr/0011-z.md#4', source: 'docs/adr/0011-z.md', appliesTo: [], check: 'arch', text: 'd' };
+    const two: RailsSnapshot = { ...snapshot, rules: [...snapshot.rules, second] };
+    const arch = enforcedRules(two, 'arch');
+    expect(arch.map((rule) => rule.id)).toEqual(['docs/adr/0008-x.md#1', 'docs/adr/0011-z.md#4']);
+    expect(enforcedRules(two, 'arch')).toBe(arch);
+    expect(enforcedRules(two, 'typecheck')).toEqual([]);
+    expect(enforcedRules(two, 'typecheck')).toBe(enforcedRules(snapshot, 'nope'));
+    // A new snapshot is a new list.
+    expect(enforcedRules({ ...two }, 'arch')).not.toBe(arch);
+  });
+
+  it('keeps a check row\'s enforced rules identical across rebuilt row lists', () => {
+    const check = (rows: RailsDockRow[]): Extract<RailsDockRow, { kind: 'check' }> | undefined =>
+      rows.find((row): row is Extract<RailsDockRow, { kind: 'check' }> => row.kind === 'check' && row.decl.name === 'arch');
+    const first = check(railsDockRows(model()));
+    const again = check(railsDockRows(model({ selectedKey: 'head' })));
+    expect(first?.enforces.map((rule) => rule.text)).toEqual(['a']);
+    expect(again?.enforces).toBe(first?.enforces);
   });
 });
 

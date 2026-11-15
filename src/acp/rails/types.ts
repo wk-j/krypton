@@ -225,6 +225,8 @@ export interface RailsDockModel {
   readonly checkRuns: ReadonlyMap<string, RailsCheckRun>;
   /** Spec 368: the manual check running now, or null. */
   readonly checkInFlight: string | null;
+  /** Spec 404: the check whose page replaces the row list; null shows the list. */
+  readonly detail: string | null;
 }
 
 /** 1 head · 2 checks · 3 findings · 4 rules · 5 runs (the `1`–`5` jump keys). */
@@ -246,6 +248,8 @@ export type RailsDockRow =
       readonly manualRun: RailsCheckRun | null;
       /** From the latest run (null when it has not run, or checks were skipped); a manual check's from `manualRun`. */
       readonly result: RailsCheckResult | null;
+      /** Spec 404: the rules whose `check:<name>` names this check, in snapshot order. */
+      readonly enforces: readonly RailsRule[];
     }
   | { readonly kind: 'finding'; readonly key: string; readonly section: 3; readonly finding: TrackedFinding } // `finding:<TrackedFinding.key>`
   | { readonly kind: 'resolved'; readonly key: 'resolved'; readonly section: 3; readonly findings: readonly RailsFinding[] }

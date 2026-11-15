@@ -2059,6 +2059,7 @@ export class AcpHarnessView implements ContentView {
         this.scheduleLaneRender(l);
       },
       onHarnessReply: (id, reply) => this.reviewLoopCtl.onHarnessReply(id, reply),
+      holdsPeerReplies: (id, fromLaneId) => this.reviewLoopCtl.holdsReplies(id, fromLaneId),
     };
   }
 
@@ -17042,6 +17043,7 @@ export class AcpHarnessView implements ContentView {
         view.coordinator.cancelConversationsFor(lane.id, { consumer: 'harness' });
         view.coordinator.recomputePeerStatus(lane.id);
       },
+      settleReviewRequest: (lane, reviewerLaneId) => view.coordinator.settleHarnessRequest(lane.id, reviewerLaneId),
       pendingPeerCount: (lane) => view.coordinator.pendingPeersFor(lane.id).length,
       // spec 277: a reviewer reply changes no lane status, so nothing else
       // repaints the peek — refresh it beside the dashboard publish.

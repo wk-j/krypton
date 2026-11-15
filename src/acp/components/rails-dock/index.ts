@@ -48,10 +48,10 @@
 import './rails-dock.css';
 
 import { Component } from '../../../ui/component';
-import { classes, el, setAttr } from '../../../ui/dom';
+import { classes, el, setAttr, setChildren } from '../../../ui/dom';
 import { keyCap, keyHintNodes, type KeyHint } from '../../../ui/kbd';
 import { disposeList, listComponent, reconcile } from '../../../ui/list';
-import { formatActionTime, fullActionTime } from '../../harness-ticket-helpers';
+import { formatActionTime } from '../../harness-ticket-helpers';
 import {
   RAILS_DOCK_ACTIONS,
   railsDockActionFromData,
@@ -61,15 +61,13 @@ import {
 import { headStateLine, isEmptyManifest, localHhMm, plural, type HeadState } from '../../rails/format';
 import { railsDockRows, shortRuleId } from '../../rails/rows';
 import type {
-  RailsCheckOutcome,
-  RailsCheckResult,
-  RailsCheckRun,
   RailsDockModel,
   RailsDockRow,
   RailsDockSection,
   RailsFinding,
   RailsMode,
   RailsProgress,
+  RailsRule,
   RailsRuleStatus,
   RailsRunRecord,
   RailsSnapshot,
@@ -77,6 +75,8 @@ import type {
 } from '../../rails/types';
 import { DockActionButton, dockActionKey } from '../dock-action';
 import type { ComponentDef } from '../types';
+import { RailsCheckPage } from './check-page';
+import { B, OUTCOME_LABEL, formatDuration, line, outcomeBadge, ranText, runKey, span } from './parts';
 
 export interface RailsDockProps {
   readonly model: RailsDockModel;
@@ -86,6 +86,8 @@ export interface RailsDockProps {
   readonly onAction?: (action: RailsDockAction) => void;
   /** Spec 368: a click on a manual check's RUN key. */
   readonly onRunCheck?: (name: string) => void;
+  /** Spec 404: a click on the check page's `‹ ESC` key. */
+  readonly onBack?: () => void;
 }
 
 export const RAILS_DOCK_KEY_HINTS: readonly KeyHint[] = [
@@ -98,20 +100,20 @@ export const RAILS_DOCK_KEY_HINTS: readonly KeyHint[] = [
   { keys: ['Esc'], label: '' },
 ];
 
-const B = 'acp-rails-dock';
+/** Spec 404: the hints while a check page replaces the row list. */
+export const RAILS_CHECK_PAGE_KEY_HINTS: readonly KeyHint[] = [
+  { keys: ['Esc'], label: 'back' },
+  { keys: ['j', 'k'], label: 'scroll', keySeparator: '/' },
+  { keys: ['s'], label: 'send' },
+  { keys: ['r'], label: 'run' },
+  { keys: ['[', ']'], label: 'tab' },
+];
 
 const SECTION_LABEL: Record<Exclude<RailsDockSection, 1>, string> = {
   2: 'checks',
   3: 'findings',
   4: 'rules',
   5: 'runs',
-};
-
-const OUTCOME_LABEL: Record<RailsCheckOutcome, string> = {
-  pass: 'PASS',
-  fail: 'FAIL',
-  timeout: 'TIMEOUT',
-  error: 'ERROR',
 };
 
 const VERDICT_BADGE: Record<RailsVerdict, string> = {
@@ -131,10 +133,6 @@ const RULE_STATUS_LABEL: Record<RailsRuleStatus, string> = {
 };
 
 // ── formatting ──────────────────────────────────────────────────────────────
-
-function formatDuration(ms: number): string {
-  return `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
-}
 
 function location(finding: RailsFinding): string {
   return finding.line === null ? finding.file : `${finding.file}:${finding.line}`;
@@ -252,14 +250,6 @@ abstract class RowView<R extends RailsDockRow, P extends RowProps<R> = RowProps<
   protected abstract content(next: P): readonly HTMLElement[];
 }
 
-function line(...children: readonly (HTMLElement | string)[]): HTMLElement {
-  return el('div', { class: `${B}__line` }, ...children);
-}
-
-function span(cls: string, text: string): HTMLElement {
-  return el('span', { class: cls, text });
-}
-
 function detail(...children: readonly HTMLElement[]): HTMLElement {
   return el('div', { class: `${B}__detail` }, ...children);
 }
@@ -322,15 +312,24 @@ class CheckRow extends RowView<RowOf<'check'>, CheckProps> {
   }
 
   protected contentDeps(next: CheckProps): readonly unknown[] {
-    return [next.row.decl, next.row.result, next.row.manualRun, next.skipped, next.untrusted, next.inFlight, next.runDisabledReason];
+    return [
+      next.row.decl,
+      next.row.result,
+      next.row.manualRun,
+      next.row.enforces,
+      next.skipped,
+      next.untrusted,
+      next.inFlight,
+      next.runDisabledReason,
+    ];
   }
 
+  /** Spec 404: a check row never expands; `Enter` opens its page instead. */
   protected content(next: CheckProps): readonly HTMLElement[] {
-    const { decl, result, manualRun } = next.row;
-    const out: HTMLElement[] = [decl.manual ? this.manualLine(next) : this.autoLine(next)];
-    // Spec 345: the command trust would allow, one line; `Enter` shows it whole.
-    if (next.expanded) out.push(checkDetail(decl.argv, result, manualRun));
-    else if (next.untrusted) {
+    const { decl, enforces } = next.row;
+    const out: HTMLElement[] = [decl.manual ? this.manualLine(next) : this.autoLine(next), enforcesLine(decl.name, enforces)];
+    // Spec 345: the command trust would allow, one line; the page shows it whole.
+    if (next.untrusted) {
       const command = decl.argv.join(' ');
       out.push(el('p', { class: `${B}__cmd`, title: command, text: command }));
     }
@@ -339,12 +338,9 @@ class CheckRow extends RowView<RowOf<'check'>, CheckProps> {
 
   private autoLine(next: CheckProps): HTMLElement {
     const { decl, result } = next.row;
-    const outcome = result
-      ? span(`${B}__outcome ${B}__outcome--${result.outcome}`, OUTCOME_LABEL[result.outcome])
-      : span(`${B}__outcome ${B}__outcome--none`, next.skipped ? 'skipped' : 'not run');
     return line(
       span(`${B}__name`, decl.name),
-      outcome,
+      outcomeBadge(result, next.skipped ? 'skipped' : 'not run'),
       span(`${B}__duration`, result ? formatDuration(result.durationMs) : ''),
     );
   }
@@ -352,35 +348,42 @@ class CheckRow extends RowView<RowOf<'check'>, CheckProps> {
   /** Spec 368: `osv  RUN  FAIL  14:02` — the key, its own result, when it finished. */
   private manualLine(next: CheckProps): HTMLElement {
     const { decl, result, manualRun } = next.row;
-    const run = el('button', {
-      class: classes(`${B}__run`, next.inFlight && `${B}__run--running`),
-      text: next.inFlight ? 'RUNNING' : 'RUN',
-      attrs: { type: 'button', 'data-rails-check': decl.name },
-    });
-    run.disabled = next.inFlight || next.runDisabledReason !== null;
-    run.title = next.inFlight
-      ? `${decl.name} is running`
-      : next.runDisabledReason ?? `Run ${decl.name} alone (#rails check ${decl.name} · r)`;
-    let outcome: HTMLElement;
-    if (next.inFlight) outcome = span(`${B}__outcome ${B}__outcome--none`, 'running');
-    else if (result) outcome = span(`${B}__outcome ${B}__outcome--${result.outcome}`, OUTCOME_LABEL[result.outcome]);
-    else outcome = span(`${B}__outcome ${B}__outcome--none`, 'manual');
     const time = span(`${B}__duration`, '');
     if (manualRun && !next.inFlight) {
       const at = Date.parse(manualRun.finishedAt);
       time.textContent = formatActionTime(at, Date.now());
       time.title = ranText(manualRun);
     }
-    return line(span(`${B}__name`, decl.name), run, outcome, time);
+    return line(
+      span(`${B}__name`, decl.name),
+      runKey(decl.name, next.inFlight, next.runDisabledReason),
+      outcomeBadge(next.inFlight ? null : result, next.inFlight ? 'running' : 'manual'),
+      time,
+    );
   }
 }
 
-/** `2026-11-07 14:02 · OMP-1 · 3.7s`: when a manual check ran, who started it, how long. */
-function ranText(run: RailsCheckRun): string {
-  const parts = [fullActionTime(Date.parse(run.finishedAt))];
-  if (run.laneName) parts.push(run.laneName);
-  parts.push(formatDuration(run.result.durationMs));
-  return parts.join(' · ');
+/**
+ * Spec 404: what the check proves, one line under its name — the first rule it
+ * enforces (`0025#1 The verdict is computed…`), `+N` for the rest — or, when no
+ * `## Rails` bullet names it, that its result is only a command's exit.
+ */
+function enforcesLine(name: string, enforces: readonly RailsRule[]): HTMLElement {
+  const first = enforces[0];
+  if (first === undefined) {
+    return el('p', {
+      class: `${B}__enforces ${B}__enforces--none`,
+      title: `No ## Rails bullet names check:${name}`,
+      text: 'no rule — command only',
+    });
+  }
+  return el(
+    'p',
+    { class: `${B}__enforces`, title: enforces.map((rule) => `${shortRuleId(rule.id)} — ${rule.text}`).join('\n') },
+    span(`${B}__rule`, shortRuleId(first.id)),
+    span(`${B}__text`, first.text),
+    enforces.length > 1 ? span(`${B}__more`, `+${enforces.length - 1}`) : null,
+  );
 }
 
 /** Spec 345: the runs past the newest few, folded; `Enter` lists them below it. */
@@ -403,21 +406,6 @@ class OlderRow extends RowView<RowOf<'older'>> {
   }
 }
 
-function checkDetail(
-  argv: readonly string[],
-  result: RailsCheckResult | null,
-  manualRun: RailsCheckRun | null,
-): HTMLElement {
-  const lines: HTMLElement[] = [detailLine('argv', argv.join(' '))];
-  if (manualRun) lines.push(detailLine('ran', ranText(manualRun)));
-  if (result) {
-    lines.push(detailLine('exit', result.exitCode === null ? '—' : String(result.exitCode)));
-    lines.push(el('pre', { class: `${B}__tail`, text: result.outputTail || '(no output)' }));
-  } else {
-    lines.push(detailLine('output', 'not run'));
-  }
-  return detail(...lines);
-}
 
 class FindingRow extends RowView<RowOf<'finding'>> {
   constructor() {
@@ -696,15 +684,21 @@ export class RailsDock extends Component<RailsDockProps> {
   });
   private readonly keysEl = el('footer', { class: `${B}__keys`, children: keyHintNodes(RAILS_DOCK_KEY_HINTS) });
   private readonly actionsBar = new ActionsBar();
+  /** Spec 404: one check's detail, shown in place of the row list. */
+  private readonly page = new RailsCheckPage();
   private selectRow: ((key: string) => void) | undefined;
   private runAction: ((action: RailsDockAction) => void) | undefined;
   private runCheck: ((name: string) => void) | undefined;
+  private back: (() => void) | undefined;
   /** The selection last scrolled into view; scroll happens only when it moves. */
   private scrolledKey: string | null = null;
+  /** The check whose page was painted last, or null while the list shows. */
+  private shownPage: string | null = null;
 
   constructor(root: HTMLElement) {
     super(root);
-    this.contentEl.append(this.rowsEl, this.actionsBar.el, this.keysEl);
+    this.page.el.hidden = true;
+    this.contentEl.append(this.rowsEl, this.page.el, this.actionsBar.el, this.keysEl);
     root.appendChild(this.contentEl);
     this.bag.listen(this.el, 'click', (event: Event) => {
       if (!(event.target instanceof Element)) return;
@@ -716,9 +710,15 @@ export class RailsDock extends Component<RailsDockProps> {
         if (action) this.runAction?.(action);
         return;
       }
+      // Spec 404: the page's `‹ ESC` key, the same path as `Esc`.
+      const back = event.target.closest('[data-rails-back]');
+      if (back && this.page.el.contains(back)) {
+        this.back?.();
+        return;
+      }
       // Spec 368: a manual check's RUN key runs it; it does not select the row.
       const run = event.target.closest<HTMLButtonElement>('[data-rails-check]');
-      if (run && this.rowsEl.contains(run)) {
+      if (run && (this.rowsEl.contains(run) || this.page.el.contains(run))) {
         if (run.disabled || (event instanceof MouseEvent && event.detail > 1)) return;
         const name = run.dataset.railsCheck;
         if (name !== undefined) this.runCheck?.(name);
@@ -736,8 +736,16 @@ export class RailsDock extends Component<RailsDockProps> {
     this.selectRow = next.onSelectRow;
     this.runAction = next.onAction;
     this.runCheck = next.onRunCheck;
+    this.back = next.onBack;
     this.actionsBar.update(next.actions);
     super.update(next);
+  }
+
+  /** Spec 404: `j` / `k` on a check page scroll it by about three lines. */
+  scrollPage(direction: 1 | -1): void {
+    if (this.page.el.hidden) return;
+    const lineHeight = Number.parseFloat(getComputedStyle(this.page.el).lineHeight);
+    this.page.el.scrollTop += direction * 3 * (Number.isFinite(lineHeight) ? lineHeight : 18);
   }
 
   protected readDeps(next: RailsDockProps): readonly unknown[] {
@@ -751,6 +759,7 @@ export class RailsDock extends Component<RailsDockProps> {
       [...model.expanded].sort().join('\u0000'),
       model.checkRuns,
       model.checkInFlight,
+      model.detail,
       next.actions.checkDisabledReason,
     ];
   }
@@ -768,9 +777,41 @@ export class RailsDock extends Component<RailsDockProps> {
     const untrusted = model.snapshot?.present === true && model.snapshot.trust !== 'trusted';
     const rows = railsDockRows(model);
 
+    // Spec 404: a check page replaces the list in the same rows region.
+    const pageRow = model.detail === null
+      ? undefined
+      : rows.find((row): row is RowOf<'check'> => row.kind === 'check' && row.decl.name === model.detail);
+    if (pageRow) {
+      this.page.update({
+        row: pageRow,
+        runAt: pageRow.decl.manual ? null : latest?.finishedAt ?? null,
+        skipped,
+        inFlight: model.checkInFlight === pageRow.decl.name,
+        runDisabledReason: next.actions.checkDisabledReason,
+      });
+      const opened = this.shownPage !== pageRow.decl.name;
+      this.shownPage = pageRow.decl.name;
+      this.rowsEl.hidden = true;
+      this.page.el.hidden = false;
+      if (opened) {
+        this.page.el.scrollTop = 0;
+        setChildren(this.keysEl, keyHintNodes(RAILS_CHECK_PAGE_KEY_HINTS));
+      }
+      return;
+    }
+    if (this.shownPage !== null) {
+      // Back from a page: the list shows again with its selection in view.
+      this.shownPage = null;
+      this.scrolledKey = null;
+      this.page.el.hidden = true;
+      this.rowsEl.hidden = false;
+      setChildren(this.keysEl, keyHintNodes(RAILS_DOCK_KEY_HINTS));
+    }
+
     const rowState = (row: RailsDockRow): { selected: boolean; expanded: boolean } => ({
       selected: row.key === model.selectedKey,
-      expanded: model.expanded.has(row.key),
+      // Spec 404: a check row never expands; its detail is the check page.
+      expanded: row.kind !== 'check' && model.expanded.has(row.key),
     });
     const updateView = (view: ItemView, item: Item): void => {
       if (item.kind === 'section') {
@@ -865,6 +906,7 @@ export class RailsDock extends Component<RailsDockProps> {
   protected onDispose(): void {
     disposeList(this.rowsEl);
     this.actionsBar.dispose();
+    this.page.dispose();
     this.contentEl.remove();
   }
 }

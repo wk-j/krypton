@@ -571,6 +571,88 @@ describe('HarnessRailsController (spec 337)', () => {
     expect(press('x')).toBe(false);
   });
 
+  // Spec 404 — the check page.
+
+  it('opens the selected check\'s page on Enter, steps back on Esc, and leaves the composer for the next Esc', async () => {
+    const r = rig({ history: [priorRun()] });
+    await r.ctl.mount();
+    const focusComposer = vi.spyOn(r.host, 'focusComposer');
+    const press = (key: string): boolean => r.ctl.handleDockKey(new KeyboardEvent('keydown', { key, cancelable: true }));
+    const page = (): HTMLElement | null => r.ctl.dockEl.querySelector<HTMLElement>('.acp-rails-dock__page');
+    const selected = (): string | null | undefined =>
+      r.ctl.dockEl.querySelector<HTMLElement>('.acp-rails-dock__row--selected')?.dataset.railsKey;
+
+    expect(press('2')).toBe(true);
+    expect(press('Enter')).toBe(true);
+    expect(page()?.hidden).toBe(false);
+    expect(page()?.querySelector('.acp-rails-dock__crumb')?.textContent).toBe('checks › typecheck');
+    // j/k scroll the page; s/r still act on the check's row; other keys stay with the view.
+    expect(press('j')).toBe(true);
+    expect(press('k')).toBe(true);
+    expect(press('x')).toBe(false);
+
+    expect(press('Escape')).toBe(true);
+    expect(page()?.hidden).toBe(true);
+    expect(r.ctl.dockEl.querySelector<HTMLElement>('.acp-rails-dock__rows')?.hidden).toBe(false);
+    expect(selected()).toBe('check:typecheck');
+    expect(focusComposer).not.toHaveBeenCalled();
+    expect(press('Escape')).toBe(true);
+    expect(focusComposer).toHaveBeenCalledTimes(1);
+
+    // Enter on a row that is not a check still expands it in place.
+    expect(press('1')).toBe(true);
+    expect(press('Enter')).toBe(true);
+    expect(page()?.hidden).toBe(true);
+    expect(r.ctl.dockEl.querySelector('.acp-rails-dock__row--head.acp-rails-dock__row--expanded')).not.toBeNull();
+
+    // On a page, a section key goes back to the list and jumps there.
+    expect(press('2')).toBe(true);
+    expect(press('Enter')).toBe(true);
+    expect(page()?.hidden).toBe(false);
+    expect(press('4')).toBe(true);
+    expect(page()?.hidden).toBe(true);
+    expect(selected()).toBe('rules');
+  });
+
+  it('opens a check page on a click of the already-selected check row, and closes it with ‹ ESC', async () => {
+    const r = rig({ history: [priorRun()] });
+    await r.ctl.mount();
+    const page = (): HTMLElement | null => r.ctl.dockEl.querySelector<HTMLElement>('.acp-rails-dock__page');
+    const click = (node: Element | null | undefined): void => {
+      node?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    };
+    const row = (): HTMLElement | null => r.ctl.dockEl.querySelector<HTMLElement>('[data-rails-key="check:typecheck"]');
+
+    click(row());
+    expect(row()?.classList.contains('acp-rails-dock__row--selected')).toBe(true);
+    expect(page()?.hidden).toBe(true);
+    click(row());
+    expect(page()?.hidden).toBe(false);
+
+    click(page()?.querySelector('[data-rails-back]'));
+    expect(page()?.hidden).toBe(true);
+    expect(row()?.classList.contains('acp-rails-dock__row--selected')).toBe(true);
+  });
+
+  it('closes a check page when the manifest no longer declares its check', async () => {
+    const options: RigOptions = { history: [priorRun()] };
+    const r = rig(options);
+    await r.ctl.mount();
+    const press = (key: string): boolean => r.ctl.handleDockKey(new KeyboardEvent('keydown', { key, cancelable: true }));
+    const page = (): HTMLElement | null => r.ctl.dockEl.querySelector<HTMLElement>('.acp-rails-dock__page');
+    press('2');
+    press('Enter');
+    expect(page()?.hidden).toBe(false);
+
+    options.snapshot = { ...SNAPSHOT, checks: [] };
+    await r.ctl.runCommand(r.lanes[0], ['trust'], '#rails trust');
+    expect(page()?.hidden).toBe(true);
+    // The keys are the list's again: Esc leaves for the composer, not "back".
+    const focusComposer = vi.spyOn(r.host, 'focusComposer');
+    expect(press('Escape')).toBe(true);
+    expect(focusComposer).toHaveBeenCalledTimes(1);
+  });
+
   // Spec 344 — the Actions bar.
 
   it('runs each Actions bar button down the path of its #rails sub-command, in the active lane', async () => {

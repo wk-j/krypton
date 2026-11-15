@@ -86,6 +86,7 @@ function model(over: Partial<RailsDockModel> = {}): RailsDockModel {
     expanded: new Set<string>(),
     checkRuns: NO_CHECK_RUNS,
     checkInFlight: null,
+    detail: null,
     ...over,
   };
 }
@@ -175,7 +176,7 @@ describe('RailsDock', () => {
     expect(head?.querySelector('.acp-rails-dock__warnings')).toBeNull();
 
     expect(rowEl(dock, 'check:arch')?.querySelector('.acp-rails-dock__outcome--fail')?.textContent).toBe('FAIL');
-    expect(rowEl(dock, 'check:typecheck')?.textContent).toBe('typecheckPASS1.2s');
+    expect(rowEl(dock, 'check:typecheck')?.textContent).toBe('typecheckPASS1.2sno rule — command only');
 
     const row = rowEl(dock, `finding:${finding.key}`);
     expect(row?.querySelector('.acp-rails-dock__rule')?.textContent).toBe('0008#2');
@@ -227,21 +228,116 @@ describe('RailsDock', () => {
     expect(scrollIntoView).toHaveBeenCalledTimes(2);
   });
 
-  it('shows expanded detail for keys in model.expanded and removes it on collapse', () => {
+  it('shows expanded detail for keys in model.expanded and removes it on collapse; a check row never expands', () => {
     const dock = mount();
     dock.update(props(model()));
-    expect(rowEl(dock, 'check:arch')?.querySelector('pre')).toBeNull();
 
     dock.update(props(model({ expanded: new Set(['check:arch', 'run:20261027T140200Z-ab12']) })));
-    const arch = rowEl(dock, 'check:arch');
-    expect(arch?.classList.contains('acp-rails-dock__row--expanded')).toBe(true);
-    expect(arch?.querySelector('pre')?.textContent).toBe('arch.test.ts:4 expected no import');
     expect(rowEl(dock, 'run:20261027T140200Z-ab12')?.querySelector('.acp-rails-dock__detail')?.textContent)
       .toContain('typecheck PASS 1.2s · arch FAIL 1.2s');
+    // Spec 404: its detail is the check page, never a well inside the row.
+    const arch = rowEl(dock, 'check:arch');
+    expect(arch?.classList.contains('acp-rails-dock__row--expanded')).toBe(false);
+    expect(arch?.querySelector('.acp-rails-dock__detail')).toBeNull();
 
-    dock.update(props(model({ expanded: new Set(['run:20261027T140200Z-ab12']) })));
-    expect(rowEl(dock, 'check:arch')?.querySelector('pre')).toBeNull();
-    expect(rowEl(dock, 'check:arch')?.classList.contains('acp-rails-dock__row--expanded')).toBe(false);
+    dock.update(props(model({ expanded: new Set() })));
+    expect(rowEl(dock, 'run:20261027T140200Z-ab12')?.querySelector('.acp-rails-dock__detail')).toBeNull();
+  });
+
+  // Spec 404 — what each check enforces, and the check page.
+
+  it('puts the first rule a check enforces under its name, +N for the rest, and no rule otherwise', () => {
+    const extra = { ...snapshot.rules[0], id: 'docs/adr/0011-views.md#3', source: 'docs/adr/0011-views.md', text: 'Views own their DOM.' };
+    const twoRules: RailsSnapshot = { ...snapshot, rules: [...snapshot.rules, extra] };
+    const dock = mount();
+    dock.update(props(model({ snapshot: twoRules })));
+
+    const enforces = (key: string): HTMLElement | null | undefined =>
+      rowEl(dock, key)?.querySelector<HTMLElement>('.acp-rails-dock__enforces');
+    expect(enforces('check:arch')?.querySelector('.acp-rails-dock__rule')?.textContent).toBe('0008#1');
+    expect(enforces('check:arch')?.querySelector('.acp-rails-dock__text')?.textContent).toBe('Lanes never import views.');
+    expect(enforces('check:arch')?.querySelector('.acp-rails-dock__more')?.textContent).toBe('+1');
+    expect(enforces('check:arch')?.title).toBe('0008#1 — Lanes never import views.\n0011#3 — Views own their DOM.');
+    expect(enforces('check:typecheck')?.textContent).toBe('no rule — command only');
+    expect(enforces('check:typecheck')?.classList.contains('acp-rails-dock__enforces--none')).toBe(true);
+
+    dock.update(props(model()));
+    expect(enforces('check:arch')?.querySelector('.acp-rails-dock__more')).toBeNull();
+  });
+
+  it('replaces the row list with the check page in the same panel, and shows the list again on back', () => {
+    const onBack = vi.fn();
+    const dock = mount();
+    dock.update(props(model({ selectedKey: 'check:arch' }), { onBack }));
+    scrollIntoView.mockClear();
+
+    dock.update(props(model({ selectedKey: 'check:arch', detail: 'arch' }), { onBack }));
+    const rows = dock.el.querySelector<HTMLElement>('.acp-rails-dock__rows');
+    const page = dock.el.querySelector<HTMLElement>('.acp-rails-dock__page');
+    expect(rows?.hidden).toBe(true);
+    expect(page?.hidden).toBe(false);
+    expect(page?.getAttribute('aria-label')).toBe('arch check');
+    expect(page?.querySelector('.acp-rails-dock__crumb')?.textContent).toBe('checks › arch');
+    expect(page?.querySelector('.acp-rails-dock__page-check .acp-rails-dock__outcome--fail')?.textContent).toBe('FAIL');
+    expect(page?.querySelector('.acp-rails-dock__page-meta')?.textContent)
+      .toBe(`run ${localHhMm('2026-10-27T14:02:00Z')} · exit 1 · timeout 60s`);
+    expect([...(page?.querySelectorAll('.acp-rails-dock__section-label') ?? [])].map((node) => node.textContent))
+      .toEqual(['proves', 'command', 'output']);
+    expect([...(page?.querySelectorAll('.acp-rails-dock__page-aside') ?? [])].map((node) => node.textContent))
+      .toEqual(['1', 'exit 1']);
+    const rule = page?.querySelector('.acp-rails-dock__page-rule');
+    expect(rule?.querySelector('.acp-rails-dock__rule')?.textContent).toBe('0008#1');
+    expect(rule?.querySelector('.acp-rails-dock__page-rule-text')?.textContent).toBe('Lanes never import views.');
+    expect(rule?.querySelector('.acp-rails-dock__page-source')?.textContent).toBe('docs/adr/0008-lanes.md#1');
+    expect([...(page?.querySelectorAll('.acp-rails-dock__page-arg') ?? [])].map((node) => node.textContent))
+      .toEqual(['npx', 'vitest', 'run', 'arch']);
+    expect(page?.querySelector('.acp-rails-dock__page-tail')?.textContent).toBe('arch.test.ts:4 expected no import');
+    expect(dock.el.querySelector('.acp-rails-dock__keys')?.textContent).toBe('Esc back · j/k scroll · s send · r run · [ ] tab');
+
+    page?.querySelector('[data-rails-back]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+
+    dock.update(props(model({ selectedKey: 'check:arch' }), { onBack }));
+    expect(rows?.hidden).toBe(false);
+    expect(page?.hidden).toBe(true);
+    expect(dock.el.querySelector('.acp-rails-dock__keys')?.textContent).toBe('j/k · Enter · 1–5 · s send · r run · [ ] tab · Esc');
+    expect(scrollIntoView.mock.contexts[scrollIntoView.mock.contexts.length - 1]).toBe(rowEl(dock, 'check:arch'));
+  });
+
+  it('says a check with no rule proves only its exit, and a skipped one waits for trust', () => {
+    const dock = mount();
+    dock.update(props(model({ detail: 'typecheck' })));
+    const page = (): HTMLElement | null => dock.el.querySelector<HTMLElement>('.acp-rails-dock__page');
+    expect(page()?.querySelector('.acp-rails-dock__page-none')?.textContent)
+      .toBe('No `## Rails` bullet names `check:typecheck`, so its result says only whether the command succeeded.');
+    expect(page()?.querySelector('.acp-rails-dock__page-aside')?.textContent).toBe('0');
+
+    const skipped = [run({ checks: [], checksSkipped: true })];
+    dock.update(props(model({ detail: 'typecheck', history: skipped, snapshot: { ...snapshot, trust: 'changed' } })));
+    const meta = page()?.querySelector('.acp-rails-dock__page-meta');
+    expect(meta?.textContent).toBe('skipped — waits for #rails trust · timeout 120s');
+    expect(meta?.classList.contains('acp-rails-dock__page-meta--wait')).toBe(true);
+    expect(page()?.querySelector('.acp-rails-dock__page-check .acp-rails-dock__outcome')?.textContent).toBe('skipped');
+    expect(page()?.querySelector('.acp-rails-dock__page-tail')?.textContent).toBe('skipped');
+  });
+
+  it('wraps a long argument after :: and / before anywhere else', () => {
+    const long: RailsSnapshot = {
+      ...snapshot,
+      checks: [{ name: 'gate', argv: ['sh', 'scripts/rails-check.sh', 'loopback_app::tests::next_path'], timeoutS: 900, manual: false }],
+    };
+    const dock = mount();
+    dock.update(props(model({ snapshot: long, detail: 'gate' })));
+    const args = [...dock.el.querySelectorAll('.acp-rails-dock__page-arg')];
+    expect(args.map((node) => node.textContent)).toEqual(['sh', 'scripts/rails-check.sh', 'loopback_app::tests::next_path']);
+    expect(args.map((node) => node.querySelectorAll('wbr').length)).toEqual([0, 1, 2]);
+  });
+
+  it('shows the list when the open check is no longer declared', () => {
+    const dock = mount();
+    dock.update(props(model({ detail: 'gone' })));
+    expect(dock.el.querySelector<HTMLElement>('.acp-rails-dock__rows')?.hidden).toBe(false);
+    expect(dock.el.querySelector<HTMLElement>('.acp-rails-dock__page')?.hidden).toBe(true);
   });
 
   it('lists every rule when the rules row is expanded', () => {
@@ -263,11 +359,11 @@ describe('RailsDock', () => {
     expect(command('check:typecheck')).toBe('npx tsc --noEmit');
     expect(command('check:arch')).toBe('npx vitest run arch');
 
-    // Expanded, the row shows the whole command in its detail instead.
-    dock.update(props(model({ snapshot: { ...snapshot, trust: 'untrusted' }, expanded: new Set(['check:arch']) })));
+    // Spec 404: the rule line stays above it, and the check page shows the command whole.
+    dock.update(props(model({ snapshot: { ...snapshot, trust: 'untrusted' } })));
     expect(head?.querySelector('.acp-rails-dock__state')?.textContent).toBe('not trusted · 2 checks wait');
-    expect(command('check:arch')).toBeUndefined();
-    expect(rowEl(dock, 'check:arch')?.querySelector('.acp-rails-dock__detail')?.textContent).toContain('npx vitest run arch');
+    expect([...(rowEl(dock, 'check:arch')?.children ?? [])].map((node) => node.className))
+      .toEqual(['acp-rails-dock__line', 'acp-rails-dock__enforces', 'acp-rails-dock__cmd']);
 
     // Trusted: no command lines; a run in progress takes the state line.
     dock.update(props(model({ progress: { kind: 'checking', index: 2, total: 2, name: 'arch' } })));
@@ -391,12 +487,19 @@ describe('RailsDock', () => {
       result: { ...check('osv', 'fail', '185 known vulnerabilities'), durationMs: 3700 },
     };
     const checkRuns = new Map([['osv', ran]]);
-    dock.update(props(model({ snapshot: manual, history, checkRuns, expanded: new Set(['rules', 'check:osv']) })));
+    dock.update(props(model({ snapshot: manual, history, checkRuns, expanded: new Set(['rules']) })));
     expect(osv()?.querySelector('.acp-rails-dock__outcome--fail')?.textContent).toBe('FAIL');
     expect(osv()?.querySelector('.acp-rails-dock__duration')?.getAttribute('title')).toBe('2026-11-07 14:02 · OMP-1 · 3.7s');
-    expect(osv()?.querySelector('.acp-rails-dock__detail')?.textContent).toContain('ran2026-11-07 14:02 · OMP-1 · 3.7s');
-    expect(osv()?.querySelector('pre')?.textContent).toBe('185 known vulnerabilities');
     expect(rowEl(dock, 'rule:docs/adr/0029-osv.md#1')?.querySelector('.acp-rails-dock__status')?.textContent).toBe('fail');
+
+    // Spec 404: its page says when it ran and who started it, with its own RUN key.
+    dock.update(props(model({ snapshot: manual, history, checkRuns, detail: 'osv' })));
+    const page = dock.el.querySelector<HTMLElement>('.acp-rails-dock__page');
+    expect(page?.querySelector('.acp-rails-dock__page-meta')?.textContent)
+      .toBe('manual · 2026-11-07 14:02 · OMP-1 · exit 1 · timeout 120s');
+    expect(page?.querySelector('.acp-rails-dock__page-check .acp-rails-dock__duration')?.textContent).toBe('3.7s');
+    expect(page?.querySelector('[data-rails-check="osv"]')?.textContent).toBe('RUN');
+    expect(page?.querySelector('.acp-rails-dock__page-tail')?.textContent).toBe('185 known vulnerabilities');
 
     dock.update(props(model({ snapshot: manual, history, checkRuns, checkInFlight: 'osv' }), { actions: actions({ checkInFlight: 'osv' }) }));
     expect(key()?.textContent).toBe('RUNNING');
@@ -440,7 +543,7 @@ describe('RailsDock', () => {
 
     const content = dock.el.querySelector('.acp-rails-dock');
     expect([...(content?.children ?? [])].map((node) => node.className))
-      .toEqual(['acp-rails-dock__rows', 'acp-rails-dock__actions', 'acp-rails-dock__keys']);
+      .toEqual(['acp-rails-dock__rows', 'acp-rails-dock__page', 'acp-rails-dock__actions', 'acp-rails-dock__keys']);
     const bar = dock.el.querySelector('.acp-rails-dock__actions');
     expect(bar?.getAttribute('role')).toBe('group');
     expect(bar?.querySelector('.acp-rails-dock__lane-line')?.textContent).toBe('lane codex-1 · idle');
