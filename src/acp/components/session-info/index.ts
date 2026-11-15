@@ -1,4 +1,4 @@
-// Spec 401 — read-only context and identity for the active Harness lane.
+// Specs 401–403 — compact, read-only context and identity for the active Harness lane.
 // HarnessDock owns the root's hidden state and HarnessLayout places it.
 
 import './session-info.css';
@@ -136,9 +136,9 @@ function setText(node: HTMLElement, value: string): void {
   if (node.textContent !== value) node.textContent = value;
 }
 
-function fact(label: string): { row: HTMLElement; value: HTMLElement } {
+function fact(label: string, fullWidth: boolean = false): { row: HTMLElement; value: HTMLElement } {
   const value = el('dd', { class: B + '__fact-value' });
-  const row = el('div', { class: B + '__fact' },
+  const row = el('div', { class: B + '__fact' + (fullWidth ? ' ' + B + '__fact--full' : '') },
     el('dt', { class: B + '__fact-label', text: label }), value);
   return { row, value };
 }
@@ -154,57 +154,57 @@ function mcpContactLabel(next: SessionInfoProps): string {
 }
 
 export class SessionInfo extends Component<SessionInfoProps> {
-  private readonly laneEl = el('p', { class: B + '__lane' });
+  private readonly laneEl = el('span', { class: B + '__lane' });
   private readonly statusEl = el('span', { class: B + '__status' });
   private readonly percentEl = el('strong', { class: B + '__percent' });
   private readonly countEl = el('span', { class: B + '__count' });
   private readonly meterEl = el('div', { class: B + '__meter', attrs: { role: 'progressbar', 'aria-label': 'Context used' } });
   private readonly fillEl = el('div', { class: B + '__meter-fill' });
-  private readonly session = fact('Session');
+  private readonly session = fact('Session ID', true);
   private readonly project = fact('Project');
   private readonly backend = fact('Backend');
   private readonly model = fact('Model');
   private readonly effort = fact('Effort');
-  private readonly mcpServer = fact('Server');
-  private readonly mcpContact = fact('Contact');
+  private readonly mcpServer = fact('Server', true);
+  private readonly mcpContact = fact('Contact', true);
   private readonly mcpInitialize = fact('Initialize');
   private readonly mcpToolsList = fact('Tools/list');
   private readonly mcpToolsCall = fact('Tools/call');
   private readonly mcpLastMethod = fact('Last method');
-  private readonly mcpLastSeen = fact('Last contact');
+  private readonly mcpLastSeen = fact('Last contact', true);
   private readonly cacheHit = fact('Cache hit');
   private readonly cacheRead = fact('Cache read');
   private readonly cacheWrite = fact('Cache write');
   private readonly turnInput = fact('Turn input');
   private readonly input = fact('Input');
   private readonly output = fact('Output');
-  private readonly cost = fact('Cost');
+  private readonly cost = fact('Cost', true);
   private readonly tools = fact('Tool calls');
   private readonly rows = fact('Transcript rows');
   private readonly permissions = fact('Permissions');
   private readonly questions = fact('Questions');
-  private readonly flags = fact('Turn flags');
-  private readonly error = fact('Error');
+  private readonly flags = fact('Turn flags', true);
+  private readonly error = fact('Error', true);
 
   constructor() {
     super(el('aside', { class: B + ' acp-harness__session-dock', attrs: { tabindex: '-1' } }));
     this.meterEl.appendChild(this.fillEl);
     this.el.append(
       el('header', { class: B + '__head' },
-        el('span', { class: B + '__eyebrow' },
-          harnessIconEl('panel-session', B + '__icon'), 'SESSION'),
+        el('span', { class: B + '__identity' },
+          harnessIconEl('panel-session', B + '__icon'), this.laneEl),
         this.statusEl),
-      this.laneEl,
       el('section', { class: B + '__section', attrs: { 'aria-label': 'Context' } },
         el('h3', { class: B + '__heading' },
           harnessIconEl('gauge', B + '__icon'), 'Context'),
-        el('div', { class: B + '__readout' }, this.percentEl, this.countEl),
-        this.meterEl),
+        el('div', { class: B + '__context' },
+          el('div', { class: B + '__readout' }, this.percentEl, this.countEl),
+          this.meterEl)),
       el('section', { class: B + '__section', attrs: { 'aria-label': 'Session details' } },
         el('h3', { class: B + '__heading' },
           harnessIconEl('list', B + '__icon'), 'Details'),
         el('dl', { class: B + '__facts' },
-          this.session.row, this.project.row, this.backend.row, this.model.row, this.effort.row)),
+          this.project.row, this.backend.row, this.model.row, this.effort.row, this.session.row)),
       el('section', { class: B + '__section', attrs: { 'aria-label': 'MCP connection' } },
         el('h3', { class: B + '__heading' },
           harnessIconEl('remote', B + '__icon'), 'MCP connection'),
@@ -217,7 +217,7 @@ export class SessionInfo extends Component<SessionInfoProps> {
         el('h3', { class: B + '__heading' },
           harnessIconEl('embedded', B + '__icon'), 'Usage'),
         el('dl', { class: B + '__facts' },
-          this.cacheHit.row, this.cacheRead.row, this.cacheWrite.row, this.turnInput.row,
+          this.cacheHit.row, this.turnInput.row, this.cacheRead.row, this.cacheWrite.row,
           this.input.row, this.output.row, this.cost.row)),
       el('section', { class: B + '__section', attrs: { 'aria-label': 'Activity' } },
         el('h3', { class: B + '__heading' },
@@ -256,8 +256,7 @@ export class SessionInfo extends Component<SessionInfoProps> {
     setText(this.statusEl, STATUS_LABEL[next.status]);
     this.statusEl.dataset.status = next.status;
     setText(this.session.value, next.sessionId ?? 'Pending');
-    this.project.row.hidden = next.projectName === null;
-    setText(this.project.value, next.projectName ?? '');
+    this.paintValue(this.project, next.projectName);
     setText(this.backend.value, next.backendName);
     setText(this.model.value, next.modelName ?? 'Unknown');
     setText(this.effort.value, next.effortName ?? 'Unknown');
@@ -266,22 +265,22 @@ export class SessionInfo extends Component<SessionInfoProps> {
     setText(this.mcpInitialize.value, formatCount(next.mcpInitializeCount));
     setText(this.mcpToolsList.value, formatCount(next.mcpToolsListCount));
     setText(this.mcpToolsCall.value, formatCount(next.mcpToolsCallCount));
-    this.paintOptional(this.mcpLastMethod, next.mcpLastMethod);
-    this.paintOptional(this.mcpLastSeen, next.mcpLastSeenAt === null
+    this.paintValue(this.mcpLastMethod, next.mcpLastMethod);
+    this.paintValue(this.mcpLastSeen, next.mcpLastSeenAt === null
       ? null : new Date(next.mcpLastSeenAt).toLocaleString());
-    this.paintOptional(this.cacheHit, next.cacheHit);
-    this.paintOptional(this.cacheRead, next.cacheRead === null ? null : formatCount(next.cacheRead));
-    this.paintOptional(this.cacheWrite, next.cacheWrite === null ? null : formatCount(next.cacheWrite));
-    this.paintOptional(this.turnInput, next.turnInput === null ? null : formatCount(next.turnInput));
-    this.paintOptional(this.input, next.inputTokens === null && next.outputTokens === null ? null : formatCount(next.inputTokens ?? 0));
-    this.paintOptional(this.output, next.inputTokens === null && next.outputTokens === null ? null : formatCount(next.outputTokens ?? 0));
-    this.paintOptional(this.cost, next.costAmount === null ? null : `$${next.costAmount.toFixed(4)} ${next.costCurrency ?? ''}`.trim());
-    this.paintOptional(this.tools, next.toolCalls > 0 ? String(next.toolCalls) : null);
+    this.paintValue(this.cacheHit, next.cacheHit);
+    this.paintValue(this.cacheRead, next.cacheRead === null ? null : formatCount(next.cacheRead));
+    this.paintValue(this.cacheWrite, next.cacheWrite === null ? null : formatCount(next.cacheWrite));
+    this.paintValue(this.turnInput, next.turnInput === null ? null : formatCount(next.turnInput));
+    this.paintValue(this.input, next.inputTokens === null && next.outputTokens === null ? null : formatCount(next.inputTokens ?? 0));
+    this.paintValue(this.output, next.inputTokens === null && next.outputTokens === null ? null : formatCount(next.outputTokens ?? 0));
+    this.paintValue(this.cost, next.costAmount === null ? null : `$${next.costAmount.toFixed(4)} ${next.costCurrency ?? ''}`.trim());
+    setText(this.tools.value, String(next.toolCalls));
     setText(this.rows.value, String(next.transcriptRows));
-    this.paintOptional(this.permissions, next.pendingPermissions > 0 ? String(next.pendingPermissions) : null);
-    this.paintOptional(this.questions, next.pendingQuestions > 0 ? String(next.pendingQuestions) : null);
-    this.paintOptional(this.flags, next.turnFlags || null);
-    this.paintOptional(this.error, next.error);
+    setText(this.permissions.value, String(next.pendingPermissions));
+    setText(this.questions.value, String(next.pendingQuestions));
+    this.paintValue(this.flags, next.turnFlags || null);
+    this.paintValue(this.error, next.error);
 
     const context = sessionContext(next.contextUsed, next.contextSize);
     if (context.used === null) {
@@ -310,9 +309,8 @@ export class SessionInfo extends Component<SessionInfoProps> {
     }
   }
 
-  private paintOptional(field: { row: HTMLElement; value: HTMLElement }, value: string | null): void {
-    field.row.hidden = value === null;
-    setText(field.value, value ?? '');
+  private paintValue(field: { value: HTMLElement }, value: string | null): void {
+    setText(field.value, value ?? '—');
   }
 }
 

@@ -19,7 +19,7 @@ Add an **MCP connection** section to the existing Session pane for the lane-scop
 - `acp-harness-mcp-touched` already calls `refreshMcpStats()`. That refresh updates lane chrome through `refreshMetricsRender()`, but does not currently update Session Info. The Session pane is updated elsewhere on lane changes and usage events.
 - `memoryServerForLane(lane)` supplies the built-in server only when the lane can receive it and a local or remote-forwarded port exists. Pi gets no MCP descriptor. Project servers and native adapter configs use different delivery paths, so `.mcp.json` entries cannot be presented as connected merely because they are configured.
 - `mcpStatsByLane` is keyed by lane display name and the Rust counters can survive a `#new` or restart of the same lane. A positive `tools/list` count means **observed on this lane**, not connected to the current session right now.
-- Session Info uses primitive `readDeps()` values, owns its DOM, and receives `hidden` from `HarnessDock`. `DESIGN.md` calls for engraved labels and recessed fact rows; the existing pane has those styles.
+- Session Info uses primitive `readDeps()` values, owns its DOM, and receives `hidden` from `HarnessDock`. `DESIGN.md` supplies the section engraving and recessed wells; spec 403 supplies the compact two-column facts layout.
 
 ## Prior Art
 
@@ -32,7 +32,7 @@ Add an **MCP connection** section to the existing Session pane for the lane-scop
 
 | File | Change |
 |------|--------|
-| `src/acp/components/session-info/index.ts`, `session-info.css` | Add primitive MCP props, a section below Details, and conditional fact rows with a historical-activity note. |
+| `src/acp/components/session-info/index.ts`, `session-info.css` | Add primitive MCP props, a section below Details, and request facts with a historical-activity note; spec 403 keeps missing facts visible as `—`. |
 | `src/acp/components/session-info/session-info.test.ts` | Cover no contact, observed requests, lane switch, and stale-looking counter semantics. |
 | `src/acp/acp-harness-view.ts` | Snapshot the active lane's MCP stats and endpoint availability; refresh the shown Session pane after MCP telemetry changes. |
 | `src/acp/acp-harness-view.test.ts` | Verify the MCP refresh reaches Session Info without a transcript repaint. |
@@ -54,7 +54,7 @@ The status wording is evidence-specific:
 | Another request observed, `tools/list = 0` | `Contact observed; tools not listed` |
 | `tools/list > 0` | `Tools listed on this lane` |
 
-Show the server name `krypton-harness-memory`, initialize/list/call counts, and the last method and absolute local timestamp when present. Counts remain historical for the lane label, including after `#new` or restart. The UI must not say `Connected`, `Online`, or imply that project/native MCP servers are covered. The existing `#mcp` command remains the detailed endpoint view.
+Show the server name `krypton-harness-memory`, initialize/list/call counts, and the last method and absolute local timestamp when present. Missing method/time retain their fields with `—` under spec 403. Counts remain historical for the lane label, including after `#new` or restart. The UI must not say `Connected`, `Online`, or imply that project/native MCP servers are covered. The existing `#mcp` command remains the detailed endpoint view.
 
 ### Data flow and keyboard
 
@@ -66,7 +66,7 @@ The existing `⌥⌘.` shortcut and clickable active-lane name open Session Info
 
 ### UI
 
-Place the section between Details and Usage. Reuse the pane's engraved heading and recessed fact-list layout, with no animation or new material tokens. Keep the server name selectable and rows readable in the 352px dock and its narrow overlay.
+Place the section between Details and Usage. Reuse the pane's engraved heading and recessed well, with no animation or new material tokens. Spec 403 uses the same two-column grid as every other facts section: full-width Server and Contact; Initialize / Tools/list; Tools/call / Last method; full-width Last contact. Keep all fields selectable and readable in the 352px dock and its narrow overlay, wrapping long values without reducing fonts or folding details.
 
 ## Edge Cases
 
@@ -80,7 +80,7 @@ Place the section between Details and Usage. Reuse the pane's engraved heading a
 - Focused tests for the component and view MCP refresh path; `npm run check` and `npm run build`.
 - Visual check in dark and light schemes at wide and narrow dock widths, including computed visibility after switching lanes/tabs.
 
-Implementation verification: `npm run check` passed; the two focused test files passed (361 tests); component stylesheet ownership passed (7 tests); `npm run build` passed. Visual verification is pending because no Tauri/Vite dev instance was running for this checkout; the build result alone does not establish the rendered layout.
+Original implementation verification: `npm run check` passed; the two focused test files passed (361 tests); component stylesheet ownership passed (7 tests); `npm run build` passed. Visual verification was unavailable at that stage. Spec 403 records the subsequent compact-layout browser verification using production components and shell styles, not a full native-app run.
 
 ## Open Questions
 

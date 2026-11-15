@@ -84,7 +84,20 @@ describe('Session Info (spec 401)', () => {
     expect(panel.el.textContent).toContain('Pending');
     expect(panel.el.textContent).toContain('Context unavailable');
     expect(panel.el.textContent).not.toContain('session-123');
-    expect(panel.el.querySelector<HTMLElement>('section[aria-label="Session details"] .acp-session-info__fact:nth-child(2)')?.hidden).toBe(true);
+    const facts = Object.fromEntries(
+      Array.from(panel.el.querySelectorAll<HTMLElement>('.acp-session-info__fact'), (field) => {
+        expect(field.hidden).toBe(false);
+        return [field.querySelector('dt')!.textContent, field.querySelector('dd')!.textContent];
+      }),
+    );
+    expect(facts).toEqual({
+      Project: '—', Backend: 'Codex', Model: 'Unknown', Effort: 'Unknown',
+      'Session ID': 'Pending', Server: 'krypton-harness-memory', Contact: 'No contact observed',
+      Initialize: '0', 'Tools/list': '0', 'Tools/call': '0', 'Last method': '—', 'Last contact': '—',
+      'Cache hit': '—', 'Turn input': '—', 'Cache read': '—', 'Cache write': '—',
+      Input: '—', Output: '—', Cost: '—', 'Tool calls': '0', 'Transcript rows': '0',
+      Permissions: '0', Questions: '0', 'Turn flags': '—', Error: '—',
+    });
     expect(panel.el.textContent).not.toContain('140.3k');
     expect(panel.el.textContent).toContain('No contact observed');
     expect(panel.el.textContent).not.toContain('tools/call');
@@ -135,7 +148,7 @@ describe('Session Info (spec 401)', () => {
     panel.update({ ...sample, mcpInitializeCount: 0, mcpToolsListCount: 0,
       mcpToolsCallCount: 0, mcpLastMethod: null, mcpLastSeenAt: null });
     expect(mcp().textContent).toContain('No contact observed');
-    expect(mcp().querySelector<HTMLElement>('.acp-session-info__fact:last-child')?.hidden).toBe(true);
+    expect(mcp().textContent).toContain('Last contact—');
 
     panel.update({ ...sample, mcpInitializeCount: 1, mcpToolsListCount: 0,
       mcpToolsCallCount: 0, mcpLastMethod: 'initialize' });

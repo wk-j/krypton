@@ -13,6 +13,8 @@ The active lane's context use is compressed into the small lane-stats line. The 
 
 Add a read-only `SESSION` tab to the existing right dock. It follows the active lane and uses the context `used`/`size` reported through canonical ACP usage events, plus session metadata already held by `HarnessLane`. The panel uses Krypton's faceplate materials and existing dock behavior. It never estimates a context-category breakdown from turn token counts. The 2026-11-15 follow-up moves every value from the second `LaneStats` row into Session Info and removes that row from the lane head. Spec 402 adds historical request evidence for the built-in `krypton-harness-memory` server in this pane.
 
+Spec 403 applies the approved compact presentation: shared two-column facts, unchanged font sizes, all 25 fields retained, and no disclosure controls.
+
 ## Research
 
 - `HarnessDock` owns the 352px right column, tab selection, `[`/`]` cycling, and focus rescue. `HarnessLayout` places each tab in `dock.right`; the existing right-side visibility flag applies to every dock tab.
@@ -80,15 +82,16 @@ The view builds a primitive snapshot from the active lane. `SessionInfo.readDeps
 
 ### UI
 
-- Header: `SESSION`, active lane name, and a small session-status lamp with a readable status word.
-- Context section: `Context`, whole-number occupancy percentage, `used / size` token readout, and a steady filled meter. The meter is a recessed well with a semantic fill; no animation or text glow. When only `used` is known, show its count without a percentage or meter; when nothing is known, show `Context unavailable`.
-- Details section: full session ID (selectable), backend, model, and reasoning effort when supplied. Show `Pending` for an unassigned session ID; `Unknown` for missing model/effort. Read-only content does not take keyboard focus except the pane itself.
+- Header: active lane name beside the existing Session icon, plus the session-status lamp and readable status word on the same row. The selected `SESSION` dock tab supplies the panel title.
+- Context section: `Context`, whole-number occupancy percentage, `used / size` token readout, and a steady filled meter in one compact recessed well. No animation or text glow. When only `used` is known, show its count without a percentage or meter; when nothing is known, show `Context unavailable`.
+- Details section: Project / Backend, Model / Effort, then the full selectable Session ID spanning both columns. Show `Pending` for an unassigned session ID; `Unknown` for missing model/effort; `—` for a missing project. Read-only content does not take keyboard focus except the pane itself.
 - Spec 402 adds an MCP connection section between Details and Usage. It names only `krypton-harness-memory` and shows endpoint availability, observed request counts, and last contact. The counts are historical for the lane label, so the pane does not claim a live connection or list project/native servers.
 - The former second-row values move here: project; latest-turn cache hit/read/write/input; aggregate input/output and cost; tool and transcript counts; pending permissions/questions; turn flags; and error. These keep their existing source and meaning. The lane header has one row, with no stats row below it.
+- Spec 403 keeps all 25 fact fields visible, with labels above left-aligned values in the same two equal-width columns in every section. UUID, Server, Contact, timestamp, Cost, Turn flags, and Error span both columns. Missing facts display `—`; known zero activity counts stay `0`. Long text wraps without ellipsis, font reduction, or a disclosure step.
 - The context percentage is `clamp(used / size × 100, 0, 100)` only for finite `used >= 0`, finite `size > 0`. Keep the numeric token readout unrounded in an accessible label; compact formatting may be used visually. A value above `size` stays visible numerically while the meter caps at 100%.
 - Omit the screenshot's category rows, autocompact buffer, and account Connectors section until an adapter provides those facts through canonical lane events. Do not relabel per-turn input/output/cache counts as context categories.
 - Use `--mat-*` tokens, an engraved section label, a recessed meter/readout and a steady status lamp. No L-shaped brackets, left-edge state rail, infinite animation, or CSS outside the component's owned block.
-- The header and section headings pair their text with decorative 14px SVG icons from the shared harness symbols: `panel-session`, `gauge`, `list`, `remote`, `embedded`, and `exec-activity`. Icons inherit the label ink, use `aria-hidden="true"`, and never replace text or the status LED.
+- The header and section headings pair their text with decorative 14px SVG icons from the shared harness symbols: `panel-session`, `gauge`, `list`, `remote`, `embedded`, and `exec-activity`. Icons inherit the header/heading ink, use `aria-hidden="true"`, and never replace text or the status LED.
 
 ### Data flow and keyboard
 
@@ -111,7 +114,7 @@ The view builds a primitive snapshot from the active lane. `SessionInfo.readDeps
 - Unit tests cover formatting, missing/invalid usage, former second-row values, lane switching, compaction decrease, one-row lane header, persistence, tab cycling and focus rescue.
 - `npm run check`, focused Vitest files, and a browser visual check of wide and narrow dock widths, including dark and light schemes. Confirm computed visibility and meter width; a build alone is not visual verification.
 
-Implementation verification after the one-row follow-up: `npm run check` and `npm run build` passed; focused tests passed (391); full `npm test` passed (3,900). Browser visual verification remains pending because the available terminal browser could not display graphics and the in-app browser host was unavailable in this session.
+Original implementation verification after the one-row follow-up: `npm run check` and `npm run build` passed; focused tests passed (391); full `npm test` passed (3,900). Browser verification was unavailable at that stage. Spec 403 records the subsequent production-component browser verification for the compact layout; this is not a full native-app verification.
 
 Dock visibility regression verification: a browser fixture mounting production `HarnessDock` and `SessionInfo` with the shell styles reproduced Session as `hidden=true` but computed `display:flex` while Rails was selected. After the component-layer hidden rule, the same assertion passed on Rails → Session → Rails and at 280px viewport width. Focused dock and Session tests passed (21). This verifies pane visibility, not a full running-app or Rails-content scenario.
 

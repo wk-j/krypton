@@ -1,11 +1,11 @@
-/* Spec 401 — read-only Session faceplate inside the dock-owned host. */
+/* Specs 401–403 — compact Session faceplate inside the dock-owned host. */
 @layer krypton.component {
   .acp-session-info {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
     min-height: 0;
-    padding: 10px 8px 8px;
+    padding: 8px;
   }
 
   .acp-session-info[hidden] {
@@ -20,9 +20,7 @@
     min-width: 0;
   }
 
-  .acp-session-info__eyebrow,
-  .acp-session-info__heading,
-  .acp-session-info__fact-label {
+  .acp-session-info__heading {
     color: var(--mat-silk);
     font-size: var(--krypton-chrome-font-size, 11px);
     letter-spacing: 0.11em;
@@ -30,7 +28,7 @@
     text-transform: uppercase;
   }
 
-  .acp-session-info__eyebrow,
+  .acp-session-info__identity,
   .acp-session-info__heading {
     display: flex;
     align-items: center;
@@ -44,7 +42,9 @@
     color: inherit;
   }
 
-  .acp-session-info__eyebrow {
+  .acp-session-info__identity {
+    min-width: 0;
+    color: var(--mat-silk);
     font-weight: 700;
   }
 
@@ -99,11 +99,8 @@
   }
 
   .acp-session-info__lane {
-    margin: 0 2px 2px;
-    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .acp-session-info__section {
@@ -111,20 +108,24 @@
   }
 
   .acp-session-info__heading {
-    margin: 0 4px 5px;
+    margin: 0 4px 4px;
     font-weight: 600;
+  }
+
+  .acp-session-info__context {
+    padding: 8px 10px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
   }
 
   .acp-session-info__readout {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
     justify-content: space-between;
-    gap: 8px;
     min-width: 0;
-    padding: 11px 12px;
-    border-radius: var(--krypton-border-radius, 8px);
-    background: var(--mat-well);
-    box-shadow: var(--mat-well-shadow);
+    gap: 4px 8px;
     font-variant-numeric: tabular-nums;
   }
 
@@ -142,8 +143,8 @@
   }
 
   .acp-session-info__meter {
-    height: 7px;
-    margin: 8px 2px 3px;
+    height: 5px;
+    margin: 7px 0 0;
     overflow: hidden;
     border-radius: 4px;
     background: var(--mat-well);
@@ -162,32 +163,37 @@
   }
 
   .acp-session-info__facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 16px;
     margin: 0;
-    overflow: hidden;
+    padding: 4px 10px;
+    font-variant-numeric: tabular-nums;
     border-radius: var(--krypton-border-radius, 8px);
     background: var(--mat-well);
     box-shadow: var(--mat-well-shadow);
   }
 
   .acp-session-info__fact {
-    display: grid;
-    grid-template-columns: 100px minmax(0, 1fr);
-    gap: 8px;
-    padding: 7px 10px;
-    border-bottom: 1px solid var(--mat-groove-lo);
+    min-width: 0;
+    padding: 4px 0;
   }
 
-  .acp-session-info__fact:last-child {
-    border-bottom: 0;
-  }
-
-  .acp-session-info__fact[hidden] {
-    display: none;
+  .acp-session-info__fact--full {
+    grid-column: 1 / -1;
   }
 
   .acp-session-info__fact-label,
   .acp-session-info__fact-value {
     margin: 0;
+  }
+
+  .acp-session-info__fact-label {
+    overflow-wrap: anywhere;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
 
   .acp-session-info__fact-value {
@@ -206,7 +212,7 @@
 
   .acp-session-info__keys {
     margin-top: auto;
-    padding: 8px 2px 0;
+    padding: 4px 2px 0;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
   }
 }
