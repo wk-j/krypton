@@ -1,6 +1,8 @@
 # ACP Harness Right Rail — Implementation Spec
 
 > Status: Implemented (v4 — overlay model)
+
+Spec 401's 2026-11-15 follow-up removes `.acp-harness__lane-stats` from the lane header and moves its values to the Session dock. The diagram below records the earlier DOM.
 > Date: 2026-05-20
 > Milestone: Post-M-current polish (follow-up to specs 106, 107, 108, 109, 110)
 

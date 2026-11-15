@@ -1,6 +1,8 @@
 # Stacked Lane Visual Hierarchy — Implementation Spec
 
 > Status: Implemented
+
+Spec 401's 2026-11-15 follow-up makes the active lane header one row and moves all former stats-row values into Session Info. The two-row layout below is historical.
 > Date: 2026-08-10
 > Milestone: M8 — Polish
 > Amended by: [0325](./0325-harness-zen-rail-merged-tab.md) — in Zen Mode the active head band (head + stats rows) carries no tint. The body shows one lane there, and the rail's merged tab identifies it, so the band would only break the tab's join with the body. The stacked dashboard keeps the band as specified here.

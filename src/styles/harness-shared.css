@@ -91,7 +91,7 @@
    Spec 366: the column and the shown lane's head strip beside it are one
    plate, like the zen rail on the left (`lane-rail.css`): the column holds its
    top stop for the strip's height (the 28px head plus one stats row), the
-   strip holds it too (`lane-head.css`, `lane-stats.css`), and where plate
+   strip holds it too (`lane-head.css`), and where plate
    meets plate there is no seam, bevel or cast shadow. The screen draws its
    own right edge below the strip (`.acp-harness__lane-body` below). */
 .acp-harness__dock {
@@ -109,7 +109,7 @@
   background:
     var(--mat-brush),
     linear-gradient(180deg, var(--mat-plate-sheen), transparent 160px),
-    linear-gradient(180deg, var(--mat-plate-hi) 0 56px, var(--mat-plate-mid) 50%, var(--mat-plate-lo) 100%);
+    linear-gradient(180deg, var(--mat-plate-hi) 0 28px, var(--mat-plate-mid) 50%, var(--mat-plate-lo) 100%);
   box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
 }
 
@@ -139,6 +139,8 @@
   border-radius: var(--krypton-border-radius, 8px);
   background: var(--mat-well);
   box-shadow: var(--mat-well-shadow);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
 }
 
 .acp-dock__tabs[hidden] {
@@ -146,12 +148,12 @@
 }
 
 .acp-dock__tab {
-  flex: 1 1 0;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 3px;
-  min-width: 0;
+  min-width: 66px;
   min-height: 26px;
   padding: 3px 2px;
   border: 1px solid var(--mat-key-edge);
@@ -161,7 +163,7 @@
   box-shadow: var(--mat-key-raise);
   color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font: inherit;
-  /* Four labels (spec 396) share 352px. 10px / 0.02em keeps ASSISTANTS whole. */
+  /* Five labels (spec 401) scroll within 352px; keep each key readable. */
   font-size: 10px;
   letter-spacing: 0.02em;
   line-height: 1;
@@ -218,6 +220,7 @@
 }
 
 /* The shown dock fills the column under the strip and scrolls on its own. */
+.acp-harness__session-dock,
 .acp-harness__ticket-dock,
 .acp-harness__rails-dock,
 .acp-harness__assistants-dock,
@@ -233,6 +236,7 @@
   line-height: 1.5;
 }
 
+.acp-harness__session-dock[hidden],
 .acp-harness__ticket-dock[hidden],
 .acp-harness__rails-dock[hidden],
 .acp-harness__assistants-dock[hidden],
@@ -244,6 +248,7 @@
    apply. The dock draws no border while it holds the keyboard; instead the
    selected row's text is lit amber (`rails-dock.css`,
    `assistant-instances.css`). */
+.acp-harness__session-dock:focus,
 .acp-harness__rails-dock:focus,
 .acp-harness__ticket-dock:focus,
 .acp-harness__assistants-dock:focus,

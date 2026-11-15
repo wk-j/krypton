@@ -370,8 +370,8 @@ export class LaneHead extends Component<LaneHeadProps> {
       this.nameEl.replaceChildren(harnessSymbolEl(logoId), this.nameText);
     }
     this.nameText.data = lane.displayName;
-    // spec 374: only the shown lane's name toggles the stats row.
-    if (next.active) this.nameEl.title = 'Show / hide lane stats (⌥⌘.)';
+    // Only the shown lane's name opens Session Info.
+    if (next.active) this.nameEl.title = 'Open Session Info (⌥⌘.)';
     else this.nameEl.removeAttribute('title');
 
     this.statusEl.textContent = !next.active && lane.status === 'needs_permission'

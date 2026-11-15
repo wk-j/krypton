@@ -1,6 +1,8 @@
 # Spec 221 — Harness Status Line Redundancy Removal
 
 > Status: Implemented
+
+Spec 401's 2026-11-15 follow-up removes the lane-stats row and puts its input/output and bypass readings in Session Info. References below to the old row describe the original implementation.
 > Date: 2026-08-15
 > Milestone: M6 — ACP Harness polish
 

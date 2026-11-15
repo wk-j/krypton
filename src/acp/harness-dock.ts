@@ -8,7 +8,7 @@ import { TabStrip, type TabStripTab } from './components/tab-strip';
 import { readDockTab, writeDockTab, type HarnessDockTab } from './harness-panel-visibility';
 
 /** Paint order of the tab strip, left to right. */
-const DOCK_TABS: readonly HarnessDockTab[] = ['ticket', 'rails', 'assistants', 'git'];
+const DOCK_TABS: readonly HarnessDockTab[] = ['session', 'ticket', 'rails', 'assistants', 'git'];
 
 /** The root class that reserves the column's width (`harness-shared.css`). */
 export const DOCK_ACTIVE_CLASS = 'acp-harness--dock-active';
@@ -39,7 +39,7 @@ export class HarnessDock {
   readonly slotEl: HTMLElement;
   private readonly strip = new TabStrip('button');
   private readonly panes = new Map<HarnessDockTab, HTMLElement>();
-  private readonly available: Record<HarnessDockTab, boolean> = { ticket: false, rails: false, assistants: false, git: false };
+  private readonly available: Record<HarnessDockTab, boolean> = { session: false, ticket: false, rails: false, assistants: false, git: false };
   private selected: HarnessDockTab;
   private shownTab: HarnessDockTab | null = null;
   private badge: RailsTabBadge = NO_BADGE;
@@ -187,12 +187,15 @@ export class HarnessDock {
       role: 'tablist',
       ariaLabel: 'Dock',
       onSelect: (id) => {
-        if (id === 'ticket' || id === 'rails' || id === 'assistants' || id === 'git') this.select(id);
+        if (id === 'session' || id === 'ticket' || id === 'rails' || id === 'assistants' || id === 'git') this.select(id);
       },
     });
+    this.strip.el.querySelector<HTMLElement>(`[data-tab-id="${this.shownTab}"]`)
+      ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
   }
 
   private tabFor(tab: HarnessDockTab): TabStripTab {
+    if (tab === 'session') return { id: 'session', label: 'SESSION' };
     if (tab === 'ticket') return { id: 'ticket', label: 'TICKET' };
     if (tab === 'assistants') return { id: 'assistants', label: 'ASSISTANTS' };
     if (tab === 'git') {

@@ -6,10 +6,10 @@
 
 import type { TitlebarToggle } from '../types';
 
-export type HarnessPanelId = 'plan' | 'peek' | 'thought' | 'grammar' | 'queue' | 'ticket' | 'rails' | 'assistants' | 'git';
+export type HarnessPanelId = 'plan' | 'peek' | 'thought' | 'grammar' | 'queue' | 'session' | 'ticket' | 'rails' | 'assistants' | 'git';
 
 /** Ordered tabs of the `dock.right` column. */
-export type HarnessDockTab = 'ticket' | 'rails' | 'assistants' | 'git';
+export type HarnessDockTab = 'session' | 'ticket' | 'rails' | 'assistants' | 'git';
 
 export interface HarnessTogglePanel {
   readonly id: HarnessPanelId;
@@ -25,6 +25,7 @@ export const HARNESS_TOGGLE_PANELS: readonly HarnessTogglePanel[] = [
   { id: 'thought', label: 'Thought', icon: 'krypton-icon-panel-thought' },
   { id: 'grammar', label: 'Grammar', icon: 'krypton-icon-panel-grammar' },
   { id: 'queue', label: 'Prompt queue', icon: 'krypton-icon-panel-queue' },
+  { id: 'session', label: 'Session info', icon: 'krypton-icon-panel-session' },
   { id: 'ticket', label: 'Ticket dock', icon: 'krypton-icon-panel-ticket' },
   { id: 'rails', label: 'Rails dock', icon: 'krypton-icon-panel-rails' },
   { id: 'git', label: 'Git panel', icon: 'krypton-icon-panel-git' },
@@ -34,7 +35,7 @@ export const HARNESS_TOGGLE_PANELS: readonly HarnessTogglePanel[] = [
 export type HarnessSide = 'left' | 'right';
 
 export const PANELS_USAGE =
-  'usage: #panels [hide | show | toggle] <left | right | plan | peek | thought | grammar | queue | ticket | rails | assistants | git>';
+  'usage: #panels [hide | show | toggle] <left | right | plan | peek | thought | grammar | queue | session | ticket | rails | assistants | git>';
 
 export type PanelsAction = 'hide' | 'show' | 'toggle';
 
@@ -49,6 +50,7 @@ const PANEL_ID: Record<HarnessPanelId, true> = {
   thought: true,
   grammar: true,
   queue: true,
+  session: true,
   ticket: true,
   rails: true,
   assistants: true,
@@ -65,7 +67,7 @@ export function isHarnessSide(value: string): value is HarnessSide {
 
 /** Dock tabs also obey the independent right-side flag. */
 export function isDockTab(panel: HarnessPanelId): panel is HarnessDockTab {
-  return panel === 'ticket' || panel === 'rails' || panel === 'assistants' || panel === 'git';
+  return panel === 'session' || panel === 'ticket' || panel === 'rails' || panel === 'assistants' || panel === 'git';
 }
 
 function isPanelsAction(value: string): value is PanelsAction {
@@ -105,7 +107,7 @@ export function sideFlash(side: HarnessSide, hidden: boolean): string {
   return hidden ? `${side} panel hidden · #panels show ${side}` : `${side} panel shown`;
 }
 
-/** The view's titlebar contribution: eight panels, a divider, then the left and right panels. */
+/** The view's titlebar contribution: nine panels, a divider, then the left and right panels. */
 export function harnessTitlebarToggles(
   hidden: ReadonlySet<HarnessPanelId>,
   sides: Readonly<Record<HarnessSide, boolean>>,
@@ -226,7 +228,7 @@ const DOCK_TAB_KEY_PREFIX = 'krypton:acp-harness:dock-tab:';
 export function readDockTab(projectDir: string | null): HarnessDockTab {
   try {
     const tab = localStorage.getItem(`${DOCK_TAB_KEY_PREFIX}${projectDir ?? ''}`);
-    return tab === 'rails' || tab === 'assistants' || tab === 'git' ? tab : 'ticket';
+    return tab === 'session' || tab === 'rails' || tab === 'assistants' || tab === 'git' ? tab : 'ticket';
   } catch {
     return 'ticket';
   }

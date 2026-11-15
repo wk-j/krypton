@@ -46,7 +46,7 @@ Titlebar: `{ id: 'git', label: 'Git panel', icon: 'krypton-icon-panel-git' }` af
 
 `setAvailable('git', false)` is the default so existing three-tab cycle tests stay valid.
 
-Four labels share 352px. Prefer the full word ASSISTANTS. Tighten `.acp-dock__tab` letter-spacing and font-size only so the four labels fit. Do not rename the tab.
+At spec 396, four labels shared 352px. Spec 401 adds Session as a fifth tab; the channel scrolls horizontally with readable key widths. ASSISTANTS keeps its full label.
 
 ## What the repo is
 

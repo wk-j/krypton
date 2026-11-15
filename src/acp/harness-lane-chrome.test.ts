@@ -1,5 +1,5 @@
 // Spec 301 phase 4 moved the lane head, the stats line and the slash palette
-// into the `lane-head`, `lane-stats` and `inline-palette` components; their
+// into the `lane-head`, `session-info` and `inline-palette` components; their
 // markup is asserted against the components now. What is tested here is the
 // vocabulary this module still owns: which advertised commands a draft matches
 // (`slashPaletteVisible` / `filteredSlashCommands`) and which prompts are bare

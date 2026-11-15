@@ -16,15 +16,14 @@
    is needed here. */
 
 @layer krypton.component {
-  /* The top stop holds for the height of the head strip beside it (the 28px
-     head plus one stats row), which holds that stop too, so the two plates
+  /* The top stop holds for the 28px head strip beside it, so the two plates
      match where they meet; below it the rail runs down to the bottom stop the
      command centre continues. */
   .acp-harness__rail {
     background:
       var(--mat-brush),
       linear-gradient(180deg, var(--mat-plate-sheen), transparent 160px),
-      linear-gradient(180deg, var(--mat-plate-hi) 0 56px, var(--mat-plate-mid) 50%, var(--mat-plate-lo) 100%);
+      linear-gradient(180deg, var(--mat-plate-hi) 0 28px, var(--mat-plate-mid) 50%, var(--mat-plate-lo) 100%);
     box-shadow: inset 0 1px 0 var(--mat-bevel-hi);
   }
 }

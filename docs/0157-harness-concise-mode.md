@@ -5,6 +5,8 @@
 > Milestone: M6 — ACP Harness
 > Amended: 2026-11-08 — concise mode also hides the shown lane's stats row (`LaneStats`); the head draws the full plate and the seam.
 
+Spec 401's 2026-11-15 follow-up removes `LaneStats` for every mode. The lane head is now one row regardless of Concise Mode; the stats-row passages below describe the former design.
+
 ## Problem
 
 A busy lane transcript is dominated by machinery rows — tool-call cards, thinking, fs-activity, memory writes — and the actual conversation (user prompt → agent response) drowns in them. When the user wants to *read* the exchange rather than *audit* it, there is no way to strip the noise.

@@ -1,0 +1,187 @@
+/* Spec 401 — read-only Session faceplate inside the dock-owned host. */
+@layer krypton.component {
+  .acp-session-info {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+    padding: 10px 8px 8px;
+  }
+
+  .acp-session-info__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .acp-session-info__eyebrow,
+  .acp-session-info__heading,
+  .acp-session-info__fact-label {
+    color: var(--mat-silk);
+    font-size: var(--krypton-chrome-font-size, 11px);
+    letter-spacing: 0.11em;
+    text-shadow: var(--mat-engrave);
+    text-transform: uppercase;
+  }
+
+  .acp-session-info__eyebrow {
+    font-weight: 700;
+  }
+
+  .acp-session-info__status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    font-size: var(--krypton-chrome-font-size, 11px);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    white-space: nowrap;
+  }
+
+  .acp-session-info__status::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--mat-lens-off);
+  }
+
+  .acp-session-info__status[data-status="busy"],
+  .acp-session-info__status[data-status="starting"] {
+    color: var(--mat-lit);
+  }
+
+  .acp-session-info__status[data-status="busy"]::before,
+  .acp-session-info__status[data-status="starting"]::before {
+    background: var(--mat-lens-on);
+    box-shadow: var(--mat-lens-glow);
+  }
+
+  .acp-session-info__status[data-status="needs_permission"],
+  .acp-session-info__status[data-status="awaiting_peer"] {
+    color: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+  }
+
+  .acp-session-info__status[data-status="needs_permission"]::before,
+  .acp-session-info__status[data-status="awaiting_peer"]::before {
+    background: rgb(var(--krypton-warning-rgb, 232, 197, 71));
+    box-shadow: 0 0 6px rgba(var(--krypton-warning-rgb, 232, 197, 71), 0.6);
+  }
+
+  .acp-session-info__status[data-status="error"] {
+    color: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+  }
+
+  .acp-session-info__status[data-status="error"]::before {
+    background: rgb(var(--krypton-danger-rgb, 255, 58, 92));
+    box-shadow: 0 0 6px rgba(var(--krypton-danger-rgb, 255, 58, 92), 0.6);
+  }
+
+  .acp-session-info__lane {
+    margin: 0 2px 2px;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .acp-session-info__section {
+    min-width: 0;
+  }
+
+  .acp-session-info__heading {
+    margin: 0 4px 5px;
+    font-weight: 600;
+  }
+
+  .acp-session-info__readout {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    padding: 11px 12px;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .acp-session-info__percent {
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    font-size: 1.35em;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  .acp-session-info__count {
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .acp-session-info__meter {
+    height: 7px;
+    margin: 8px 2px 3px;
+    overflow: hidden;
+    border-radius: 4px;
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+  }
+
+  .acp-session-info__meter[hidden] {
+    display: none;
+  }
+
+  .acp-session-info__meter-fill {
+    height: 100%;
+    width: 0;
+    border-radius: inherit;
+    background: var(--mat-lit);
+  }
+
+  .acp-session-info__facts {
+    margin: 0;
+    overflow: hidden;
+    border-radius: var(--krypton-border-radius, 8px);
+    background: var(--mat-well);
+    box-shadow: var(--mat-well-shadow);
+  }
+
+  .acp-session-info__fact {
+    display: grid;
+    grid-template-columns: 100px minmax(0, 1fr);
+    gap: 8px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--mat-groove-lo);
+  }
+
+  .acp-session-info__fact:last-child {
+    border-bottom: 0;
+  }
+
+  .acp-session-info__fact[hidden] {
+    display: none;
+  }
+
+  .acp-session-info__fact-label,
+  .acp-session-info__fact-value {
+    margin: 0;
+  }
+
+  .acp-session-info__fact-value {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--krypton-ink-2, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.82));
+    user-select: text;
+  }
+
+  .acp-session-info__keys {
+    margin-top: auto;
+    padding: 8px 2px 0;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.5));
+  }
+}

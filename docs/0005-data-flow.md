@@ -1023,7 +1023,7 @@ reached the page falls back to the built-in krypton-dark values, scoped to
 ## Harness Git Panel Flow (spec 396)
 
 ```
-1. The Git tab is a fourth dock.right pane (order 40), hidden on first read,
+1. The Git tab is a dock.right pane (order 40), hidden on first read,
    including an existing version-2 hidden-panel blob. A side key records that
    one-shot hide; showing Git writes the blob through writeHiddenPanels, which
    sets the key. The dock stays version 2.
@@ -1036,6 +1036,13 @@ reached the page falls back to the built-in krypton-dark values, scoped to
    gated in Rust. Enter opens the local working diff for the selected path.
 4. A remote harness paints "Git is local only" and does not invoke git.
 ```
+
+## Harness Session Info Panel Flow (spec 401)
+
+1. Session is available while a lane is selected and both its own panel flag and the right-side flag are shown. Ticket remains the default stored choice; the dock falls back to Session when no earlier tab after Ticket is available.
+2. The view passes the active lane's session ID, backend, model, effort, status, project and context used/size to SessionInfo, plus the former second-row cache, input/output, cost, tool/row counts, pending items, turn flags and error. Canonical usage events update it through the targeted lane-chrome path without repainting transcript rows; transcript updates refresh its activity counts.
+3. The meter uses the reported aggregate context level. Missing values hide the meter. Per-turn token counters do not become context categories; a compaction decrease lowers the meter.
+4. The Session titlebar toggle and #panels session control the tab. Open Session Info in the palette, clicking the active lane's name, or pressing ⌥⌘. shows the right side, selects Session and focuses its pane. Bracket keys cycle tabs; Escape returns focus to the composer. The active lane head has one row.
 
 ## Window Titlebar Status Badge Flow (spec 247)
 
@@ -2020,7 +2027,7 @@ See `docs/0337-rails-verifier.md` and `docs/0344-rails-panel-actions.md`.
 7. AssistantInstances reconciles keyed rows with complete value dependencies.
    Updates touch only the owning component/rightRail, never composer/transcript.
    Refresh errors preserve last-good rows and expose staleness.
-8. j/k, arrows, Home/End select; [/] traverse available Ticket/Rails/Assistants.
+8. j/k, arrows, Home/End select; [/] traverse available Session/Ticket/Rails/Assistants/Git.
    Permission/question handlers keep precedence. Other monitor typing is
    consumed. Escape restores composer/root focus without hiding the monitor.
 ```

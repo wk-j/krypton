@@ -25,25 +25,8 @@
     letter-spacing: 0.02em;
   }
 
-  /* The shown lane's head and its stats row (`lane-stats.css`) are ONE plate
-     strip over the screen. Each paints its half of the plate gradient from
-     the material's colour stops (top stop → middle stop here, middle → bottom
-     there), so the two boxes join without a restart of the gradient; the seam
-     is drawn once, under the stats row. */
+  /* The shown lane has one plate strip over the screen. */
   .acp-harness__lane--active > .acp-harness__lane-head {
-    background:
-      var(--mat-brush),
-      linear-gradient(180deg, var(--mat-plate-hi), var(--mat-plate-mid));
-    border-bottom: 0;
-  }
-
-  /* spec 374 / 157: with the stats row hidden (the stats toggle or concise
-     mode) the shown head is the whole strip — the full plate and the seam,
-     like a collapsed band. Beside a plate column the rule below (same or
-     higher specificity, later) still holds the top stop, so there the head
-     gains only the seam. */
-  .acp-harness--lane-stats-hidden .acp-harness__lane--active > .acp-harness__lane-head,
-  .acp-harness--concise .acp-harness__lane--active > .acp-harness__lane-head {
     background: var(--mat-brush), var(--mat-plate);
     border-bottom: 1px solid var(--mat-key-edge);
   }
@@ -51,8 +34,7 @@
   /* A plate column beside the strip — the zen rail (`lane-rail.css`) or the
      right dock column (harness-shared.css) — is still at its top stop and its
      sheen here, so the strip holds that stop instead of running its own
-     gradient down to the bottom stop: plate meets plate with no seam. The
-     seam under the stats row stays: that edge meets the screen. */
+     gradient down to the bottom stop: plate meets plate with no seam. */
   .acp-harness--zen:not(.acp-harness--left-panel-hidden) .acp-harness__lane--active > .acp-harness__lane-head,
   .acp-harness--dock-active .acp-harness__lane--active > .acp-harness__lane-head {
     background:
@@ -84,7 +66,7 @@
   .acp-harness__lane--active .acp-harness__lane-name {
     color: var(--mat-lit);
     text-shadow: none;
-    cursor: pointer; /* spec 374: a click shows / hides the stats row */
+    cursor: pointer; /* a click opens Session Info */
   }
 
   /* The status word is engraved beside the LED. A state that needs the human

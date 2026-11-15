@@ -39,10 +39,9 @@ function props(over: Partial<LaneShellProps> = {}): LaneShellProps {
     pendingPeers: [],
     isOrchestrator: false,
     runs: [],
-    projectDir: '/tmp/proj',
     reviewThread: null,
     onStartReview: () => {},
-    onToggleStats: () => {},
+    onOpenSession: () => {},
     ...over,
   };
 }
@@ -113,31 +112,33 @@ describe('LaneShell head actions', () => {
   });
 });
 
-describe('LaneShell stats toggle (spec 374)', () => {
+describe('LaneShell Session Info entry', () => {
   const name = (shell: LaneShell): HTMLElement =>
     shell.el.querySelector<HTMLElement>('.acp-harness__lane-name') as HTMLElement;
 
-  it('toggles on a click on the shown lane\'s name, using the latest handler', () => {
+  it('has one header row and opens Session Info from the shown lane name', () => {
     let first = 0;
     let second = 0;
-    const shell = mount(props({ onToggleStats: () => first++ }));
+    const shell = mount(props({ onOpenSession: () => first++ }));
+    expect(shell.el.querySelector('.acp-harness__lane-stats')).toBeNull();
+    expect(shell.el.querySelector(':scope > .acp-harness__lane-head + .acp-harness__lane-body')).not.toBeNull();
     name(shell).click();
-    shell.update(props({ onToggleStats: () => second++ }));
+    shell.update(props({ onOpenSession: () => second++ }));
     name(shell).click();
     expect([first, second]).toEqual([1, 1]);
   });
 
   it('ignores a click on a head chip or the review action', () => {
     let toggles = 0;
-    const shell = mount(props({ reviewThread: { count: 0, enabled: true }, onToggleStats: () => toggles++ }));
+    const shell = mount(props({ reviewThread: { count: 0, enabled: true }, onOpenSession: () => toggles++ }));
     head(shell).querySelector<HTMLElement>('.acp-harness__lane-status')!.click();
     head(shell).querySelector<HTMLButtonElement>('.acp-harness__review-thread-action')!.click();
     expect(toggles).toBe(0);
   });
 
-  it('does not toggle from a stacked lane\'s name', () => {
+  it('does not open from a stacked lane\'s name', () => {
     let toggles = 0;
-    const shell = mount(props({ active: false, onToggleStats: () => toggles++ }));
+    const shell = mount(props({ active: false, onOpenSession: () => toggles++ }));
     name(shell).click();
     expect(toggles).toBe(0);
     expect(name(shell).hasAttribute('title')).toBe(false);

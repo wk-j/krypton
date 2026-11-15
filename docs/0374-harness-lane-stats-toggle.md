@@ -1,9 +1,11 @@
 # Harness Lane Stats Toggle — Implementation Spec
 
-> Status: Implemented (approved 2026-11-08: "ทำตามแบบนี้เลย ลงมือ implement spec docs/0374-harness-lane-stats-toggle.md ตามที่ร่างไว้ โดยใช้ค่าเดียวทุก lane และคีย์ลัด ⌥⌘.")
+> Status: Superseded by spec 401 follow-up on 2026-11-15 (original implementation approved 2026-11-08)
 > Date: 2026-11-08
 > Milestone: ACP Harness — chrome
 > Builds on: 0157 (concise mode toggle precedent) · 0302 §4.2/§4.4 (`LaneHead`, `LaneStats`) · 0366 (head strip as one plate)
+
+This document records the former two-row design. Spec 401's follow-up removes `LaneStats` and its persisted visibility flag, moves every second-row value into Session Info, and makes the lane name and `⌥⌘.` open Session Info.
 
 ## Problem
 

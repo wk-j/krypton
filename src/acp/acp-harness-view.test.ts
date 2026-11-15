@@ -638,6 +638,7 @@ describe('lane event region scheduling (spec 301)', () => {
       toolViews: new Map(),
       toolTranscriptIds: new Map(),
       activeToolCount: 0,
+      backgroundTasks: [],
     } as unknown as HarnessLane;
     const target: Record<string, unknown> = viewDouble({
       activeLaneId: 'lane-1',
@@ -714,6 +715,63 @@ describe('lane event region scheduling (spec 301)', () => {
 
     expect((target.mcpStatsByLane as Map<string, unknown>).has('Codex-1')).toBe(true);
     expect(regions).toEqual(['metrics']);
+  });
+});
+
+describe('Session Info dock (spec 401)', () => {
+  it('reads the active lane snapshot again when usage changes in place', () => {
+    const lane = {
+      id: 'lane-1',
+      displayName: 'Codex-1',
+      backendId: 'codex',
+      sessionId: 'session-1',
+      modelName: 'model-a',
+      effort: { current: 'high', options: [{ value: 'high', name: 'High' }] },
+      status: 'busy',
+      usage: { used: 74_600, size: 1_000_000 },
+      lastTurnTokens: null,
+      toolViews: new Map(),
+      transcript: [],
+      pendingPermissions: [],
+      pendingQuestions: [],
+      acceptAllForTurn: false,
+      rejectAllForTurn: false,
+      peerAutoAcceptForTurn: false,
+      permissionMode: 'normal',
+      error: null,
+    } as unknown as HarnessLane;
+    const paints: Array<{ contextUsed: number | null; laneName: string; effortName: string | null }> = [];
+    const available: boolean[] = [];
+    const target = viewDouble({
+      activeLane: (): HarnessLane => lane,
+      isPanelHidden: (): boolean => false,
+      dock: {
+        setAvailable: (_tab: string, value: boolean): void => { available.push(value); },
+        isShown: (): boolean => true,
+      },
+      sessionInfo: {
+        update: (props: { contextUsed: number | null; laneName: string; effortName: string | null }): void => {
+          paints.push(props);
+        },
+      },
+    });
+    type SessionView = { renderSessionDock(): void };
+    const render = (AcpHarnessView.prototype as unknown as SessionView).renderSessionDock;
+
+    render.call(target);
+    lane.usage!.used = 30_000;
+    render.call(target);
+    lane.displayName = 'Codex-2';
+    lane.sessionId = null;
+    lane.usage = null;
+    render.call(target);
+
+    expect(available).toEqual([true, true, true]);
+    expect(paints.map((props) => [props.laneName, props.contextUsed, props.effortName])).toEqual([
+      ['Codex-1', 74_600, 'High'],
+      ['Codex-1', 30_000, 'High'],
+      ['Codex-2', null, 'High'],
+    ]);
   });
 });
 

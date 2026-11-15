@@ -24,6 +24,7 @@ describe('parsePanelsCommand (specs 320, 347)', () => {
     expect(parsePanelsCommand(['hide', 'Ticket'])).toEqual({ kind: 'panel', panel: 'ticket', action: 'hide' });
     expect(parsePanelsCommand(['show', 'peek'])).toEqual({ kind: 'panel', panel: 'peek', action: 'show' });
     expect(parsePanelsCommand(['show', 'assistants'])).toEqual({ kind: 'panel', panel: 'assistants', action: 'show' });
+    expect(parsePanelsCommand(['show', 'session'])).toEqual({ kind: 'panel', panel: 'session', action: 'show' });
   });
 
   it('treats the removed all-panels forms as usage', () => {
@@ -48,11 +49,11 @@ describe('nextHidden', () => {
 });
 
 describe('harnessTitlebarToggles', () => {
-  it('lists eight panels, then the left and right panels behind one divider', () => {
+  it('lists nine panels, then the left and right panels behind one divider', () => {
     const toggles = harnessTitlebarToggles(new Set<HarnessPanelId>(['thought']), { left: true, right: false });
 
-    expect(toggles.map((toggle) => toggle.id)).toEqual(['plan', 'peek', 'thought', 'grammar', 'queue', 'ticket', 'rails', 'git', 'left', 'right']);
-    expect(toggles.map((toggle) => toggle.pressed)).toEqual([true, true, false, true, true, true, true, true, false, true]);
+    expect(toggles.map((toggle) => toggle.id)).toEqual(['plan', 'peek', 'thought', 'grammar', 'queue', 'session', 'ticket', 'rails', 'git', 'left', 'right']);
+    expect(toggles.map((toggle) => toggle.pressed)).toEqual([true, true, false, true, true, true, true, true, true, false, true]);
     expect(toggles.filter((toggle) => toggle.separatorBefore).map((toggle) => toggle.id)).toEqual(['left']);
   });
 
@@ -61,12 +62,13 @@ describe('harnessTitlebarToggles', () => {
 
     expect(toggles.some((toggle) => toggle.disabledReason !== undefined)).toBe(false);
     // Dock tabs show their own flag, not the right panel's.
-    expect(toggles.slice(0, 8).map((toggle) => toggle.pressed)).toEqual([true, true, true, false, true, true, true, true]);
+    expect(toggles.slice(0, 9).map((toggle) => toggle.pressed)).toEqual([true, true, true, false, true, true, true, true, true]);
   });
 });
 
 describe('panelFlash', () => {
   it('mentions the hidden right panel for every dock tab', () => {
+    expect(panelFlash('session', false, true)).toBe('session shown · right panel hidden');
     expect(panelFlash('ticket', false, true)).toBe('ticket shown · right panel hidden');
     expect(panelFlash('rails', true, true)).toBe('rails hidden · #panels show rails · right panel hidden');
     expect(panelFlash('assistants', false, true)).toBe('assistants shown · right panel hidden');

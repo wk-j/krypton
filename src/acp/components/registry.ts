@@ -53,7 +53,6 @@ import { def as laneHead } from './lane-head';
 import { def as lanePicker } from './lane-picker';
 import { def as laneRail } from './lane-rail';
 import { def as laneShell } from './lane-shell';
-import { def as laneStats } from './lane-stats';
 import { def as laneSymbol } from './lane-symbol';
 import { def as listPicker } from './list-picker';
 import { def as liveVoiceStrip } from './live-voice-strip';
@@ -81,6 +80,7 @@ import { def as reviewMatrixOverlay } from './review-matrix-overlay';
 import { def as reviewPriorityOverlay } from './review-priority-overlay';
 import { def as reviewThreadDialog } from './review-thread-dialog';
 import { def as sessionPicker } from './session-picker';
+import { def as sessionInfo } from './session-info';
 import { def as spinner } from './spinner';
 import { def as stagingStrip } from './staging-strip';
 import { def as statList } from './stat-list';
@@ -149,7 +149,6 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   laneShell,
   laneHead,
   laneSymbol,
-  laneStats,
   railEntry,
   laneRail,
   // layer 5 — right rail
@@ -159,6 +158,7 @@ export const HARNESS_COMPONENTS: readonly ComponentDef[] = [
   thoughtCard,
   queueCard,
   planPanel,
+  sessionInfo,
   ticketDock,
   railsDock,
   assistantInstances,

@@ -8,6 +8,7 @@ import { readDockTab, type HarnessDockTab } from './harness-panel-visibility';
 function column(projectDir = '/repo'): {
   dock: HarnessDock;
   root: HTMLElement;
+  session: HTMLElement;
   ticket: HTMLElement;
   rails: HTMLElement;
   assistants: HTMLElement;
@@ -16,13 +17,15 @@ function column(projectDir = '/repo'): {
   const root = document.createElement('div');
   const shown: (HarnessDockTab | null)[] = [];
   const dock = new HarnessDock(root, () => projectDir, (tab) => shown.push(tab));
+  const session = document.createElement('aside');
   const ticket = document.createElement('aside');
   const rails = document.createElement('aside');
   const assistants = document.createElement('aside');
+  dock.setPane('session', session);
   dock.setPane('ticket', ticket);
   dock.setPane('rails', rails);
   dock.setPane('assistants', assistants);
-  return { dock, root, ticket, rails, assistants, shown };
+  return { dock, root, session, ticket, rails, assistants, shown };
 }
 
 function tabs(dock: HarnessDock): { strip: HTMLElement; labels: string[]; active: string | null } {
@@ -71,6 +74,27 @@ describe('HarnessDock (spec 337)', () => {
     expect(root.classList.contains(DOCK_ACTIVE_CLASS)).toBe(true);
     expect(tabs(dock).strip.hidden).toBe(true);
     expect(shown).toEqual(['ticket']);
+  });
+
+  it('keeps Ticket preferred, falls back to Session, and cycles to it with the keyboard', () => {
+    const { dock, session, ticket } = column();
+    dock.setAvailable('session', true);
+    expect(dock.shown()).toBe('session');
+    expect(dock.selectedTab()).toBe('ticket');
+    expect(session.hidden).toBe(false);
+
+    dock.setAvailable('ticket', true);
+    expect(dock.shown()).toBe('ticket');
+    expect(tabs(dock).labels).toEqual(['SESSION', 'TICKET']);
+    expect(dock.handleKey(key('['))).toBe(true);
+    expect(dock.shown()).toBe('session');
+    expect(ticket.hidden).toBe(true);
+    expect(readDockTab('/repo')).toBe('session');
+
+    const reopened = column();
+    reopened.dock.setAvailable('session', true);
+    reopened.dock.setAvailable('ticket', true);
+    expect(reopened.dock.shown()).toBe('session');
   });
 
   it('shows the strip only with both tabs, keeping the stored choice', () => {

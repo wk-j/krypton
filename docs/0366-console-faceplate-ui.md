@@ -316,7 +316,7 @@ Deviations found while implementing, each with its reason:
   command centre's seam and lit lip ran under the rail, and the head strip shaded down to the bottom
   colour stop beside a rail still at the top one. With the rail shown they are now one plate around
   the lane's screen. The rail takes no right border; the screen draws its own left edge
-  (`.acp-harness__lane-body`), the stats row's seam its top edge, and the command centre's
+  (`.acp-harness__lane-body`), the single lane head's seam its top edge, and the command centre's
   `::before` its bottom edge from the rail's width (`--acp-zen-rail-width`) on. The head strip holds
   the top colour stop and the sheen, the rail holds that stop for the strip's 56px and then runs to
   the bottom stop, and the command centre holds the bottom stop (through

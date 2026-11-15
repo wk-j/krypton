@@ -40,6 +40,7 @@ export const HARNESS_LAYOUT_DEFAULT = {
   thought: { slot: 'rail.top', order: 30 },
   grammar: { slot: 'rail.top', order: 40 },
   queue: { slot: 'rail.bottom', order: 10 },
+  session: { slot: 'dock.right', order: 5 },
   ticket: { slot: 'dock.right', order: 10 },
   // spec 337: the Rails dock is the dock column's second tab.
   rails: { slot: 'dock.right', order: 20 },

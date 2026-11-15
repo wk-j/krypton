@@ -112,6 +112,7 @@ import { ReviewMatrixOverlay, type ReviewMatrixLane } from './components/review-
 import { ReviewPriorityOverlay, type ReviewPriorityLane } from './components/review-priority-overlay';
 import { ReviewThreadDialog } from './components/review-thread-dialog';
 import { SessionPicker } from './components/session-picker';
+import { SessionInfo, sessionInfoProps } from './components/session-info';
 import { GrammarPanel } from './components/grammar-panel';
 import { ThoughtCard } from './components/thought-card';
 import { TriageOverlay } from './components/triage-overlay';
@@ -1404,8 +1405,9 @@ export class AcpHarnessView implements ContentView {
    *  (acp_save/load_issue_bindings) and rehydrated on register. */
   private readonly issueBindings = new Map<string, IssueBinding>();
   private readonly ticketCtl = new HarnessTicketController(this.ticketHost());
-  /** The shared `dock.right` column — Ticket, Rails, Assistants, and Git. */
+  /** The shared `dock.right` column — Session, Ticket, Rails, Assistants, and Git. */
   private readonly dock: HarnessDock;
+  private readonly sessionInfo = new SessionInfo();
   /** spec 337: the Rails verifier. Null on a remote harness, where it never exists. */
   private readonly railsCtl: HarnessRailsController | null;
   private readonly assistantsCtl: HarnessAssistantsController;
@@ -1579,11 +1581,9 @@ export class AcpHarnessView implements ContentView {
   private zenMode = false;
   /** spec 157: collapse tool cards to their head line, hide side-channel rows. */
   private conciseMode = false;
-  /** spec 374: hide the shown lane's stats row (view-wide, every lane). */
-  private laneStatsHidden = false;
   /** spec 347: the left panel — the Zen lane rail. */
   private leftPanelHidden = false;
-  /** spec 347: the right panel — the dock column (the `ticket` and `rails` tabs). */
+  /** spec 347: the right panel — the shared dock column. */
   private rightPanelHidden = false;
   /** spec 320: per-panel hidden flags, independent of the side flags. */
   private hiddenPanels: ReadonlySet<HarnessPanelId> = new Set();
@@ -1799,7 +1799,6 @@ export class AcpHarnessView implements ContentView {
     this.backendUpdatesUnsubscribe = onBackendUpdatesChange(() => this.notifyTitlebarTogglesChanged());
     this.zenMode = readZenModePreference(projectDir);
     this.conciseMode = readConciseModePreference(projectDir);
-    this.laneStatsHidden = readLaneStatsHiddenPreference(projectDir);
     this.leftPanelHidden = readSideHidden(projectDir, 'left');
     this.rightPanelHidden = readSideHidden(projectDir, 'right');
     this.hiddenPanels = readHiddenPanels(projectDir);
@@ -4594,10 +4593,10 @@ export class AcpHarnessView implements ContentView {
       this.toggleConciseMode();
       return true;
     }
-    // spec 374: Cmd+Option+. — Option turns `e.key` into `≥`, so match the code.
+    // Cmd+Option+. — Option turns `e.key` into `≥`, so match the code.
     if (e.code === 'Period' && (e.metaKey || e.ctrlKey) && e.altKey && !e.shiftKey) {
       e.preventDefault();
-      this.toggleLaneStats();
+      this.showSessionDock();
       return true;
     }
     if (this.helpOpen) {
@@ -4786,6 +4785,17 @@ export class AcpHarnessView implements ContentView {
     );
     if (dockFocused && !laneBlocked) {
       if (this.dock.handleKey(e)) return true;
+      if (this.sessionInfo.el.contains(document.activeElement)) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.focusComposer();
+          return true;
+        }
+        if (!e.metaKey && !e.altKey) {
+          e.preventDefault();
+          return true;
+        }
+      }
       if (this.gitCtl.dockEl.contains(document.activeElement)) {
         if (this.gitCtl.passesToField(e)) return false;
         if (this.gitCtl.handleDockKey(e)) return true;
@@ -5254,6 +5264,7 @@ export class AcpHarnessView implements ContentView {
     this.railsCtl?.dispose(); // spec 337: cancels a run, writes no record
     this.assistantsCtl.dispose();
     this.gitCtl.dispose();
+    this.sessionInfo.dispose();
     this.composerBloomLayer?.replaceChildren();
     this.composerBloomLayer = null;
     this.composerBloomLaneId = null;
@@ -6592,6 +6603,7 @@ export class AcpHarnessView implements ContentView {
     // Spec 337: the dock column (tab strip + `dock.right` slot) sits in the
     // Active Ticket dock's old place; it owns each dock's `hidden`.
     this.ticketCtl.mountDock();
+    this.dock.setPane('session', this.sessionInfo.el);
     this.dock.setPane('ticket', this.ticketCtl.ticketDockEl);
     if (this.railsCtl) this.dock.setPane('rails', this.railsCtl.dockEl);
     this.dock.setPane('assistants', this.assistantsCtl.dockEl);
@@ -6793,6 +6805,7 @@ export class AcpHarnessView implements ContentView {
     this.railLayout.mount('plan', this.planSlot);
     this.railLayout.mount('queue', this.queueSlot);
     this.railLayout.mount('ticket', this.ticketCtl.ticketDock);
+    this.railLayout.mount('session', this.sessionInfo);
     if (this.railsCtl) this.railLayout.mount('rails', this.railsCtl.dock);
     this.railLayout.mount('assistants', this.assistantsCtl.dock);
     this.railLayout.mount('git', this.gitCtl.dock);
@@ -12896,6 +12909,7 @@ export class AcpHarnessView implements ContentView {
         return;
       }
       case 'rightRail':
+        this.renderSessionDock();
         this.renderLanePeek();
         this.renderLaneThought();
         this.renderGrammarPanel();
@@ -12929,7 +12943,6 @@ export class AcpHarnessView implements ContentView {
     this.element.classList.toggle('acp-harness--transcript-focus', this.focus === 'transcript');
     this.element.classList.toggle('acp-harness--zen', this.zenMode);
     this.element.classList.toggle('acp-harness--concise', this.conciseMode);
-    this.element.classList.toggle('acp-harness--lane-stats-hidden', this.laneStatsHidden);
     this.element.classList.toggle('acp-harness--left-panel-hidden', this.leftPanelHidden);
     this.element.classList.toggle('acp-harness--memory-open', this.memoryDrawerOpen);
   }
@@ -13045,6 +13058,7 @@ export class AcpHarnessView implements ContentView {
   private renderActiveLaneChrome(lane: HarnessLane): void {
     const host = this.zenBodyCellEl ?? this.dashboardEl;
     const active = lane.id === this.activeLaneId;
+    if (active) this.renderSessionDock();
     const shell = listComponent(host, laneShellKey(lane.id, active)) as LaneShell | undefined;
     if (!shell) {
       this.invalidate('rail');
@@ -13103,6 +13117,7 @@ export class AcpHarnessView implements ContentView {
       projectDir: this.projectDir,
       resolveLocalImages: !this.remoteRuntimeId,
     });
+    this.renderSessionDock();
     // spec 310: a repaint rebuilt the cards under the open panel, and a row
     // may have left the window entirely — re-seat it, or collapse it.
     this.syncGenUiMount();
@@ -13632,7 +13647,6 @@ export class AcpHarnessView implements ContentView {
       pendingPeers: this.coordinator.pendingPeersFor(lane.id),
       isOrchestrator: lane.id === this.orchestratorLaneId,
       runs: this.commandRuns.visible(lane.id),
-      projectDir: this.projectDir,
       reviewThread: canReview
         ? {
             count: lane.sessionId ? this.reviewThreadCounts.get(lane.sessionId) ?? 0 : 0,
@@ -13642,7 +13656,7 @@ export class AcpHarnessView implements ContentView {
       onStartReview: () => {
         void this.startReviewThread(lane);
       },
-      onToggleStats: () => this.toggleLaneStats(),
+      onOpenSession: () => this.showSessionDock(),
     };
   }
 
@@ -13787,7 +13801,7 @@ export class AcpHarnessView implements ContentView {
    * The chrome row's chips, in paint order.
    *
    * spec 221: no concise tag here — the collapsed tool cards are the mode's own
-   * cue, and `? help` carries the binding. No Polly chip either: `renderLaneStats`
+   * cue, and `? help` carries the binding. No Polly chip either: Session Info
    * already prints `polly-bypass` for the active lane. Salty has no lane-stats
    * cell, so dropping it too would lose the readout rather than deduplicate it.
    */
@@ -13946,7 +13960,7 @@ export class AcpHarnessView implements ContentView {
    *  splitting; every other state is one message and stays whole. The busy run
    *  no longer carries the lane name, the output-token count, or a
    *  `Ctrl+C cancel` hint — the lane head prints the name, the input line one
-   *  row below repeats it, and the lane stats row already shows `in N out N`.
+   *  row below repeats it, and Session Info shows the input/output counts.
    *  Cancel is Ctrl+C / #cancel (workspace footer `#cancel running`); there is
    *  no lane-head chip. */
   private composerStatusChip(lane: HarnessLane): ComposerMetaSegment[] {
@@ -16218,6 +16232,13 @@ export class AcpHarnessView implements ContentView {
         execute: () => this.runBackendUpdate(),
       });
     }
+    if (lane) out.push({
+      id: 'acp.harness.session-info',
+      label: 'Open Session Info',
+      category: 'ACP Harness',
+      icon: 'gauge',
+      execute: () => this.showSessionDock(),
+    });
     out.push({
       id: 'acp.harness.assistants',
       label: 'Open Assistant Instances',
@@ -16374,12 +16395,6 @@ export class AcpHarnessView implements ContentView {
     this.render();
   }
 
-  private toggleLaneStats(): void {
-    this.laneStatsHidden = !this.laneStatsHidden;
-    writeLaneStatsHiddenPreference(this.projectDir, this.laneStatsHidden);
-    this.render();
-  }
-
   /** spec 347: one side panel's flag. Writes nothing else — no panel flag, not the other side. */
   private setSideHidden(side: HarnessSide, hidden: boolean): void {
     if (side === 'left') this.leftPanelHidden = hidden;
@@ -16429,10 +16444,27 @@ export class AcpHarnessView implements ContentView {
 
   /** spec 337: the column changed its shown tab — only a shown dock paints. */
   private onDockShown(tab: HarnessDockTab | null): void {
+    if (tab === 'session') this.renderSessionDock();
     this.assistantsCtl.renderDock();
     this.gitCtl.renderDock();
     if (tab === 'ticket') this.ticketCtl.renderTicketDock();
     else if (tab === 'rails') this.railsCtl?.renderDock();
+  }
+
+  private renderSessionDock(): void {
+    const lane = this.activeLane();
+    this.dock.setAvailable('session', lane !== null && !this.isPanelHidden('session'));
+    if (!lane || !this.dock.isShown('session')) return;
+    this.sessionInfo.update(sessionInfoProps(lane, this.projectDir, backendLabel(lane.backendId)));
+  }
+
+  private showSessionDock(): void {
+    if (!this.activeLane()) return;
+    this.setSideHidden('right', false);
+    this.setPanelHidden('session', false);
+    this.renderSessionDock();
+    this.dock.select('session');
+    this.sessionInfo.el.focus({ preventScroll: true });
   }
 
   /** spec 337: bare `#rails` — clear its own flag, select and focus the tab. */
@@ -17185,27 +17217,6 @@ function writeConciseModePreference(projectDir: string | null, value: boolean): 
   try {
     if (value) localStorage.setItem(conciseModeStorageKey(projectDir), '1');
     else localStorage.removeItem(conciseModeStorageKey(projectDir));
-  } catch {
-    // localStorage unavailable — preference simply won't persist
-  }
-}
-
-function laneStatsHiddenStorageKey(projectDir: string | null): string {
-  return `krypton:acp-harness:lane-stats-hidden:${projectDir ?? ''}`;
-}
-
-function readLaneStatsHiddenPreference(projectDir: string | null): boolean {
-  try {
-    return localStorage.getItem(laneStatsHiddenStorageKey(projectDir)) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function writeLaneStatsHiddenPreference(projectDir: string | null, value: boolean): void {
-  try {
-    if (value) localStorage.setItem(laneStatsHiddenStorageKey(projectDir), '1');
-    else localStorage.removeItem(laneStatsHiddenStorageKey(projectDir));
   } catch {
     // localStorage unavailable — preference simply won't persist
   }

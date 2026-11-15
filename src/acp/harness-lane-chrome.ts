@@ -3,7 +3,7 @@
 // Extracted verbatim from acp-harness-view.ts (spec 204). Spec 301 phases 3–4
 // moved every string builder that painted lane chrome — the head line, its
 // chips, the process-tree block, the stats line and the slash palette — into
-// the `lane-head`, `lane-stats`, `lane-symbol`, `metrics-overlay` and
+// the `lane-head`, `session-info`, `lane-symbol`, `metrics-overlay` and
 // `inline-palette` components. What stays is the vocabulary those components
 // read: status labels, the activity line, permission compaction, metric
 // bucketing and the slash-command matcher the view's key table consults.

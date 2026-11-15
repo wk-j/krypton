@@ -85,7 +85,7 @@ function buildSections(): readonly HelpSection[] {
       { term: alt('⌘W'), desc: 'Close harness tab' },
       { term: alt('⌘.'), desc: 'Toggle Zen Mode' },
       { term: alt('⇧⌘.'), desc: 'Toggle Concise Mode (tool cards collapse to one line, lane stats hide)' },
-      { term: alt('⌥⌘.'), desc: 'Show / hide the lane stats row (or click the shown lane\'s name)' },
+      { term: alt('⌥⌘.'), desc: 'Open Session Info (or click the shown lane\'s name)' },
     ],
   },
   {
@@ -225,7 +225,7 @@ function buildSections(): readonly HelpSection[] {
       { term: '#bg', desc: 'List this lane’s background shell tasks' },
       {
         term: '#panels [hide | show | toggle] <left | right | panel>',
-        desc: 'Hide or restore the left panel (Zen lane rail), the right panel (Ticket/Rails/Assistants/Git dock), or one of plan · peek · thought · grammar · queue · ticket · rails · assistants · git (eight have titlebar icons; Assistants does not)',
+        desc: 'Hide or restore the left panel (Zen lane rail), the right panel (Session/Ticket/Rails/Assistants/Git dock), or one of plan · peek · thought · grammar · queue · session · ticket · rails · assistants · git (nine have titlebar icons; Assistants does not)',
       },
       {
         term: '#timeline [open | trace | conflicts | auto]',

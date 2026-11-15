@@ -24,7 +24,6 @@ import { Component } from '../../../ui/component';
 import { el } from '../../../ui/dom';
 import { harnessIconEl } from '../../harness-icons';
 import { LaneHead } from '../lane-head';
-import { LaneStats } from '../lane-stats';
 import type { AcpLaneMetrics } from '../../../types';
 import type { CommandRunView } from '../../harness-command-runs';
 import type { PendingPeerSummary } from '../../inter-lane';
@@ -42,12 +41,11 @@ export interface LaneShellProps {
   readonly isOrchestrator: boolean;
   /** spec 343: built-in `#` commands in flight on this lane, for the head. */
   readonly runs: readonly CommandRunView[];
-  readonly projectDir: string | null;
   /** Review-thread action in the head; null when the lane cannot start one. */
   readonly reviewThread: { readonly count: number; readonly enabled: boolean } | null;
   readonly onStartReview: () => void;
-  /** spec 374: a click on the shown lane's name shows / hides the stats row. */
-  readonly onToggleStats: () => void;
+  /** The shown lane's name opens its Session dock. */
+  readonly onOpenSession: () => void;
 }
 
 /** Reconcile key. Active-ness is part of it: the two states are different DOM. */
@@ -57,7 +55,6 @@ export function laneShellKey(laneId: string, active: boolean): string {
 
 export class LaneShell extends Component<LaneShellProps> {
   private readonly head: LaneHead;
-  private readonly stats: LaneStats | null;
   /**
    * The pinned transcript body. Created once per shell, never reparented —
    * the layout may resize its slot, it may never move this node.
@@ -69,7 +66,7 @@ export class LaneShell extends Component<LaneShellProps> {
   /** The button's label; a text node so relabelling never drops the icon. */
   private reviewLabel: Text | null = null;
   private onStartReview: (() => void) | null = null;
-  private onToggleStats: (() => void) | null = null;
+  private onOpenSession: (() => void) | null = null;
   private readonly active: boolean;
 
   constructor(props: LaneShellProps, rail: HTMLElement | null) {
@@ -78,13 +75,11 @@ export class LaneShell extends Component<LaneShellProps> {
     this.head = new LaneHead();
     this.el.appendChild(this.head.el);
     if (props.active) {
-      this.stats = new LaneStats();
       this.body = el('div', { class: 'acp-harness__lane-body', data: { laneId: props.lane.id } });
-      this.el.append(this.stats.el, this.body);
-      this.bag.listen(this.head.nameEl, 'click', () => this.onToggleStats?.());
+      this.el.appendChild(this.body);
+      this.bag.listen(this.head.nameEl, 'click', () => this.onOpenSession?.());
       if (rail) this.el.appendChild(rail);
     } else {
-      this.stats = null;
       this.body = null;
     }
   }
@@ -96,7 +91,7 @@ export class LaneShell extends Component<LaneShellProps> {
       next.active,
       next.reviewThread?.count,
       next.reviewThread?.enabled,
-      // The head and stats hold their own deps; they are updated unconditionally
+      // The head holds its own deps; it is updated unconditionally
       // in update() so a chip change does not have to move this tuple.
     ];
   }
@@ -117,13 +112,13 @@ export class LaneShell extends Component<LaneShellProps> {
   }
 
   /**
-   * Head and stats are child components with their own dependency tuples, so
+   * The head is a child component with its own dependency tuple, so
    * this is cheap: it is how a 2 s metrics poll with unchanged numbers writes
    * nothing at all.
    */
   update(next: LaneShellProps): void {
     super.update(next);
-    this.onToggleStats = next.onToggleStats;
+    this.onOpenSession = next.onOpenSession;
     this.head.update({
       lane: next.lane,
       active: next.active,
@@ -134,7 +129,6 @@ export class LaneShell extends Component<LaneShellProps> {
       isOrchestrator: next.isOrchestrator,
       runs: next.runs,
     });
-    this.stats?.update({ lane: next.lane, projectDir: next.projectDir });
   }
 
   /** The wrapper exists only while it has something in it. */
@@ -179,7 +173,6 @@ export class LaneShell extends Component<LaneShellProps> {
 
   protected onDispose(): void {
     this.head.dispose();
-    this.stats?.dispose();
   }
 }
 

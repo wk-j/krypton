@@ -1,6 +1,8 @@
 # Light Scheme Legibility — Implementation Spec
 
 > Status: Implemented — 2026-10-21 (WKWebView fixture smoke; check in the installed app is pending a rebuild, see Verification)
+
+Spec 401's 2026-11-15 follow-up removes the lane-stats stylesheet. The lane-stats rows in this document describe the previous design.
 > Date: 2026-10-21
 > Milestone: Themes — light scheme
 > Amends: [010](./0010-theme-specification.md) §Applying a theme (light-scheme rules) · [006](./0006-configuration.md) `[visual] opacity`

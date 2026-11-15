@@ -1,6 +1,8 @@
 # Harness Zen Rail Merged Tab — Implementation Spec
 
 > Status: Implemented (rev 2 — a first-row tab meets the titlebar, and every body corner that faces the rail is round)
+
+Spec 401's 2026-11-15 follow-up removes the lane-stats row; the Zen rail now meets a single 28px lane head. References below to the old stats row are historical.
 > Date: 2026-10-22
 > Milestone: ACP Harness — Zen Mode polish
 > Builds on: 0080 (Zen Mode) · 0125 (rail entry anatomy) · 0215 (lane identity bands) · 0301/0302 (component kernel, `LaneRail` / `RailEntry`) · 0321 (light scheme)

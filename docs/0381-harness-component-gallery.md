@@ -1,6 +1,8 @@
 # Harness Component Gallery (Loopback Page) — Implementation Spec
 
 > Status: Approved (2026-11-10) — phase 1 implemented (2026-11-11); phases 2 and 3 open
+
+Spec 401's 2026-11-15 follow-up removes `LaneStats`. Any future gallery phase should preview the single-row `LaneHead` and the `SessionInfo` dock instead of mounting `LaneStats` as described below.
 > Date: 2026-11-10
 > Milestone: ACP Harness — one rendering for every lane
 > Builds on: [380](./0380-acp-lane-adapters.md) (lane adapters), [313](./0313-genui-component-gallery.md) (GenUI gallery), [341](./0341-loopback-app.md)/[361](./0361-loopback-app-react.md) (loopback app), [301](./0301-harness-ui-components.md)/[302](./0302-harness-component-catalog.md) (components), [379](./0379-connected-transcript-sources.md) (connected sources)

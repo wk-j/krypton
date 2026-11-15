@@ -43,6 +43,7 @@ Listed by spec number. Older specs remain in this directory.
 | 398 | [OMP Async Bash Monitor](./0398-omp-async-bash-monitor.md) |
 | 399 | [Droid Backend Removal](./0399-remove-droid-backend.md) |
 | 400 | [Bug Trail — Pre-Fix Diagnosis on the System Map](./0400-bug-trail.md) |
+| 401 | [Harness Session Info Panel](./0401-harness-session-info-panel.md) |
 
 ## ADRs (31)
 

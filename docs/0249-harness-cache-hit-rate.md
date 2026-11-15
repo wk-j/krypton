@@ -1,6 +1,8 @@
 # Harness Prompt-Cache Hit Rate — Implementation Spec
 
 > Status: Implemented
+
+Spec 401's 2026-11-15 follow-up moves the live cache hit rate and raw counters from the former lane-stats row into Session Info. The `#usage` and `#daily` behavior described below remains.
 > Date: 2026-09-16
 > Milestone: Post-M-current polish
 > Builds on: 214 (LLM usage log) · 72 (harness view) · 221 (status-line density)
