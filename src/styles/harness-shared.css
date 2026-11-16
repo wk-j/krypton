@@ -153,9 +153,9 @@
   align-items: center;
   justify-content: center;
   gap: 3px;
-  min-width: 66px;
+  min-width: 44px;
   min-height: 26px;
-  padding: 3px 2px;
+  padding: 3px 6px;
   border: 1px solid var(--mat-key-edge);
   /* DESIGN.md's 6px tab pill: concentric with the 8px channel around it. */
   border-radius: 6px;
@@ -163,13 +163,19 @@
   box-shadow: var(--mat-key-raise);
   color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.62));
   font: inherit;
-  /* Five labels (spec 401) scroll within 352px; keep each key readable. */
+  /* Icon selectors keep five tabs compact; badges retain their readable size. */
   font-size: 10px;
   letter-spacing: 0.02em;
   line-height: 1;
   text-shadow: var(--mat-print);
   white-space: nowrap;
   cursor: default;
+}
+
+.acp-dock__tab .acp-dock__tab-icon {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
 }
 
 /* The indicator lamp. */

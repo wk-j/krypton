@@ -13,7 +13,7 @@ const DOCK_TABS: readonly HarnessDockTab[] = ['session', 'ticket', 'rails', 'ass
 /** The root class that reserves the column's width (`harness-shared.css`). */
 export const DOCK_ACTIVE_CLASS = 'acp-harness--dock-active';
 
-/** What the Rails tab label carries: `RAILS ✗` after a failed check, else the open count. */
+/** What the Rails tab carries: `✗` after a failed check, else the open count. */
 export interface RailsTabBadge {
   readonly failedCheck: string | null;
   /** Open findings of the latest run; null before any run. */
@@ -22,7 +22,7 @@ export interface RailsTabBadge {
 
 const NO_BADGE: RailsTabBadge = { failedCheck: null, open: null };
 
-/** What the Git tab label carries: `GIT ✗` when any path conflicts, else the row count. */
+/** What the Git tab carries: `✗` when any path conflicts, else the row count. */
 export interface GitTabBadge {
   readonly conflicts: boolean;
   /** Null when the tree is clean or status has not loaded. */
@@ -89,7 +89,7 @@ export class HarnessDock {
     this.paintStrip();
   }
 
-  /** Spec 396: conflict wins over the row count. A clean tree paints `GIT` alone. */
+  /** Spec 396: conflict wins over the row count. A clean tree paints the icon alone. */
   setGitBadge(badge: GitTabBadge): void {
     if (badge.conflicts === this.gitBadge.conflicts && badge.rows === this.gitBadge.rows) return;
     this.gitBadge = badge;
@@ -195,18 +195,14 @@ export class HarnessDock {
   }
 
   private tabFor(tab: HarnessDockTab): TabStripTab {
-    if (tab === 'session') return { id: 'session', label: 'SESSION' };
-    if (tab === 'ticket') return { id: 'ticket', label: 'TICKET' };
-    if (tab === 'assistants') return { id: 'assistants', label: 'ASSISTANTS' };
-    if (tab === 'git') {
-      if (this.gitBadge.conflicts) return { id: 'git', label: 'GIT ✗' };
-      return this.gitBadge.rows === null
-        ? { id: 'git', label: 'GIT' }
-        : { id: 'git', label: 'GIT', count: this.gitBadge.rows };
-    }
-    if (this.badge.failedCheck !== null) return { id: 'rails', label: 'RAILS ✗' };
-    return this.badge.open === null
-      ? { id: 'rails', label: 'RAILS' }
-      : { id: 'rails', label: 'RAILS', count: this.badge.open };
+    let count: number | string | undefined;
+    if (tab === 'git') count = this.gitBadge.conflicts ? '✗' : this.gitBadge.rows ?? undefined;
+    else if (tab === 'rails') count = this.badge.failedCheck !== null ? '✗' : this.badge.open ?? undefined;
+    return {
+      id: tab,
+      label: tab.toUpperCase(),
+      icon: tab === 'assistants' ? 'assistants' : `panel-${tab}`,
+      count,
+    };
   }
 }

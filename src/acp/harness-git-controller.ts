@@ -5,9 +5,15 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
+import { loadConfig } from '../config';
 import { parseGitStatus, STATUS_GROUP_LABEL, type NativeGitStatus, type StatusGroupKind } from '../native-output/git-status';
 import { GitDock, type GitDockProps, type GitLamp, type GitListItem } from './components/git-dock';
 import type { GitTabBadge } from './harness-dock';
+import { AcpAssistSession } from './assist/acp-completion';
+import { resolveAssistConfig } from './assist/config';
+import { AssistEngine, type AssistCompletion } from './assist/engine';
+import { COMMIT_MESSAGE_DEFAULTS, COMMIT_MESSAGE_FAILURE, commitMessageCall, type GitCommitContext } from './git-commit-message';
+import type { AcpInstanceOwner } from './types';
 
 export const GIT_PANEL_POLL_MS = 4000;
 
@@ -28,6 +34,7 @@ export interface WorkingDiffRequest {
 
 export interface GitPanelApi {
   status(cwd: string): Promise<GitPanelStatusPayload>;
+  commitContext(cwd: string): Promise<GitCommitContext>;
   stage(cwd: string, paths: string[]): Promise<void>;
   unstage(cwd: string, paths: string[]): Promise<void>;
   discard(cwd: string, path: string, kind: GitDiscardKind): Promise<void>;
@@ -36,6 +43,7 @@ export interface GitPanelApi {
 
 export interface HarnessGitHost {
   projectDir(): string | null;
+  assistOwner(): AcpInstanceOwner;
   remote(): boolean;
   isPanelHidden(): boolean;
   setDockTabAvailable(available: boolean): void;
@@ -45,6 +53,19 @@ export interface HarnessGitHost {
   flash(message: string): void;
   setBadge(badge: GitTabBadge): void;
   openDiff: ((request: WorkingDiffRequest) => Promise<boolean>) | null;
+}
+
+export interface GitCommitMessageDeps {
+  complete?: AssistCompletion;
+  loadConfig?: () => Promise<unknown>;
+}
+
+interface CommitMessageRequest {
+  readonly epoch: number;
+  readonly revision: number;
+  readonly dir: string;
+  session: AcpAssistSession | null;
+  cancelled: boolean;
 }
 
 interface PanelRow {
@@ -62,6 +83,7 @@ const STAGE_CHUNK = 200;
 
 export const tauriGitPanelApi: GitPanelApi = {
   status: (cwd) => invoke<GitPanelStatusPayload>('git_panel_status', { cwd }),
+  commitContext: (cwd) => invoke<GitCommitContext>('git_panel_commit_context', { cwd }),
   stage: (cwd, paths) => invoke('git_panel_stage', { cwd, paths }),
   unstage: (cwd, paths) => invoke('git_panel_unstage', { cwd, paths }),
   discard: (cwd, path, kind) => invoke('git_panel_discard', { cwd, path, kind }),
@@ -171,11 +193,26 @@ export class HarnessGitController {
   private fault: string | null = null;
   private faultKind: 'status' | 'mutation' | null = null;
   private lastSuccess: number | null = null;
+  private messageRevision = 0;
+  private fieldFocused = false;
+  private aiRequest: CommitMessageRequest | null = null;
+  private aiSession: AcpAssistSession | null = null;
+  private readonly aiEngine: AssistEngine;
+  private readonly readAiConfig: () => Promise<unknown>;
+  private readonly usesAiSession: boolean;
 
   constructor(
     private readonly host: HarnessGitHost,
     private readonly api: GitPanelApi = tauriGitPanelApi,
+    deps: GitCommitMessageDeps = {},
   ) {
+    this.readAiConfig = deps.loadConfig ?? loadConfig;
+    this.usesAiSession = !deps.complete;
+    this.aiEngine = new AssistEngine(deps.complete ?? ((call) => {
+      const session = this.aiRequest?.session;
+      if (!session) throw new Error('AI commit session is not available');
+      return session.complete(call);
+    }));
     this.dockEl = document.createElement('aside');
     this.dockEl.className = 'acp-harness__git-dock';
     this.dockEl.hidden = true;
@@ -183,6 +220,8 @@ export class HarnessGitController {
     this.dock = new GitDock(this.dockEl);
     this.dockEl.addEventListener('click', this.onClick);
     this.dockEl.addEventListener('input', this.onInput);
+    this.dockEl.addEventListener('focusin', this.onFocus);
+    this.dockEl.addEventListener('focusout', this.onFocus);
     document.addEventListener('visibilitychange', this.onVisibility);
   }
 
@@ -193,6 +232,12 @@ export class HarnessGitController {
     const shown = this.host.dockTabShown();
     const dir = this.host.projectDir();
     const dirChanged = dir !== this.boundDir;
+    if (dirChanged || !shown || this.host.remote()) this.cancelAi();
+    if (dirChanged || this.host.remote()) {
+      const session = this.aiSession;
+      this.aiSession = null;
+      if (session) void session.dispose().catch(() => undefined);
+    }
     if (dirChanged) {
       this.boundDir = dir;
       this.epoch += 1;
@@ -232,6 +277,7 @@ export class HarnessGitController {
     if (event.isComposing) return true;
     if (event.key === 'Escape' && !event.metaKey && !event.ctrlKey && !event.altKey) return false;
     if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key === 'Enter') return false;
+    if (this.isAiChord(event)) return false;
     return true;
   }
 
@@ -239,6 +285,12 @@ export class HarnessGitController {
   handleDockKey(event: KeyboardEvent): boolean {
     if (!this.shown || !(event.target instanceof Node) || !this.dockEl.contains(event.target)) return false;
     if (event.target instanceof HTMLTextAreaElement) {
+      if (event.isComposing) return false;
+      if (this.isAiChord(event)) {
+        event.preventDefault();
+        void this.generateMessage();
+        return true;
+      }
       if (event.key === 'Escape' && !event.metaKey && !event.ctrlKey && !event.altKey) {
         event.preventDefault();
         this.confirmId = null;
@@ -345,6 +397,11 @@ export class HarnessGitController {
       this.focusField();
       return true;
     }
+    if (event.key === 'g') {
+      event.preventDefault();
+      void this.generateMessage();
+      return true;
+    }
     if (event.key === 'r') {
       event.preventDefault();
       this.requestStatus();
@@ -370,11 +427,17 @@ export class HarnessGitController {
     if (this.disposed) return;
     this.disposed = true;
     this.epoch += 1;
+    this.cancelAi();
+    const session = this.aiSession;
+    this.aiSession = null;
+    if (session) void session.dispose().catch(() => undefined);
     if (this.timer !== null) clearInterval(this.timer);
     this.timer = null;
     document.removeEventListener('visibilitychange', this.onVisibility);
     this.dockEl.removeEventListener('click', this.onClick);
     this.dockEl.removeEventListener('input', this.onInput);
+    this.dockEl.removeEventListener('focusin', this.onFocus);
+    this.dockEl.removeEventListener('focusout', this.onFocus);
     this.dock.dispose();
   }
 
@@ -385,6 +448,10 @@ export class HarnessGitController {
 
   private readonly onClick = (event: MouseEvent): void => {
     if (!(event.target instanceof Element)) return;
+    if (event.target.closest('[data-git-ai]')) {
+      void this.generateMessage();
+      return;
+    }
     if (event.target.closest('[data-git-commit]')) {
       void this.commit();
       return;
@@ -404,13 +471,131 @@ export class HarnessGitController {
   private readonly onInput = (event: Event): void => {
     if (!(event.target instanceof HTMLTextAreaElement)) return;
     this.message = event.target.value;
+    this.messageRevision += 1;
+    this.cancelAi();
     if (this.lamp === 'failed' && !this.flight && !this.mutating) {
       this.lamp = 'idle';
       this.fault = null;
       this.faultKind = null;
-      this.paintDock();
     }
+    this.paintDock();
   };
+
+  private readonly onFocus = (event: FocusEvent): void => {
+    const focused = event.type === 'focusin' ? event.target : event.relatedTarget;
+    const fieldFocused = focused instanceof HTMLTextAreaElement && this.dockEl.contains(focused);
+    if (fieldFocused === this.fieldFocused) return;
+    this.fieldFocused = fieldFocused;
+    this.paintDock();
+  };
+
+  private isAiChord(event: KeyboardEvent): boolean {
+    return (event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === 'g';
+  }
+
+  private aiDisabledReason(): string | null {
+    if (this.disposed) return 'Git panel is closed.';
+    if (this.host.remote()) return 'Git is local only.';
+    if (!this.cwd()) return 'No project directory';
+    if (!this.branch) return 'Git repository is not loaded.';
+    if (this.mutating) return 'Git is busy';
+    if (this.confirmId) return 'Confirm or cancel discard first.';
+    if (this.rows.some((row) => row.kind === 'conflicts')) return 'Resolve conflicts before drafting a commit message.';
+    if (!this.rows.some((row) => row.kind === 'staged')) return 'nothing staged';
+    return null;
+  }
+
+  private currentAi(request: CommitMessageRequest): boolean {
+    return this.aiRequest === request && !request.cancelled && !this.disposed && this.shown &&
+      request.epoch === this.epoch && request.revision === this.messageRevision && this.cwd() === request.dir;
+  }
+
+  private cancelAi(): void {
+    const request = this.aiRequest;
+    if (!request) return;
+    request.cancelled = true;
+    this.aiRequest = null;
+    this.aiEngine.cancel();
+    if (request.session) {
+      if (this.aiSession === request.session) this.aiSession = null;
+      // Setup may still be in flight; its late client is also disposed in finally.
+      void request.session.dispose().catch(() => undefined);
+    }
+  }
+
+  private async generateMessage(): Promise<void> {
+    if (this.aiRequest) {
+      this.cancelAi();
+      this.paintDock();
+      return;
+    }
+    const reason = this.aiDisabledReason();
+    if (reason) {
+      this.host.flash(reason);
+      return;
+    }
+    const dir = this.cwd();
+    if (!dir) return;
+    const request: CommitMessageRequest = {
+      epoch: this.epoch, revision: this.messageRevision, dir, session: null, cancelled: false,
+    };
+    this.aiRequest = request;
+    const draft = this.message;
+    this.paintDock();
+    try {
+      const [context, rawConfig] = await Promise.all([this.api.commitContext(dir), this.readAiConfig()]);
+      if (!this.currentAi(request)) return;
+      const cfg = resolveAssistConfig(rawConfig, COMMIT_MESSAGE_DEFAULTS);
+      if (this.aiEngine.cooldownUntil(commitMessageCall.id) > Date.now()) {
+        throw new Error('AI commit message is cooling down. Try again later.');
+      }
+      const input = { diff: context.diff, draft };
+      if (commitMessageCall.payload(input, cfg).length > cfg.maxInputChars) {
+        throw new Error('Staged changes exceed the AI input limit; stage a smaller commit.');
+      }
+      if (this.usesAiSession) {
+        this.aiSession ??= new AcpAssistSession({
+          projectDir: () => dir,
+          remoteRuntimeId: () => null,
+          owner: () => this.host.assistOwner(),
+        });
+        request.session = this.aiSession;
+      }
+      const result = await this.aiEngine.run(commitMessageCall, input, cfg);
+      if (!this.currentAi(request)) return;
+      if (!result.ok) throw new Error(COMMIT_MESSAGE_FAILURE[result.reason]);
+      const fresh = await this.api.commitContext(dir);
+      if (!this.currentAi(request)) return;
+      if (fresh.repoRoot !== context.repoRoot || fresh.fingerprint !== context.fingerprint) {
+        throw new Error('Staged changes changed. Generate a new commit message.');
+      }
+      this.message = result.value;
+      this.messageRevision += 1;
+      this.fault = null;
+      this.faultKind = null;
+      if (this.lamp === 'failed') this.lamp = 'idle';
+      const focusField = this.dockEl.contains(document.activeElement);
+      this.paintDock();
+      if (focusField) this.focusField();
+    } catch (err) {
+      if (this.currentAi(request)) {
+        this.failLocal(invokeMessage(err));
+        this.host.flash(invokeMessage(err));
+      }
+      if (request.session && !request.cancelled) {
+        if (this.aiSession === request.session) this.aiSession = null;
+        await request.session.dispose().catch(() => undefined);
+      }
+    } finally {
+      if (request.cancelled && request.session) {
+        await request.session.dispose().catch(() => undefined);
+      }
+      if (this.aiRequest === request) {
+        this.aiRequest = null;
+        if (!this.disposed && this.shown) this.paintDock();
+      }
+    }
+  }
 
   private canQuery(): boolean {
     return !this.host.remote() && this.host.projectDir() !== null;
@@ -537,8 +722,8 @@ export class HarnessGitController {
   }
 
   private async runMutation(lamp: 'staging' | 'committing', work: () => Promise<void>): Promise<boolean> {
-    if (this.mutating) {
-      this.host.flash('Git is busy');
+    if (this.mutating || this.aiRequest) {
+      this.host.flash(this.aiRequest ? 'Cancel AI before changing Git.' : 'Git is busy');
       return false;
     }
     if (!this.cwd()) return false;
@@ -641,6 +826,10 @@ export class HarnessGitController {
   private async commit(): Promise<void> {
     const dir = this.cwd();
     if (!dir) return;
+    if (this.aiRequest) {
+      this.host.flash('Cancel AI before changing Git.');
+      return;
+    }
     const trimmed = this.message.trim();
     if (trimmed === '') {
       this.failLocal('commit message is empty');
@@ -732,6 +921,10 @@ export class HarnessGitController {
       confirm,
       lamp: this.lamp,
       showCommit: !remote && dir !== null && this.branch !== null,
+      aiRunning: this.aiRequest !== null,
+      aiDisabledReason: this.aiDisabledReason(),
+      commitDisabled: this.mutating || this.aiRequest !== null,
+      fieldFocused: this.fieldFocused,
     };
   }
 

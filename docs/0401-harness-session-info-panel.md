@@ -42,7 +42,7 @@ The screenshot is the visual reference for emphasis and ordering. Krypton's pane
 | `src/acp/harness-dock.ts`, `src/acp/harness-layout.ts` | Add the `session` tab and its placement. |
 | `src/acp/harness-panel-visibility.ts`, `src/acp/harness-icons.ts` | Add tab/panel identity, persisted selection, `#panels` target, titlebar toggle and icon. |
 | `src/acp/acp-harness-view.ts` | Mount, update, focus, and dispose the pane; refresh it on usage, lane selection, and right-rail commits. |
-| `src/styles/harness-shared.css` | Allow five tabs to scroll horizontally at their legible size. |
+| `src/styles/harness-shared.css` | Compact icon selector keys; retain internal scrolling for narrow columns or large badges. |
 | `src/acp/hash-commands.ts`, `src/acp/components/help-overlay/` | Include `session` in the panel command/help vocabulary. |
 | `docs/README.md`, `docs/0004-architecture.md`, `docs/0005-data-flow.md`, relevant dock/panel specs | Index this feature and update the dock contract. |
 
@@ -77,12 +77,12 @@ The view builds a primitive snapshot from the active lane. `SessionInfo.readDeps
 - `SESSION` is the first visible tab. It is available while a lane is selected, including while its session is starting. Its individual panel flag defaults to shown. This makes the right column available for a normal harness with a lane, even when Ticket, Rails, Assistants, and Git are unavailable.
 - Keep `ticket` as the default stored selection for existing users: an available Ticket remains selected. If it is unavailable, the dock falls back through available tabs, ending at Session. An explicit Session selection is stored per project.
 - The right-side titlebar button and `#panels right` still control the whole column. `#panels session` and its titlebar button control only this tab. Add a palette `Open Session Info` action that shows the right side, shows and selects Session, and focuses its pane.
-- Five tab labels use one horizontally scrollable recessed channel with each key at a readable minimum width. `[`/`]` continue to cycle available tabs and bring the selected key into view. Keep the existing 352px column and the narrow-view overlay behavior.
+- Five tabs use 16px icons in one recessed selector channel: Session gauge, Ticket, Rails, linked Assistants and Git branch. Full names and current badges remain in `title` and `aria-label`; icons are decorative to assistive technology. Keys keep their status LED, count/failure badges and 44px minimum width. All five fit the standard 352px column; narrow columns or larger badges scroll internally. `[`/`]` continue to cycle available tabs and bring the selected key into view. Keep the narrow-view overlay behavior.
 - Exactly one dock pane is rendered at a time. `HarnessDock` owns `hidden`; Session Info honors it with `.acp-session-info[hidden] { display: none }` in `krypton.component`. The shell's `krypton.base` hidden rule alone cannot override the component's `display: flex`.
 
 ### UI
 
-- Header: active lane name beside the existing Session icon, plus the session-status lamp and readable status word on the same row. The selected `SESSION` dock tab supplies the panel title.
+- Header: active lane name beside the existing Session icon, plus the session-status lamp and readable status word on the same row. The Session tab is identified by its gauge icon, tooltip and accessible name.
 - Context section: `Context`, whole-number occupancy percentage, `used / size` token readout, and a steady filled meter in one compact recessed well. No animation or text glow. When only `used` is known, show its count without a percentage or meter; when nothing is known, show `Context unavailable`.
 - Details section: Project / Backend, Model / Effort, then the full selectable Session ID spanning both columns. Show `Pending` for an unassigned session ID; `Unknown` for missing model/effort; `—` for a missing project. Read-only content does not take keyboard focus except the pane itself.
 - Spec 402 adds an MCP connection section between Details and Usage. It names only `krypton-harness-memory` and shows endpoint availability, observed request counts, and last contact. The counts are historical for the lane label, so the pane does not claim a live connection or list project/native servers.

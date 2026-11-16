@@ -682,7 +682,6 @@
     margin-top: 8px;
     padding-top: 8px;
     border-top: 1px solid var(--mat-groove-lo);
-    box-shadow: inset 0 1px 0 var(--mat-groove-hi);
   }
 
   .acp-rails-dock__page-rule-text {

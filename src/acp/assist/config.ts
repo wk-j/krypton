@@ -76,7 +76,7 @@ function readOptions(block: Record<string, unknown> | null): Record<string, Scal
  * Merge `task.defaults` ← `[acp_harness.assist]` ← `[…assist.tasks.<id>]`,
  * then clamp. `rawConfig` is the untyped `get_config` blob.
  */
-export function resolveAssistConfig(rawConfig: unknown, task: AssistTask<unknown>): AssistTaskConfig {
+export function resolveAssistConfig(rawConfig: unknown, task: Pick<AssistTask<unknown>, 'id' | 'defaults'>): AssistTaskConfig {
   const assist = asRecord(asRecord(asRecord(rawConfig)?.acp_harness)?.assist);
   const override = asRecord(asRecord(assist?.tasks)?.[task.id]);
   const defaults = task.defaults;

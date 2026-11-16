@@ -284,6 +284,7 @@ pub fn run() {
             commands::git_log_page,
             commands::git_commit_diff,
             commands::git_panel_status,
+            commands::git_panel_commit_context,
             commands::git_panel_stage,
             commands::git_panel_unstage,
             commands::git_panel_discard,

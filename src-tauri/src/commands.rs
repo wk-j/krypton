@@ -531,6 +531,14 @@ pub async fn git_panel_status(cwd: String) -> Result<crate::git::GitPanelStatus,
         .map_err(|e| format!("Task join error: {e}"))?
 }
 
+/// spec 405: capped index-only context for AI commit drafting.
+#[tauri::command]
+pub async fn git_panel_commit_context(cwd: String) -> Result<crate::git::GitCommitContext, String> {
+    tauri::async_runtime::spawn_blocking(move || crate::git::git_panel_commit_context(&cwd))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
+}
+
 /// spec 396: `git add -- <paths>` for the Git dock.
 #[tauri::command]
 pub async fn git_panel_stage(cwd: String, paths: Vec<String>) -> Result<(), String> {

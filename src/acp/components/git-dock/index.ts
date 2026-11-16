@@ -49,6 +49,10 @@ export interface GitDockProps {
   readonly confirm: string | null;
   readonly lamp: GitLamp;
   readonly showCommit: boolean;
+  readonly aiRunning: boolean;
+  readonly aiDisabledReason: string | null;
+  readonly commitDisabled: boolean;
+  readonly fieldFocused: boolean;
 }
 
 const B = 'acp-git-dock';
@@ -62,18 +66,15 @@ const LAMP_LABEL: Readonly<Record<GitLamp, string>> = {
 };
 
 const KEY_HINTS: readonly KeyHint[] = [
-  { keys: ['j', 'k'], label: '', keySeparator: '/' },
+  { keys: ['j', 'k'], label: 'move', keySeparator: '/' },
+  { keys: ['Enter'], label: 'diff' },
+  { keys: ['r'], label: 'refresh' },
   { keys: ['s'], label: 'stage' },
   { keys: ['u'], label: 'unstage' },
   { keys: ['x'], label: 'discard' },
-  { keys: ['Enter'], label: 'diff' },
-  { keys: ['r'], label: '' },
-  { keys: ['Esc'], label: '' },
-];
-
-const COMMIT_HINTS: readonly KeyHint[] = [
-  { keys: ['c'], label: 'edit' },
-  { keys: ['⌘Enter'], label: 'commit' },
+  { keys: ['S'], label: 'stage all' },
+  { keys: ['U'], label: 'unstage all' },
+  { keys: ['Esc'], label: 'composer' },
 ];
 
 function setText(node: HTMLElement, value: string): void {
@@ -142,6 +143,17 @@ export class GitDock extends Component<GitDockProps> {
     attrs: { rows: '3', placeholder: 'message…', 'aria-label': 'Commit message' },
   });
   private readonly commitHints = el('span', { class: `${B}__commit-hints` });
+  private readonly aiButton = el('button', {
+    class: `${B}__commit-btn`,
+    text: 'AI DRAFT',
+    attrs: { type: 'button', 'data-git-ai': '' },
+  });
+  private readonly commitButton = el('button', {
+    class: `${B}__commit-btn`,
+    text: 'COMMIT',
+    attrs: { type: 'button', 'data-git-commit': '' },
+  });
+  private commitHintKey = '';
   private readonly commitEl: HTMLElement;
   private readonly hintsEl = el('footer', { class: `${B}__keys` });
   private hintKey = '';
@@ -150,17 +162,13 @@ export class GitDock extends Component<GitDockProps> {
     super(host ?? el('aside'));
     this.hostClass = host?.className ?? '';
     this.el.setAttribute('aria-label', 'Git');
-    this.commitHints.append(...keyHintNodes(COMMIT_HINTS));
     this.commitEl = el('div', { class: `${B}__commit` },
       this.messageEl,
       el('div', { class: `${B}__commit-row` },
-        this.commitHints,
-        el('button', {
-          class: `${B}__commit-btn`,
-          text: 'COMMIT',
-          attrs: { type: 'button', 'data-git-commit': '' },
-        }),
+        this.aiButton,
+        this.commitButton,
       ),
+      this.commitHints,
     );
     this.el.append(
       el('header', { class: `${B}__head` },
@@ -184,7 +192,7 @@ export class GitDock extends Component<GitDockProps> {
     return [
       next.generation, next.selectedId, next.message, next.confirm, next.lamp,
       next.headLabel, next.ahead, next.behind, next.summary, next.banner, next.empty,
-      next.showCommit, items,
+      next.showCommit, next.aiRunning, next.aiDisabledReason, next.commitDisabled, next.fieldFocused, items,
     ];
   }
 
@@ -227,11 +235,28 @@ export class GitDock extends Component<GitDockProps> {
     }
     this.commitEl.hidden = !next.showCommit;
     if (this.messageEl.value !== next.message) this.messageEl.value = next.message;
+    const aiDisabled = !next.aiRunning && next.aiDisabledReason !== null;
+    this.aiButton.disabled = aiDisabled;
+    this.aiButton.title = aiDisabled ? next.aiDisabledReason ?? '' : next.aiRunning ? 'Cancel AI draft' : 'Draft a commit message from staged changes';
+    this.aiButton.setAttribute('aria-label', aiDisabled ? `AI draft: ${next.aiDisabledReason}` : next.aiRunning ? 'Cancel AI draft' : 'AI draft');
+    this.aiButton.setAttribute('aria-pressed', String(next.aiRunning));
+    setText(this.aiButton, next.aiRunning ? 'CANCEL AI' : 'AI DRAFT');
+    this.commitButton.disabled = next.commitDisabled;
+    const commitHintKey = `${next.fieldFocused}:${next.aiRunning}`;
+    if (commitHintKey !== this.commitHintKey) {
+      this.commitHintKey = commitHintKey;
+      this.commitHints.replaceChildren(...keyHintNodes([
+        { keys: [next.fieldFocused ? 'Esc' : 'c'], label: next.fieldFocused ? 'list' : 'edit' },
+        { keys: [next.fieldFocused ? '⌘⇧G' : 'g'], label: next.aiRunning ? 'cancel AI' : 'AI draft' },
+        { keys: ['⌘Enter'], label: next.fieldFocused ? 'commit' : 'commit (field only)' },
+      ], ''));
+    }
     const hintKey = next.confirm ?? 'keys';
     if (hintKey !== this.hintKey) {
       this.hintKey = hintKey;
+      this.hintsEl.classList.toggle(`${B}__keys--confirm`, next.confirm !== null);
       this.hintsEl.replaceChildren(...(next.confirm === null
-        ? keyHintNodes(KEY_HINTS)
+        ? keyHintNodes(KEY_HINTS, '')
         : [document.createTextNode(next.confirm)]));
     }
   }

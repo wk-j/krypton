@@ -1,6 +1,6 @@
 # Harness Git Panel — Implementation Spec
 
-> Status: Implemented
+> Status: Implemented; amended by spec 405 (2026-11-16): explicit AI commit drafts and aligned key hints
 > Date: 2026-11-13
 > Milestone: ACP Harness — dock
 > Builds on: 0155 (working diff), 0220 (diff stat poll), 0247 (remote harness), 0301 (components), 0320 (titlebar toggles), 0337 (dock column), 0347 (side panels), 0352 (porcelain status), 0357 (Assistants tab)
@@ -46,7 +46,7 @@ Titlebar: `{ id: 'git', label: 'Git panel', icon: 'krypton-icon-panel-git' }` af
 
 `setAvailable('git', false)` is the default so existing three-tab cycle tests stay valid.
 
-At spec 396, four labels shared 352px. Spec 401 adds Session as a fifth tab; the channel scrolls horizontally with readable key widths. ASSISTANTS keeps its full label.
+Spec 401 adds Session as a fifth tab. The dock uses compact 16px icon selector keys instead of text labels: Session gauge, Ticket, Rails, linked Assistants and Git branch. Full names remain in tooltips and accessible labels. The standard 352px channel fits all five; narrow columns or larger badges scroll internally.
 
 ## What the repo is
 
@@ -81,7 +81,7 @@ Row id is `` `${kind}\0${path}` ``. If a refresh drops the selected id, select t
 
 Header uses `branchLine`: `main → origin/main ↑2 ↓1`, `(no upstream)`, or `detached at abc1234`. Ahead is `--krypton-ansi-2` (`#39ff7f`). Behind is `--krypton-ansi-1`. Summary is the non-zero group counts. A clean tree keeps the branch line and says `Working tree clean`.
 
-Dock badge, a sibling of `setRailsBadge`: any conflict paints `GIT ✗` and hides the count; otherwise a row count; a clean or not-yet-loaded tree paints `GIT` with no count. The tab label is `GIT`.
+Dock badge, a sibling of `setRailsBadge`: any conflict paints `✗` beside the Git branch icon and replaces the row count; otherwise a row count; a clean or not-yet-loaded tree paints the icon alone. The tooltip and accessible label retain `GIT` plus the current badge.
 
 Untracked and conflict rows show no line counts. Tracked rows show `+A -D`. Both counts null on a staged or unstaged row is dim `bin`. Submodules show no counts. A rename's letter is `R` or `C` and its label is `old → new`.
 
@@ -93,7 +93,7 @@ The view calls `gitCtl.noteLaneIdle(cwd)` from the existing local-only idle site
 
 A failed refresh keeps the last good snapshot and paints `Refresh failed: <cause> · last success HH:MM:SS`. With no snapshot, the list well is the cause itself. No partial parse of an over-cap status.
 
-Lamp (steady, no spinner, no CSS animation): amber `REFRESHING` / `STAGING` / `COMMITTING` while that work is in flight, including each poll; dark `IDLE` when settled; danger `FAILED` while the last status or mutation failed. `FAILED` clears on the next successful refresh or a typed edit in the commit field.
+Lamp (steady, no spinner, no CSS animation): amber `REFRESHING` / `STAGING` / `COMMITTING` while that work is in flight, including each poll; dark `IDLE` when settled; danger `FAILED` while the last status, mutation or AI draft failed. `FAILED` clears on the next successful refresh or a typed edit in the commit field. The AI action has its own steady running key state, independent of the status poll.
 
 ## Mutations
 
@@ -119,6 +119,8 @@ Empty or whitespace message: `commit message is empty` (trim before the length c
 
 One mutation in flight. A second one flashes `Git is busy` and does not queue. A status refresh during a mutation sets `again` and runs after. Lamp `STAGING` covers stage, unstage, and discard. `COMMITTING` covers commit.
 
+Spec 405: while AI drafting is in flight, mutations are refused (`Cancel AI before changing Git.`) and the COMMIT button is disabled. The AI key becomes CANCEL AI. A successful draft is editor text only, never a mutation.
+
 Do not log the commit message, the path list, or full stderr. `log::warn` on timeout with the subcommand name. `log::info` on commit success with the short sha only. Failure logs the first stderr line clipped to 200 characters.
 
 ## Opening a diff
@@ -135,9 +137,10 @@ Insert the git controller in the dock block of `AcpHarnessView.onKeyDown` (`dock
 
 The input router preventDefaults when `onKeyDown` returns true, which would cancel a textarea's default action. Commit-field keys therefore return false from `onKeyDown` itself:
 
-- `passesToField`: the target is the textarea, and the key is not bare Escape and not Cmd/Ctrl+Enter, or `event.isComposing`. The view returns false immediately.
+- `passesToField`: the target is the textarea, and the key is neither bare Escape, Cmd/Ctrl+Enter nor Cmd/Ctrl+Shift+G, or `event.isComposing`. The view returns false immediately.
 - Escape in the field: return true, focus the list, keep the message, clear confirm.
 - Cmd+Enter or Ctrl+Enter in the field: return true, commit. Plain Enter inserts a newline.
+- Cmd/Ctrl+Shift+G in the field: request an AI draft, or cancel the running request. Plain `g` remains typed text.
 - List focus: `handleDockKey` returns true for every list binding and for every key that would edit a lane draft (printable, Backspace, Delete, arrows, Home/End, Space, Ctrl+C/A/E/K, Tab). Cmd+C copies the selected path. Cmd+W returns false so the later close-window handler runs. Other meta/alt keys return false.
 - While discard is armed, only `y` confirms and `n` or Escape cancels. Other list keys return true. `c` focuses the field and clears the arm.
 
@@ -153,12 +156,18 @@ The input router preventDefaults when `onKeyDown` returns true, which would canc
 | `x` | Arm discard. Not `d` |
 | `y` / `n` | Confirm or cancel. `n` and Escape cancel |
 | `c` | Focus the commit field |
+| `g` | AI draft / cancel, from the list (spec 405) |
 | `r` | Refresh |
 | Cmd+C | Copy the selected path |
 | Escape | Focus the composer. The tab stays visible |
 | Cmd/Ctrl+Enter | Commit, from the field only |
+| Cmd/Ctrl+Shift+G | AI draft / cancel, from the field |
 
-Footer hints use `keyHintNodes`. The commit chord is one cap, `⌘Enter`. Confirm replaces the hint row with `Discard unstaged changes in <path>? Worktree returns to the index.` or `Delete untracked <path>? This cannot be undone.` Click selects and focuses. Click does not stage. A footer COMMIT button (`data-git-commit`) runs the same function as Cmd+Enter. Confirm has no mouse path that skips `y`.
+Footer hints use `keyHintNodes(..., '')` as atomic key/action pairs in a local grid: `j/k move`, `Enter diff`, `r refresh`; `s stage`, `u unstage`, `x discard`; `S stage all`, `U unstage all`, `Esc composer`. Three columns at 352px become two below 320px and one below 240px. Oversized hints scroll horizontally; no dot separators, split pairs or clipped shortcuts. Confirm replaces the grid with the wrapping sentence `Discard unstaged changes in <path>? Worktree returns to the index.` or `Delete untracked <path>? This cannot be undone.` Click selects and focuses. Click does not stage. Confirm has no mouse path that skips `y`.
+
+The commit well has a separate AI DRAFT / CANCEL AI and COMMIT action row followed by a hint grid. With list focus it shows `c edit`, `g AI draft/cancel` and `⌘Enter commit (field only)`; field focus changes these to `Esc list`, `⌘⇧G AI draft/cancel` and `⌘Enter commit`. The commit chord is one cap. The COMMIT button (`data-git-commit`) still runs the same function as Cmd+Enter; `data-git-ai` runs the same action as the AI chord.
+
+AI drafting (spec 405) reads the complete staged patch using a capped context command and the configured assist backend/model on a separate fenced ACP session. Its final index fingerprint and editor revision must still match before replacing the draft. Typing, cancellation, hiding, project changes and disposal invalidate the result; failures preserve the message. No unstaged fallback, silent input truncation or automatic commit.
 
 Escape from the list calls `focusComposer()` (the harness root when there is no lane).
 
@@ -183,12 +192,13 @@ The controller owns the aside, snapshot, selection, keys, poll, and mutations. T
 | `git_panel_unstage` | `{ cwd, paths }` | void |
 | `git_panel_discard` | `{ cwd, path, kind }` | void |
 | `git_panel_commit` | `{ cwd, message }` | `{ sha }` |
+| `git_panel_commit_context` | `{ cwd }` | `{ repoRoot, diff, fingerprint }`; index-only, 5s / 2 MiB cap |
 
 `kind` is `unstaged`, `untracked-file`, or `untracked-dir`. Register in `lib.rs` next to `native_git_status`. Signatures return `Result<T, String>`. No `.unwrap()` outside tests. Frontend `invoke` sits in try/catch. Serde `rename_all = "camelCase"`.
 
 ## Out of scope
 
-Push, pull, fetch, upstream, branch switch, stash, amend, fixup, rebase, merge continue, hunk staging, interactive add, commit templates, `$EDITOR`, `#learn`, the Commit Browser, blame, submodule recursion, worktree creation, a loopback page, and any change to the terminal native card or the window diff stat. No TOML config, no new sound, no libgit2, no `run_command`, no filesystem watcher, no remote-shell git.
+Push, pull, fetch, upstream, branch switch, stash, amend, fixup, rebase, merge continue, hunk staging, interactive add, commit templates, `$EDITOR`, `#learn`, the Commit Browser, blame, submodule recursion, worktree creation, a loopback page, and any change to the terminal native card or the window diff stat. No new TOML schema (AI drafting reuses assist overrides), no new sound, no libgit2, no `run_command`, no filesystem watcher, no remote-shell git.
 
 ## Files
 

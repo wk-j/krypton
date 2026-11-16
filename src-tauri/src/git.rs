@@ -1127,6 +1127,15 @@ pub struct GitPanelCommit {
     pub sha: String,
 }
 
+/// spec 405: capped index-only input for an explicit AI commit draft.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitContext {
+    pub repo_root: String,
+    pub diff: String,
+    pub fingerprint: String,
+}
+
 const PANEL_STAGE_TIMEOUT: Duration = Duration::from_secs(15);
 const PANEL_COMMIT_TIMEOUT: Duration = Duration::from_secs(120);
 const PANEL_MUTATION_STDOUT_MAX: usize = 64 * 1024;
@@ -1154,6 +1163,35 @@ pub fn git_panel_status(cwd: &str) -> Result<GitPanelStatus, String> {
         status,
         staged_numstat: panel_numstat(&root, true),
         unstaged_numstat: panel_numstat(&root, false),
+    })
+}
+
+/// spec 405: read staged changes without running diff drivers or changing Git state.
+pub fn git_panel_commit_context(cwd: &str) -> Result<GitCommitContext, String> {
+    let root = panel_root(cwd)?;
+    let args = owned_args(&[
+        "diff",
+        "--cached",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-color",
+        "--full-index",
+        "-M",
+        "--",
+    ]);
+    let diff = match run_git_capped(&root, &args).map_err(panel_spawn_err)? {
+        (Some(0), stdout) => stdout,
+        (Some(code), _) => return Err(format!("git diff exited with status {code}")),
+        (None, _) => return Err("git diff was terminated by a signal".to_string()),
+    };
+    if diff.is_empty() {
+        return Err("nothing staged".to_string());
+    }
+    let fingerprint = format!("{:x}", Sha256::digest(diff.as_bytes()));
+    Ok(GitCommitContext {
+        repo_root: root,
+        diff,
+        fingerprint,
     })
 }
 
@@ -1607,6 +1645,93 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).expect("create temp dir");
         dir
+    }
+
+    #[test]
+    fn git_panel_commit_context_is_staged_only_stable_and_read_only() {
+        let dir = test_repo("commit-context");
+        let cwd = dir.to_str().expect("utf8");
+        std::fs::write(dir.join("tracked.txt"), "base\n").expect("seed");
+        std::fs::write(dir.join("unstaged.txt"), "base\n").expect("seed");
+        git_ok(&dir, &["add", "."]);
+        git_ok(&dir, &["commit", "-qm", "base"]);
+        assert_eq!(git_panel_commit_context(cwd).expect_err("empty"), "nothing staged");
+        std::fs::write(dir.join("tracked.txt"), "staged-only\n").expect("staged");
+        git_ok(&dir, &["add", "tracked.txt"]);
+        std::fs::write(dir.join("tracked.txt"), "worktree-only\n").expect("unstaged");
+        std::fs::write(dir.join("unstaged.txt"), "other-unstaged\n").expect("unstaged");
+        std::fs::write(dir.join("untracked.txt"), "untracked-only\n").expect("untracked");
+        let index = std::fs::read(dir.join(".git/index")).expect("index");
+        let status = run_git_bytes(&dir, &["--no-optional-locks", "status", "--porcelain=v1", "-z"]).expect("status");
+        let context = git_panel_commit_context(cwd).expect("context");
+        assert_eq!(context.repo_root, repo_root(&dir).expect("root"));
+        assert!(context.diff.contains("+staged-only\n"));
+        for excluded in ["worktree-only", "other-unstaged", "untracked-only", "b/unstaged.txt", "b/untracked.txt"] {
+            assert!(!context.diff.contains(excluded), "included {excluded}");
+        }
+        let oid = run_git(&dir, &["rev-parse", ":tracked.txt"]).expect("oid");
+        assert!(context.diff.contains(oid.trim()));
+        assert_eq!(context.fingerprint, format!("{:x}", Sha256::digest(context.diff.as_bytes())));
+        let repeated = git_panel_commit_context(cwd).expect("repeat");
+        assert_eq!(context.diff, repeated.diff);
+        assert_eq!(context.fingerprint, repeated.fingerprint);
+        assert_eq!(index, std::fs::read(dir.join(".git/index")).expect("index after"));
+        assert_eq!(status, run_git_bytes(&dir, &["--no-optional-locks", "status", "--porcelain=v1", "-z"]).expect("status after"));
+        for (path, expected) in [
+            ("tracked.txt", "worktree-only\n"),
+            ("unstaged.txt", "other-unstaged\n"),
+            ("untracked.txt", "untracked-only\n"),
+        ] {
+            assert_eq!(std::fs::read_to_string(dir.join(path)).expect("worktree"), expected);
+        }
+        git_ok(&dir, &["add", "tracked.txt"]);
+        let changed = git_panel_commit_context(cwd).expect("changed");
+        assert_ne!(context.fingerprint, changed.fingerprint);
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[test]
+    fn git_panel_commit_context_preserves_unborn_and_binary_metadata() {
+        let dir = test_repo("commit-context-unborn");
+        let cwd = dir.to_str().expect("utf8");
+        assert_eq!(git_panel_commit_context(cwd).expect_err("empty unborn"), "nothing staged");
+        std::fs::write(dir.join("new.txt"), "first staged content\n").expect("new");
+        std::fs::write(dir.join("binary.dat"), [0, 1, 2, 255]).expect("binary");
+        git_ok(&dir, &["add", "."]);
+        let index = std::fs::read(dir.join(".git/index")).expect("index");
+        let context = git_panel_commit_context(cwd).expect("unborn context");
+        assert!(context.diff.contains("new file mode 100644"));
+        assert!(context.diff.contains("+first staged content\n"));
+        assert!(context.diff.contains("Binary files /dev/null and b/binary.dat differ"));
+        let oid = run_git(&dir, &["rev-parse", ":binary.dat"]).expect("binary oid");
+        assert!(context.diff.contains(oid.trim()));
+        assert_eq!(index, std::fs::read(dir.join(".git/index")).expect("index after"));
+        assert_eq!(std::fs::read(dir.join("binary.dat")).expect("binary after"), [0, 1, 2, 255]);
+        std::fs::remove_dir_all(dir).expect("cleanup");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn git_panel_commit_context_preserves_mode_only_metadata() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = test_repo("commit-context-mode");
+        let path = dir.join("script.sh");
+        std::fs::write(&path, "#!/bin/sh\n").expect("script");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).expect("base mode");
+        git_ok(&dir, &["config", "core.filemode", "true"]);
+        git_ok(&dir, &["add", "script.sh"]);
+        git_ok(&dir, &["commit", "-qm", "base"]);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("exec mode");
+        git_ok(&dir, &["add", "script.sh"]);
+        let index = std::fs::read(dir.join(".git/index")).expect("index");
+        let context = git_panel_commit_context(dir.to_str().expect("utf8")).expect("mode context");
+        assert!(context.diff.contains("old mode 100644\nnew mode 100755"));
+        assert!(!context.diff.contains("@@"));
+        assert_eq!(index, std::fs::read(dir.join(".git/index")).expect("index after"));
+        assert_eq!(std::fs::read_to_string(&path).expect("script after"), "#!/bin/sh\n");
+        assert_eq!(std::fs::metadata(&path).expect("mode after").permissions().mode() & 0o777, 0o755);
+        std::fs::remove_dir_all(dir).expect("cleanup");
     }
 
     #[test]

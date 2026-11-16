@@ -23,13 +23,16 @@
 import { Component } from '../../../ui/component';
 import { classes, el, setAttr } from '../../../ui/dom';
 import { disposeList, reconcile } from '../../../ui/list';
+import { ensureHarnessSymbolDefs, harnessIconEl } from '../../harness-icons';
 import type { ComponentDef } from '../types';
 
 export interface TabStripTab {
   readonly id: string;
   readonly label: string;
-  /** Rendered when present — including `0`, which every site shows today. */
-  readonly count?: number;
+  /** Optional harness symbol id: replace the visible label, keep its accessible name. */
+  readonly icon?: string;
+  /** Rendered when present — including `0`; strings carry compact status badges. */
+  readonly count?: number | string;
   readonly disabled?: boolean;
 }
 
@@ -73,6 +76,7 @@ class TabItem extends Component<TabItemProps> {
     return [
       next.tab.id,
       next.tab.label,
+      next.tab.icon,
       next.tab.count,
       next.tab.disabled,
       next.block,
@@ -97,7 +101,21 @@ class TabItem extends Component<TabItemProps> {
     if (this.el instanceof HTMLButtonElement) setAttr(this.el, 'disabled', disabled);
     else setAttr(this.el, 'aria-disabled', disabled && 'true');
 
-    const { label, count } = next.tab;
+    const { label, count, icon } = next.tab;
+    const name = count === undefined ? label : `${label} ${count}`;
+    setAttr(this.el, 'aria-label', icon ? name : undefined);
+    setAttr(this.el, 'title', icon ? name : undefined);
+    if (icon) {
+      ensureHarnessSymbolDefs();
+      const nodes: Node[] = [harnessIconEl(icon, `${next.block}__${next.item}-icon`)];
+      if (count !== undefined) {
+        nodes.push(next.count === 'badge'
+          ? el('span', { class: `${next.block}__${next.item}-count`, text: String(count) })
+          : document.createTextNode(` · ${count}`));
+      }
+      this.el.replaceChildren(...nodes);
+      return;
+    }
     if (count === undefined) {
       this.el.textContent = label;
       return;
@@ -141,7 +159,7 @@ export class TabStrip extends Component<TabStripProps> {
   protected readDeps(next: TabStripProps): readonly unknown[] {
     return [
       next.tabs
-        .map((tab) => `${tab.id}\u0001${tab.label}\u0001${tab.count ?? ''}\u0001${tab.disabled ?? false}`)
+        .map((tab) => `${tab.id}\u0001${tab.label}\u0001${tab.icon ?? ''}\u0001${tab.count ?? ''}\u0001${tab.disabled ?? false}`)
         .join('\u0002'),
       next.activeId,
       next.block,

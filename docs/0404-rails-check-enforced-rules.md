@@ -235,6 +235,8 @@ text once.
   and its `__tail` rule are gone.
 - The controller closes a page in `renderDock()` when the snapshot no longer declares its check; the
   dock also falls back to the list when the row is missing.
+- Proves rule rows stay flat, separated only by a groove border; the enclosing well owns the
+  recess shadow (ADR-0030#4).
 
 ## Open Questions
 

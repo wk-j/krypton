@@ -1817,6 +1817,12 @@ export class AcpHarnessView implements ContentView {
     const readOpenDiff = (): ((request: WorkingDiffRequest) => Promise<boolean>) | null => this.openWorkingDiffCb;
     this.gitCtl = new HarnessGitController({
       projectDir: () => this.projectDir,
+      assistOwner: () => ({
+        role: 'assist',
+        label: 'Git commit message',
+        harness_id: this.harnessMemoryId,
+        lane_id: null,
+      }),
       remote: () => this.remoteRuntimeId !== null,
       isPanelHidden: () => this.isPanelHidden('git'),
       setDockTabAvailable: (available) => this.dock.setAvailable('git', available),

@@ -269,9 +269,9 @@ The prompt tells the current lane to:
 
 **Placement**
 
-- **Dock tabs.** The right column is `.acp-harness__dock` (absolute on the right, 352 px, flex column), holding a tab strip and one shown dock at full height; all other docks are `hidden`. Its ordered tabs are Ticket, Rails, and Assistants (spec 357). Rails uses `rails: { slot: 'dock.right', order: 20 }`; Assistants follows at order 30.
-- **Availability.** Ticket requires an active ticket and Rails requires `.krypton/rails.toml`; each also requires its own panel flag and the right-side flag to be shown. Assistants requires those visibility flags but no content: an empty inventory is still available. It defaults hidden. A `TabStrip` (block `acp-dock`, item `tab`, role `tablist`; `TICKET | RAILS | ASSISTANTS`) renders when at least two tabs are available.
-- **Badge.** The Rails tab label reads `RAILS ✗` after a failed check in the newest run; otherwise its count is the number of open findings. A manual check's result never sets it (spec 368). A finished run never switches tabs.
+- **Dock tabs.** The right column is `.acp-harness__dock` (absolute on the right, 352 px, flex column), holding a tab strip and one shown dock at full height; all other docks are `hidden`. Its ordered tabs are Session (spec 401), Ticket, Rails, Assistants (spec 357), and Git (spec 396). Rails uses `rails: { slot: 'dock.right', order: 20 }`; Assistants follows at order 30.
+- **Availability.** Ticket requires an active ticket and Rails requires `.krypton/rails.toml`; each also requires its own panel flag and the right-side flag to be shown. Assistants requires those visibility flags but no content: an empty inventory is still available. It defaults hidden. A `TabStrip` (block `acp-dock`, item `tab`, role `tablist`) renders when at least two tabs are available. It uses compact 16px icons with full-name tooltips and accessible labels, retaining the selected-state LED and visible badges.
+- **Badge.** The Rails icon carries `✗` after a failed check in the newest run; otherwise its count is the number of open findings. Tooltip and accessible label include `RAILS` and the current badge. A manual check's result never sets it (spec 368). A finished run never switches tabs.
 - **Selection.** The selected tab is persisted per project beside spec 320's flags. When it becomes unavailable (ticket cleared, tab hidden, manifest removed), the column shows the next available tab in dock order without changing the stored choice. Showing a tab through `#panels <id> show` selects it; Ticket/Rails titlebar toggles, `#ticket panel` and bare `#rails` preserve their existing selection behavior. `Open Assistant Instances` explicitly shows the right side, unhides Assistants, selects it and focuses it (spec 357).
 - **Width.** `.acp-harness--dock-active` (any tab shown) reserves the width, replacing `--ticket-active`. The below-960 px overlay rules apply to the column.
 
@@ -298,7 +298,7 @@ Below the rows, outside the list, a fixed **Actions** bar (spec 344) holds four 
 | `1`–`5` | Jump to a section |
 | `s` | Send the selected finding to the active lane; on a manual check row showing `FAIL` or `TIMEOUT`, that result alone (spec 368 amendment A); on the head row, the whole Send set |
 | `r` | Start a manual run; on a manual check row, run that check alone (spec 368) |
-| `[` / `]` | Previous / next available dock tab, wrapping in Ticket → Rails → Assistants order |
+| `[` / `]` | Previous / next available dock tab, wrapping in Session → Ticket → Rails → Assistants → Git order |
 | `Escape` | On a check page, back to the list (spec 404); otherwise return focus to the composer |
 
 In the Rails tab, `Escape` does not hide the tab, unlike the Ticket tab (spec 331), because tracking is meant to stay on screen; the titlebar toggle hides it. The view routes these keys only after a pending permission, question or file review has had them, and while the dock has focus it consumes every other unmodified key and the Ctrl editing chords, so nothing reaches the hidden draft. A tab switch moves focus to the newly shown dock. Section headings show their jump key as `[n]`. Rows and the Actions bar buttons are also clickable; the mouse is secondary, and Trust and Update have no dock key (spec 344). The dock has no `infinite` animation.

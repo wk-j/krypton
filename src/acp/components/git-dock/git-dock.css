@@ -10,6 +10,8 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
+    min-width: 0;
+    container: git-dock / inline-size;
   }
 
   .acp-git-dock[hidden] {
@@ -262,13 +264,16 @@
   .acp-git-dock__commit-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 8px;
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     font-size: var(--krypton-chrome-font-size, 11px);
   }
 
   .acp-git-dock__commit-btn {
+    min-height: 24px;
+    flex: 0 0 auto;
+    white-space: nowrap;
     padding: 3px 8px;
     border: 1px solid var(--mat-key-edge);
     border-radius: 6px;
@@ -281,13 +286,82 @@
     cursor: default;
   }
 
+  .acp-git-dock__commit-btn:hover:not(:disabled) {
+    background: var(--mat-key-hover);
+  }
+
+  .acp-git-dock__commit-btn:active:not(:disabled),
+  .acp-git-dock__commit-btn[aria-pressed="true"] {
+    background: var(--mat-key-down);
+    box-shadow: var(--mat-key-sunk);
+    color: var(--mat-lit);
+  }
+
+  .acp-git-dock__commit-btn[aria-pressed="true"] {
+    background-color: rgba(109, 208, 255, 0.16);
+    background-image: none;
+    color: #6dd0ff;
+  }
+
+  .acp-git-dock__commit-btn:disabled {
+    opacity: 0.45;
+  }
+
+  .acp-git-dock__commit-btn:focus-visible {
+    outline: 1px solid var(--mat-lit);
+    outline-offset: 2px;
+  }
+
+  .acp-git-dock__commit-hints,
+  .acp-git-dock__keys {
+    display: grid;
+    grid-template-columns: repeat(3, max-content);
+    justify-content: space-between;
+    gap: 6px 8px;
+    min-width: 0;
+    overflow-x: auto;
+    color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
+    font-size: var(--krypton-chrome-font-size, 11px);
+  }
+
+  .acp-git-dock__commit-hints {
+    grid-template-columns: repeat(2, max-content);
+  }
+
+  .acp-git-dock__commit-hints > :last-child {
+    grid-column: 1 / -1;
+  }
+
+  .acp-git-dock__commit-hints > .krypton-key-hint,
+  .acp-git-dock__keys > .krypton-key-hint {
+    width: max-content;
+    white-space: nowrap;
+  }
+
   .acp-git-dock__keys {
     flex: 0 0 auto;
     padding: 7px 12px 9px;
     border-top: 1px solid var(--mat-groove-lo);
-    box-shadow: inset 0 1px 0 var(--mat-groove-hi);
     color: var(--krypton-ink-3, rgba(var(--krypton-fg-rgb, 216, 232, 216), 0.46));
     font-size: var(--krypton-chrome-font-size, 11px);
-    text-shadow: var(--mat-engrave);
+  }
+
+  .acp-git-dock__keys--confirm {
+    display: block;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  @container git-dock (width < 320px) {
+    .acp-git-dock__keys {
+      grid-template-columns: repeat(2, max-content);
+    }
+  }
+
+  @container git-dock (width < 240px) {
+    .acp-git-dock__keys,
+    .acp-git-dock__commit-hints {
+      grid-template-columns: max-content;
+    }
   }
 }

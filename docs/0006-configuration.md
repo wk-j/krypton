@@ -449,12 +449,16 @@ model = "haiku"                # id/alias for session/set_model ("" = backend de
 timeout_ms = 8000              # model-call deadline in ms (1000–20000); a cold start gets its own
 max_input_chars = 6000         # hard cap on the payload sent to the model (500–20000)
 
-# Per-task override. The table name must be a registered assist task id
-# (`follow-up` or `grammar`).
+# Per-task override: registered assist ids (`follow-up`, `grammar`), or
+# `commit-message` for the explicit Git dock AI DRAFT action (spec 405).
 # [acp_harness.assist.tasks.follow-up]   # specs 323, 327: follow-up buttons under replies
 # mode = "auto"                # default "off"; one cheap-model call per finished reply
 # model = "haiku"
 # count = 3                    # 1..3 buttons per reply (run, open and prompt together)
+# [acp_harness.assist.tasks.commit-message]
+# model = ""                   # keep the configured backend's default model
+# timeout_ms = 20000
+# max_input_chars = 20000       # whole staged payload must fit; never truncated
 
 # Rails verifier (spec 337). Runs only in projects that have a trusted
 # `.krypton/rails.toml` (`#rails trust`); the judge spends the backend's
@@ -844,7 +848,7 @@ models = ["zai-coding-plan/glm-5.1", "anthropic/claude-sonnet-4-5", "openai/gpt-
 
 | Section | Key | Type | Default | Description |
 |---------|-----|------|---------|-------------|
-| `[acp_harness.assist]` | `mode` | string | `"off"` | `off` (never runs), `manual` (only `Cmd+/` and `#assist … now`), or `auto` (also runs when an eligible turn ends). Any other value is treated as `off`. Session-scoped `#assist` changes do not rewrite this file |
+| `[acp_harness.assist]` | `mode` | string | `"off"` | For registered lane tasks: `off` (never runs), `manual` (only `Cmd+/` and `#assist … now`), or `auto` (also runs when an eligible turn ends). Any other value is treated as `off`. Session-scoped `#assist` changes do not rewrite this file. Explicit Git AI DRAFT does not use this mode gate |
 | `[acp_harness.assist]` | `backend` | string | `"claude"` | ACP backend id to spawn for the sidecar, from the same id space as `[acp_harness.lane_models.<backend>]` and the backend picker. An unknown id fails the run |
 | `[acp_harness.assist]` | `model` | string | `"haiku"` | Model id or alias sent with `session/set_model` after the session is created. `"haiku"` works for the `claude` backend; a backend that advertises no model state rejects a model id, so leave `model = ""` for those — empty means "keep the backend's own default" |
 | `[acp_harness.assist]` | `timeout_ms` | int | `8000` | Model-call deadline in milliseconds, clamped to 1000–20000 in the frontend. The request is aborted on expiry. Backend setup on a cold start (spawn → `initialize` → `session/new` → `session/set_model`) gets its own window of the same length, so it is not counted against the call |
@@ -856,7 +860,7 @@ models = ["zai-coding-plan/glm-5.1", "anthropic/claude-sonnet-4-5", "openai/gpt-
 | `[acp_harness.assist.tasks.<id>]` | `max_input_chars` | int | inherits | Override for this task only |
 | `[acp_harness.assist.tasks.<id>]` | *(any other scalar key)* | string/int/bool | — | Task-specific knob passed through verbatim as that task's `options`. Krypton holds no knowledge of these keys, so a new task needs no config schema change |
 
-`<id>` must be a **registered assist task id** — `follow-up` (specs 323, 327) or `grammar`. A table naming an unregistered task parses but is never read; that includes a `[acp_harness.assist.tasks.next-prompt]` table from before the `next-prompt` strip was removed (2026-10-23).
+`<id>` names a registered assist task — `follow-up` (specs 323, 327) or `grammar` — or the Git dock's explicit `commit-message` call (spec 405). Other tables parse but are never read; that includes `[acp_harness.assist.tasks.next-prompt]` from before the `next-prompt` strip was removed (2026-10-23).
 
 Resolution order per run is `task defaults` ← `[acp_harness.assist]` ← `[acp_harness.assist.tasks.<id>]`, with the numeric keys clamped afterwards; the clamps live in the frontend, so an out-of-range value in TOML is corrected, not rejected.
 
@@ -873,6 +877,19 @@ model = "haiku"
 [acp_harness.assist.tasks.follow-up]
 count = 3
 ```
+
+**Git commit message (spec 405).** AI DRAFT, list `g`, or field Cmd/Ctrl+Shift+G
+requests a draft from staged changes; the same action cancels an active request.
+It reuses `backend`, `model`, `timeout_ms` and `max_input_chars` from the assist
+configuration, with overrides under `[acp_harness.assist.tasks.commit-message]`.
+Without a value at either config layer, its task defaults are 20,000 ms and
+20,000 input characters, the `claude` backend and the backend-default model.
+Global values, including the usual `haiku` model and 6,000-character budget,
+still take precedence over task defaults. The complete serialized patch and current
+draft must fit the input limit; an oversized request fails without a model call.
+This explicit Git action is not registered with `#assist`, never runs automatically,
+and ignores `mode` at both assist layers. It does not enable any lane assist task.
+Generated text remains editable and never stages, commits or pushes.
 
 ### ACP Harness Rails Verifier (spec 337)
 

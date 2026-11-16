@@ -32,7 +32,7 @@ function tabs(dock: HarnessDock): { strip: HTMLElement; labels: string[]; active
   const strip = dock.el.firstElementChild as HTMLElement;
   return {
     strip,
-    labels: [...strip.querySelectorAll('[data-tab-id]')].map((node) => node.textContent ?? ''),
+    labels: [...strip.querySelectorAll('[data-tab-id]')].map((node) => node.getAttribute('aria-label') ?? ''),
     active: strip.querySelector('.acp-dock__tab--active')?.getAttribute('data-tab-id') ?? null,
   };
 }
@@ -227,7 +227,7 @@ describe('HarnessDock (spec 337)', () => {
 
     dock.setGitBadge({ conflicts: true, rows: 6 });
     expect(tabs(dock).labels[1]).toBe('GIT ✗');
-    expect(tabs(dock).strip.querySelectorAll('.acp-dock__tab-count')).toHaveLength(0);
+    expect(tabs(dock).strip.querySelector('.acp-dock__tab-count')?.textContent).toBe('✗');
   });
 
   it('traverses Ticket, Rails, Assistants, and Git when Git is available', () => {

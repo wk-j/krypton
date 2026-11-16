@@ -100,6 +100,35 @@ describe('TabStrip · markup', () => {
 });
 
 describe('TabStrip · updates', () => {
+  it('keeps icon tabs named and their badges visible across icon, count and label changes', () => {
+    const strip = new TabStrip('button');
+    const props: TabStripProps = {
+      ...TICKET, activeId: 'git',
+      tabs: [{ id: 'git', label: 'GIT', icon: 'panel-git', count: 0 }],
+    };
+    strip.update(props);
+    const tab = strip.el.firstElementChild as HTMLElement;
+    expect(tab.textContent).toBe('0');
+    expect(tab.getAttribute('aria-label')).toBe('GIT 0');
+    expect(tab.title).toBe('GIT 0');
+    expect(tab.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
+
+    strip.update({ ...props, tabs: [{ id: 'git', label: 'GIT', icon: 'branch', count: 0 }] });
+    expect(strip.el.firstElementChild).toBe(tab);
+    expect(tab.querySelector('use')?.getAttribute('href')).toBe('#krypton-icon-branch');
+
+    strip.update({ ...props, tabs: [{ id: 'git', label: 'GIT', icon: 'panel-git', count: '✗' }] });
+    expect(tab.querySelector('.acp-ticket__tab-count')?.textContent).toBe('✗');
+    expect(tab.getAttribute('aria-label')).toBe('GIT ✗');
+
+    strip.update({ ...props, tabs: [{ id: 'git', label: 'Repository' }] });
+    expect(tab.querySelector('svg')).toBeNull();
+    expect(tab.textContent).toBe('Repository');
+    expect(tab.hasAttribute('aria-label')).toBe(false);
+    expect(tab.hasAttribute('title')).toBe(false);
+    strip.dispose();
+  });
+
   it('moves the active class without rebuilding a single tab node', () => {
     const strip = new TabStrip();
     strip.update(REVIEW);

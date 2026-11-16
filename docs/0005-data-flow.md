@@ -1035,6 +1035,14 @@ reached the page falls back to the built-in krypton-dark values, scoped to
    discard, and commit are separate commands. Paths are root-relative and
    gated in Rust. Enter opens the local working diff for the selected path.
 4. A remote harness paints "Git is local only" and does not invoke git.
+5. Spec 405: AI DRAFT / list g / field Cmd+Shift+G reads git_panel_commit_context
+   (capped, index-only), then the Git-owned fenced AcpAssistSession through AssistEngine.
+   The complete JSON payload must fit the input budget; no partial patch is sent.
+   On completion, reread the index fingerprint; require unchanged project epoch and
+   editor revision before filling the existing textarea. No lane turn or Git mutation.
+   Typing, cancel, hiding, project change and dispose invalidate the request.
+6. Git key hints are local grids of atomic key/action pairs (3 / 2 / 1 columns);
+   field focus selects the editor-specific hint set. Discard confirmation stays prose.
 ```
 
 ## Harness Session Info Panel Flow (spec 401)
